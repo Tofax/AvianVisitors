@@ -31,8 +31,10 @@ import urllib.parse
 from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
 
-# --bird-weather pulls cutouts straight from the repo's raw GitHub URLs, so the
-# Pi never bundles the illustration set and picks up new birds with no redeploy.
+# --bird-weather resolves cutouts from the local clone first, then falls back to
+# the repo's raw GitHub URLs: a fresh install needs no illustration redeploy,
+# upstream additions arrive with a git pull, and cutouts you generate and copy
+# into the clone render even before they reach GitHub.
 RAW_ILLUSTRATIONS = ("https://raw.githubusercontent.com/Twarner491/AvianVisitors/"
                      "avian-visitors/avian/assets/illustrations/")
 
@@ -118,16 +120,22 @@ def _serve_frontend(directory):
     return httpd, httpd.server_address[1]
 
 
-def _make_cutout_handler(base):
-    """Redirect each cutout.php lookup to the bird's raw illustration on GitHub.
-    Trusts species_for_zip to pre-filter to drawable slugs, so a redirect only
-    lands on a missing file if the repo is mid-update."""
+def _make_cutout_handler(base, local_dir=None):
+    """Resolve each cutout.php lookup to the bird's illustration. Serve a local
+    file first when `local_dir` has it - that is how cutouts you generate and copy
+    into the clone render before they reach GitHub - otherwise 302 to the raw
+    GitHub copy. Trusts species_for_zip to pre-filter to drawable slugs, so the
+    GitHub fallback only lands on a missing file if the repo is mid-update."""
     def handler(route):
         try:
             params = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query)
             slug = re.sub(r"[^a-z0-9]+", "-", (params.get("sci") or [""])[0].lower()).strip("-")
             if (params.get("pose") or ["1"])[0] == "2":
                 slug += "-2"
+            if local_dir:
+                local = os.path.join(local_dir, slug + ".png")
+                if os.path.isfile(local):
+                    return route.fulfill(path=local)
             route.fulfill(status=302, headers={"location": base + slug + ".png"})
         except Exception:
             _safe_continue(route)
@@ -158,7 +166,8 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
           headline_px=42, eyebrow_px=18, lowercase=False,
           mat=0.04, collage_vh=52, cluster_xbias=1.0, cluster_ybias=1.2,
           count_exp=0.4, cluster_pad=1, small_floor=0.04, window_hours=None,
-          timeout_ms=45000, user=None, password=None, species=None, cutout_base=None):
+          timeout_ms=45000, user=None, password=None, species=None, cutout_base=None,
+          cutout_local=None):
     pad_side, pad_top, pad_bottom = int(vw * mat), int(vh * mat * 0.92), int(vh * mat)
     auth = "Basic " + base64.b64encode(f"{user}:{password or ''}".encode()).decode() if user else None
 
@@ -173,7 +182,7 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
             page.route("**/birdnet-api.php**", _make_api_handler(small_floor, window_hours, auth, species))
             page.route("**/apt.js*", _make_js_handler(cluster_xbias, cluster_ybias, count_exp, cluster_pad, auth, misses))
             if cutout_base:
-                page.route("**/cutout.php*", _make_cutout_handler(cutout_base))
+                page.route("**/cutout.php*", _make_cutout_handler(cutout_base, cutout_local))
 
             css = HIDE_CSS + _frame_css(headline_px, eyebrow_px, lowercase, pad_top, pad_side, pad_bottom, collage_vh)
             page.add_init_script(
@@ -248,7 +257,7 @@ def main():
     ap.add_argument("--password")
     ap.add_argument("--timeout", type=int, default=45000)
     a = ap.parse_args()
-    url, title, subtitle, species, cutout_base = a.url, a.title, a.subtitle, None, None
+    url, title, subtitle, species, cutout_base, cutout_local = a.url, a.title, a.subtitle, None, None, None
     if a.bird_weather:
         if not a.zip:
             print("--bird-weather needs --zip", file=sys.stderr)
@@ -263,6 +272,9 @@ def main():
         _httpd, port = _serve_frontend(front)
         url = f"http://127.0.0.1:{port}/"
         cutout_base = RAW_ILLUSTRATIONS
+        # Locally generated cutouts may not be on GitHub yet; serve the clone first.
+        cutout_local = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "..", "avian", "assets", "illustrations")
         title = title or "Avian Visitors"
         subtitle = subtitle or "Heard Today"
     # BirdWeather's 7-day counts are flatter than a mic's, so they need a steeper
@@ -277,7 +289,7 @@ def main():
               cluster_ybias=a.cluster_ybias, count_exp=count_exp, cluster_pad=a.cluster_pad,
               small_floor=a.small_floor,
               window_hours=a.window_hours, timeout_ms=a.timeout, user=a.user, password=a.password,
-              species=species, cutout_base=cutout_base)
+              species=species, cutout_base=cutout_base, cutout_local=cutout_local)
     except Exception as e:
         print(f"shoot failed: {e}", file=sys.stderr)
         sys.exit(1)

@@ -201,10 +201,28 @@ DONE
   birdweather)
     cat <<DONE
 
-Installed in BirdWeather mode for ZIP $ZIP. The frame renders the top birds
-near you on the Pi and refreshes every 6 hours. Cutouts come from the repo on
-GitHub, so add illustrations there for any local birds it is missing.
+Installed in BirdWeather mode for ZIP $ZIP. The frame renders the top birds near
+you on the Pi and refreshes every 6 hours.
 DONE
+    # The bundled illustrations center on the western U.S. If birds near this ZIP
+    # aren't in the cloned set the frame quietly skips them, which has tripped
+    # people up - surface it here and point at the generator.
+    MISSING="$("$FRAME/.venv/bin/python" "$FRAME/birdweather.py" "$ZIP" --missing 2>/dev/null || true)"
+    if [ -n "$MISSING" ]; then
+      N="$(printf '%s\n' "$MISSING" | grep -c . || true)"
+      NAMES="$(printf '%s\n' "$MISSING" | head -8 | sed 's/.*|/    /')"
+      if [ "$N" -gt 8 ]; then NAMES="$NAMES
+    ... and $((N - 8)) more"; fi
+      cat <<FLAG
+Heads up: $N local bird(s) near you aren't in the illustration set you cloned, so
+the frame will skip them:
+$NAMES
+To add them, run this on a laptop or workstation (it needs rembg, which the Pi
+can't fit) and commit or copy the new cutouts over:
+  python3 $FRAME/generate_illustrations.py --zip $ZIP --gemini-key <KEY>
+A paid Google Gemini API key is needed: https://ai.google.dev
+FLAG
+    fi
     ;;
 esac
 
