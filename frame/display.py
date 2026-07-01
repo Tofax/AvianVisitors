@@ -40,6 +40,10 @@ SPECTRA6 = [(236, 234, 223), (26, 26, 28), (165, 60, 56),
 
 DEFAULTS = {
     "base_url": "http://birdnet.local",
+    "species_source": "",   # "" = the recent API at base_url; "birdweather" = BirdWeather near a ZIP
+    "zip": "",              # BirdWeather ZIP / postal code (with species_source = "birdweather")
+    "bw_days": 7,           # BirdWeather lookback window, in days
+    "bw_country": "us",     # geocoder country for the ZIP
     "hours": 24,
     "image": "",            # local PNG written by the shooter
     "image_url": "",        # or a published screenshot URL
@@ -91,6 +95,16 @@ def fetch_recent(base, hours, timeout, auth=None):
 def signature(species):
     items = sorted((slugify(s["sci"]), _bucket(int(s.get("n") or 1))) for s in species)
     return hashlib.sha256(json.dumps(items).encode()).hexdigest()[:16]
+
+
+def fetch_species(cfg, auth=None):
+    """The species list the signature is built from: the BirdNET-Pi recent API
+    by default, or BirdWeather's recent detections near a ZIP when
+    species_source = "birdweather"."""
+    if cfg.get("species_source") == "birdweather":
+        import birdweather
+        return birdweather.species_for_zip(cfg["zip"], country=cfg["bw_country"], days=cfg["bw_days"])
+    return fetch_recent(cfg["base_url"], cfg["hours"], cfg["timeout"], auth)
 
 
 # --- image ------------------------------------------------------------------
@@ -190,17 +204,19 @@ def mat_and_center(img, mat, empty=False):
     tb = _region_bbox(img, paper, top, split[0]) if split else None
     cb = _region_bbox(img, paper, split[1], bot + 1) if split else None
     box_w, box_h = A5_W * (1 - mat), A5_H * (1 - mat)
-    # No birds: the content under the title is just the one-line empty-state
-    # note. Render a calm title card (a modest title with the small note
-    # below) rather than blowing the lone title up to fill the opening.
+    # No birds yet: hold the title where a full collage would put it and float
+    # the one-line note where the birds would be, so a birdless frame reads like
+    # a full one with the collage removed, not a title card drifted to the middle.
     if empty and tb and cb:
         title = _scale_h(img.crop(tb), box_h * TITLE_H_FRAC)
         note = _scale_w(img.crop(cb), box_w * 0.30)
-        gap = round(box_h * 0.05)
+        gap = round(box_h * GAP_FRAC)
+        region = box_w * COLLAGE_FRAC  # stand in for a usual-size collage
         cw = max(title.width, note.width)
-        comp = Image.new("RGB", (cw, title.height + gap + note.height), paper)
+        comp = Image.new("RGB", (cw, round(title.height + gap + region)), paper)
         comp.paste(title, ((cw - title.width) // 2, 0))
-        comp.paste(note, ((cw - note.width) // 2, title.height + gap))
+        ny = title.height + gap + max(0, (round(region) - note.height) // 2)
+        comp.paste(note, ((cw - note.width) // 2, ny))
         canvas = Image.new("RGB", (PANEL_W, PANEL_H), paper)
         canvas.paste(comp, ((PANEL_W - comp.width) // 2, (PANEL_H - comp.height) // 2))
         return canvas
@@ -298,7 +314,16 @@ def in_quiet_hours(cfg, hour):
 
 
 # --- run --------------------------------------------------------------------
-def obtain_image(cfg):
+def obtain_image(cfg, species=None):
+    if cfg.get("species_source") == "birdweather":
+        from shoot import shoot_birdweather
+        if species is None:  # gate skipped (--no-signature): fetch the list to render
+            species = fetch_species(cfg, _auth(cfg))
+        out = os.path.join(os.path.expanduser(cfg["cache"]), "frame.png")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        shoot_birdweather(out, species, title=cfg["shoot_title"], subtitle=cfg["shoot_subtitle"],
+                          timeout_ms=cfg["timeout"] * 1000)
+        return Image.open(out).convert("RGB")
     if cfg["shoot"]:
         from shoot import shoot
         out = os.path.join(os.path.expanduser(cfg["cache"]), "shot.png")
@@ -322,7 +347,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
     species = None
     if use_signature:
         try:
-            species = fetch_recent(cfg["base_url"], cfg["hours"], cfg["timeout"], _auth(cfg))
+            species = fetch_species(cfg, _auth(cfg))
             sig = signature(species)
         except Exception as e:
             print(f"signature fetch failed: {e}", file=sys.stderr)  # treat as no change
@@ -338,7 +363,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
         print("refresh:", "changed" if changed else "heal")
 
     try:
-        img = fit_panel(obtain_image(cfg))
+        img = fit_panel(obtain_image(cfg, species))
     except Exception as e:
         print(f"could not get image: {e}", file=sys.stderr)  # keep last panel image
         return
