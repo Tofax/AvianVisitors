@@ -23,6 +23,7 @@ EBIRD = "https://api.ebird.org/v2/data/obs/geo/recent"
 APT_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "avian", "frontend", "apt.js")
 
 _drawable = None
+_GEO_CACHE = os.path.expanduser("~/.birdframe/geocode.json")
 
 
 def _graphql(query, timeout):
@@ -39,12 +40,37 @@ def _graphql(query, timeout):
 
 
 def geocode(zip_code, country="us", timeout=20):
-    """ZIP / postal code to (lat, lon) via the keyless zippopotam.us gazetteer."""
-    url = f"{GEOCODER}/{country}/{urllib.parse.quote(zip_code.strip())}"
+    """ZIP / postal code to (lat, lon) via the keyless zippopotam.us gazetteer.
+    A ZIP's coordinates never move, so the result is cached on disk and the
+    frame geocodes once rather than on every 15-minute refresh."""
+    zip_code = zip_code.strip()
+    key = f"{country}/{zip_code}".lower()
+    store = {}
+    try:
+        with open(_GEO_CACHE) as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            store = loaded
+            hit = store.get(key)
+            if isinstance(hit, list) and len(hit) == 2:  # shape-guard a hand-edited / stale entry
+                return float(hit[0]), float(hit[1])
+    except Exception:
+        store = {}
+    url = f"{GEOCODER}/{country}/{urllib.parse.quote(zip_code)}"
     req = urllib.request.Request(url, headers={"User-Agent": "AvianVisitors-frame/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         place = json.loads(r.read(200_000))["places"][0]
-    return float(place["latitude"]), float(place["longitude"])
+    lat, lon = float(place["latitude"]), float(place["longitude"])
+    store[key] = [lat, lon]
+    try:
+        os.makedirs(os.path.dirname(_GEO_CACHE), exist_ok=True)
+        tmp = _GEO_CACHE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(store, f)
+        os.replace(tmp, _GEO_CACHE)  # atomic, like display.py's state write
+    except Exception:
+        pass
+    return lat, lon
 
 
 def bbox(lat, lon, miles):

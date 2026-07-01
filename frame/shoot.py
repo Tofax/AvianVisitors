@@ -225,6 +225,30 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
     return out
 
 
+def shoot_birdweather(out, species, *, title=None, subtitle=None, timeout_ms=45000, **look):
+    """Render `species` ([{sci,com,n}]) as the BirdWeather collage into `out`.
+
+    The mic path screenshots a live site; this builds the same page from a
+    species list instead. It serves the bundled frontend on localhost, feeds it
+    the species, and routes cutouts to the local clone first then GitHub, so the
+    --bird-weather CLI and display.py's inline render share one setup. An empty
+    list renders the page's empty-state card, the same as the mic mode. `look`
+    overrides any shoot() tunable (the CLI passes its flags through)."""
+    if species is None:
+        raise RuntimeError("shoot_birdweather needs a species list")
+    here = os.path.dirname(os.path.abspath(__file__))
+    _httpd, port = _serve_frontend(os.path.join(here, "..", "avian", "frontend"))
+    cutout_local = os.path.join(here, "..", "avian", "assets", "illustrations")
+    # BirdWeather's flat 7-day counts need a steeper exponent for the same hero
+    # hierarchy; the slightly smaller titles match the mic frame's optical weight.
+    for k, v in (("count_exp", 1.0), ("headline_px", 39), ("eyebrow_px", 17)):
+        look.setdefault(k, v)
+    return shoot(f"http://127.0.0.1:{port}/", out,
+                 title=title or "Avian Visitors", subtitle=subtitle or "Heard Today",
+                 species=species, cutout_base=RAW_ILLUSTRATIONS, cutout_local=cutout_local,
+                 timeout_ms=timeout_ms, **look)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Screenshot the AvianVisitors collage for the e-ink frame.")
     ap.add_argument("--url", default="http://birdnet.local")
@@ -257,7 +281,6 @@ def main():
     ap.add_argument("--password")
     ap.add_argument("--timeout", type=int, default=45000)
     a = ap.parse_args()
-    url, title, subtitle, species, cutout_base, cutout_local = a.url, a.title, a.subtitle, None, None, None
     if a.bird_weather:
         if not a.zip:
             print("--bird-weather needs --zip", file=sys.stderr)
@@ -268,28 +291,33 @@ def main():
         if not species:
             print(f"no drawable birds near {a.zip}; nothing to render", file=sys.stderr)
             sys.exit(3)
-        front = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "avian", "frontend")
-        _httpd, port = _serve_frontend(front)
-        url = f"http://127.0.0.1:{port}/"
-        cutout_base = RAW_ILLUSTRATIONS
-        # Locally generated cutouts may not be on GitHub yet; serve the clone first.
-        cutout_local = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "..", "avian", "assets", "illustrations")
-        title = title or "Avian Visitors"
-        subtitle = subtitle or "Heard Today"
-    # BirdWeather's 7-day counts are flatter than a mic's, so they need a steeper
-    # exponent to get the same hero-bird hierarchy and collage shape.
-    count_exp = a.count_exp if a.count_exp is not None else (1.0 if a.bird_weather else 0.4)
-    headline_px = a.headline_px if a.headline_px is not None else (39 if a.bird_weather else 42)
-    eyebrow_px = a.eyebrow_px if a.eyebrow_px is not None else (17 if a.bird_weather else 18)
+        # Pass the CLI's look flags through; shoot_birdweather fills the bird-weather
+        # defaults (steeper count exponent, smaller titles) for anything left unset.
+        look = {k: v for k, v in (("count_exp", a.count_exp), ("headline_px", a.headline_px),
+                                  ("eyebrow_px", a.eyebrow_px)) if v is not None}
+        look.update(vw=a.width, vh=a.height, dsf=a.dsf, mat=a.mat, collage_vh=a.collage_vh,
+                    cluster_xbias=a.cluster_xbias, cluster_ybias=a.cluster_ybias,
+                    cluster_pad=a.cluster_pad, small_floor=a.small_floor, lowercase=a.lowercase,
+                    window_hours=a.window_hours, user=a.user, password=a.password)
+        try:
+            shoot_birdweather(a.out, species, title=a.title, subtitle=a.subtitle,
+                              timeout_ms=a.timeout, **look)
+        except Exception as e:
+            print(f"shoot failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"wrote {a.out}")
+        return
+    # Mic path: screenshot the live AvianVisitors site at --url.
+    count_exp = a.count_exp if a.count_exp is not None else 0.4
+    headline_px = a.headline_px if a.headline_px is not None else 42
+    eyebrow_px = a.eyebrow_px if a.eyebrow_px is not None else 18
     try:
-        shoot(url, a.out, title=title, subtitle=subtitle, vw=a.width, vh=a.height, dsf=a.dsf,
+        shoot(a.url, a.out, title=a.title, subtitle=a.subtitle, vw=a.width, vh=a.height, dsf=a.dsf,
               headline_px=headline_px, eyebrow_px=eyebrow_px, lowercase=a.lowercase,
               mat=a.mat, collage_vh=a.collage_vh, cluster_xbias=a.cluster_xbias,
               cluster_ybias=a.cluster_ybias, count_exp=count_exp, cluster_pad=a.cluster_pad,
               small_floor=a.small_floor,
-              window_hours=a.window_hours, timeout_ms=a.timeout, user=a.user, password=a.password,
-              species=species, cutout_base=cutout_base, cutout_local=cutout_local)
+              window_hours=a.window_hours, timeout_ms=a.timeout, user=a.user, password=a.password)
     except Exception as e:
         print(f"shoot failed: {e}", file=sys.stderr)
         sys.exit(1)
