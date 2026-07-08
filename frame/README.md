@@ -12,12 +12,14 @@ A [Pimoroni Inky Impression 13.3"](https://amzn.to/4xlAWr3) (Spectra 6) mirrorin
 
 | Qty | Description | Price | Link |
 |-----|-------------|-------|------|
-| 1 | Raspberry Pi Zero (2) W | ~$35 | [Amazon](https://amzn.to/49Xp58I) |
+| 1 | Raspberry Pi 3 A+ or Zero 2 W | ~$25-35 | [Amazon](https://amzn.to/49Xp58I) |
 | 1 | 13.3" E Ink Display     | $299.99 | [Amazon](https://amzn.to/4xlAWr3) |
 | 1 | A4 Wood Photo Frame    | $21.99 | [Amazon](https://amzn.to/3RWFbJE) |
 | 1 | Long, Flat Micro USB Cable    | $7.99 | [Amazon](https://a.co/d/0a59rKSk) |
 | 1 | Flat USB Brick    | $7.59 | [Amazon](https://amzn.to/3S4CtSs) |
-| | **Total** | **~$372** | | |
+| | **Total** | **~$365** | | |
+
+The 3 A+ and Zero 2 W are both tested and set up identically; any Pi with the 40-pin header that runs 64-bit Raspberry Pi OS works. The printed backing pressure-fits either board.
 
 CAD + 3d print files can be found in [`hardware/`](hardware/).
 

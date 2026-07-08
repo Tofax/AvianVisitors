@@ -7,9 +7,9 @@ titles, and rewrites a few of the page's own apt.js tunables at capture time
 (cluster bias, count-to-size exponent, a rare-bird floor). The result is the
 actual website, framed for the wall, with no changes to AvianVisitors.
 
-Needs a real headless browser, so it runs on any 64-bit capable machine, NOT
-the Pi Zero W driving the panel. Writes a 1200x1600 PNG; display.py turns it
-into panel pixels.
+Needs a real headless browser, so it runs on any 64-bit capable machine,
+including the frame's own Pi (3 A+ / Zero 2 W) but NOT an original ARMv6
+Pi Zero W. Writes a 1200x1600 PNG; display.py turns it into panel pixels.
 
   pip install playwright && playwright install chromium
   python3 shoot.py --url https://bird.onethreenine.net \

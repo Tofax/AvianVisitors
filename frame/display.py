@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Frame-Pi client: turn a collage screenshot into Inky panel pixels.
 
-Runs on the Pi Zero W on a systemd timer. Each run it decides whether a
+Runs on the frame Pi (a 3 A+ or Zero 2 W) on a systemd timer. Each run it decides whether a
 refresh is worth it (the species set or call-count brackets changed, and it
 is not quiet hours), then crops the title and collage from the screenshot,
 centres and mats them, and pushes the result to the Inky Impression 13.3".
@@ -47,7 +47,7 @@ DEFAULTS = {
     "hours": 24,
     "image": "",            # local PNG written by the shooter
     "image_url": "",        # or a published screenshot URL
-    "shoot": False,         # or capture inline (needs a browser; the Zero 2 W handles it)
+    "shoot": False,         # or capture inline (needs a browser; the 3 A+ and Zero 2 W both handle it)
     "shoot_title": None, "shoot_subtitle": None,
     "shoot_headline_px": 42, "shoot_eyebrow_px": 18, "shoot_lowercase": False,
     "shoot_mat": 0.04, "shoot_small_floor": 0.04, "shoot_count_exp": 0.65,
