@@ -83,6 +83,7 @@ create_necessary_dirs() {
     sudo -u ${USER} ln -fs $my_dir/avian/frontend/apt.js    ${EXTRACTED}/apt.js
     sudo -u ${USER} ln -fs $my_dir/avian/frontend/masks.json ${EXTRACTED}/masks.json
     sudo -u ${USER} ln -fs $my_dir/avian/frontend/dims.json  ${EXTRACTED}/dims.json
+    sudo -u ${USER} ln -fs $my_dir/avian/frontend/nest.webp  ${EXTRACTED}/nest.webp
     sudo -u ${USER} ln -fs $my_dir/avian/assets/favicon.png  ${EXTRACTED}/favicon.png
   fi
   sudo -u ${USER} ln -fs $my_dir/model/labels.txt ${my_dir}/scripts
