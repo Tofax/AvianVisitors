@@ -4,7 +4,7 @@
 Step 1 of the illustration pipeline:
     1. pregen.py       render each bird on a uniform cream ground
     2. cutout.py       remove the ground (BiRefNet) and crop to the bird
-    3. build_masks.py  refresh the collage silhouette masks in apt.js
+    3. build_masks.py  refresh the collage silhouette masks (dims.json + masks.json)
 
 Reads a species list (BirdNET-Pi's labels.txt, eBird, or stdin),
 fetches a Wikipedia reference photo for each species, and generates an

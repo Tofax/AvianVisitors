@@ -9,7 +9,7 @@ this directory.
 
 1. `pregen.py` renders each bird with Gemini 2.5 Flash Image, on a flat cream ground.
 2. `cutout.py` removes the ground with BiRefNet and crops to the bird.
-3. `build_masks.py` rebuilds the collage silhouette masks inlined in `apt.js`.
+3. `build_masks.py` rebuilds the collage silhouette masks into `dims.json` + `masks.json`, which `apt.js` fetches at load.
 4. `verify.py` (optional) runs an adversarial species-ID + anatomy check.
 
 ```bash

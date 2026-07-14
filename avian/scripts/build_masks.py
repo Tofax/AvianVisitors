@@ -4,21 +4,28 @@
 Step 3 of the illustration pipeline (after pregen.py and cutout.py).
 
 The collage packs birds by their actual silhouette, not bounding boxes,
-so the frontend ships a tiny 1-bit mask per illustration inlined in
-apt.js. This reads every cutout in avian/assets/illustrations/ and
-rewrites the DIMS and MASKS tables in avian/frontend/apt.js:
+so the frontend ships a tiny 1-bit mask per illustration. This reads every
+cutout in avian/assets/illustrations/ and writes two data files that
+apt.js fetches at load:
 
-    DIMS[slug]  = [w, h]  aspect, scaled so the long side is 560
-    MASKS[slug] = {w, h, bits}  silhouette downscaled to <=93px, 1-bit
-                  packed MSB-first row-major, base64. A bit is 1 where
-                  the cutout is opaque (alpha > 127). This is exactly
-                  what loadMask() in apt.js decodes.
+    dims.json   {slug: [w, h]}         aspect, scaled so the long side is 560
+    masks.json  {slug: {w, h, bits}}   silhouette downscaled to <=93px, 1-bit
+                packed MSB-first row-major, base64. A bit is 1 where the
+                cutout is opaque (alpha > 127). This is exactly what
+                loadMask() in apt.js decodes.
 
-Run after changing the illustration set, then bump SKETCH_VERSION and
-IMG_VERSION in apt.js so browsers drop their cached copies.
+Both files are written one key per line (sorted by slug), so adding a
+species is a clean localized diff and two contributors adding different
+species produce non-overlapping diffs instead of colliding. The tables
+used to be inlined in apt.js as single ~800KB lines, which turned every
+species-add into a whole-line rewrite and an unavoidable merge conflict.
+
+Run after changing the illustration set. Bump SKETCH_VERSION and
+IMG_VERSION in apt.js when you re-render a bird so browsers drop the
+stale image (and the freshly written dims.json/masks.json).
 
 Usage:
-    python3 build_masks.py            # rewrite apt.js in place
+    python3 build_masks.py            # write dims.json + masks.json
     python3 build_masks.py --check    # report only, don't write
 """
 from __future__ import annotations
@@ -61,14 +68,17 @@ def build_tables(illus_dir: Path):
     return dims, masks
 
 
-def replace_decl(src: str, name: str, value: str) -> str:
-    """Replace `var <name> = {...};` (single line) with the new value."""
-    pat = re.compile(r"  var " + name + r" = \{.*?\};")
-    repl = f"  var {name} = {value};"
-    new, n = pat.subn(lambda _m: repl, src, count=1)
-    if n != 1:
-        raise SystemExit(f"error: could not find `var {name} = {{...}};` in apt.js")
-    return new
+def dump_perkey(table) -> str:
+    """Serialize {key: value} as valid JSON with one key per line, sorted.
+
+    A per-key layout keeps a species-add to a single inserted line, so
+    independent regional contributions produce non-overlapping diffs
+    instead of rewriting one giant line and colliding on every merge.
+    json.loads reads it back exactly as a normal object.
+    """
+    lines = [f"{json.dumps(k)}:{json.dumps(v, separators=(',', ':'))}"
+             for k, v in sorted(table.items())]
+    return "{\n" + ",\n".join(lines) + "\n}\n"
 
 
 def main() -> int:
@@ -77,10 +87,10 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--illustrations", type=Path, default=here / "assets" / "illustrations",
                     help="Cutout directory (default: avian/assets/illustrations/)")
-    ap.add_argument("--apt", type=Path, default=here / "frontend" / "apt.js",
-                    help="Frontend file to patch (default: avian/frontend/apt.js)")
+    ap.add_argument("--frontend", type=Path, default=here / "frontend",
+                    help="Dir to write dims.json + masks.json (default: avian/frontend/)")
     ap.add_argument("--check", action="store_true",
-                    help="Report counts and don't write apt.js")
+                    help="Report counts against the current dims.json, don't write")
     args = ap.parse_args()
 
     dims, masks = build_tables(args.illustrations)
@@ -92,15 +102,14 @@ def main() -> int:
         print("error: no cutouts found", file=sys.stderr)
         return 1
 
-    dims_json = json.dumps(dims, separators=(",", ":"))
-    masks_json = json.dumps(masks, separators=(",", ":"))
+    dims_path = args.frontend / "dims.json"
+    masks_path = args.frontend / "masks.json"
 
     if args.check:
-        src = args.apt.read_text()
-        cur = json.loads(re.search(r"var DIMS = (\{.*?\});", src).group(1))
+        cur = json.loads(dims_path.read_text()) if dims_path.exists() else {}
         added = sorted(set(dims) - set(cur))
         removed = sorted(set(cur) - set(dims))
-        print(f"apt.js currently has {len(cur)} entries; "
+        print(f"dims.json currently has {len(cur)} entries; "
               f"+{len(added)} new, -{len(removed)} removed")
         if added:
             print("  new:", ", ".join(added[:8]) + (" ..." if len(added) > 8 else ""))
@@ -108,11 +117,10 @@ def main() -> int:
             print("  gone:", ", ".join(removed[:8]) + (" ..." if len(removed) > 8 else ""))
         return 0
 
-    src = args.apt.read_text()
-    src = replace_decl(src, "DIMS", dims_json)
-    src = replace_decl(src, "MASKS", masks_json)
-    args.apt.write_text(src)
-    print(f"patched {args.apt}\nremember to bump SKETCH_VERSION + IMG_VERSION in apt.js")
+    dims_path.write_text(dump_perkey(dims))
+    masks_path.write_text(dump_perkey(masks))
+    print(f"wrote {dims_path} + {masks_path} ({len(dims)} entries each)\n"
+          f"remember to bump SKETCH_VERSION + IMG_VERSION in apt.js if pixels changed")
     return 0
 
 
