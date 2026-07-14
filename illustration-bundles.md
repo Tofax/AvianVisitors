@@ -9,7 +9,7 @@ The main repo ships a Western-US set reviewed by hand. Other people have generat
 ## Europe
 
 - **Switzerland (CH-BE)**: [theskyisthelimit's fork](https://github.com/theskyisthelimit/AvianVisitors/tree/europe-illustrations), 293 species
-- **Germany**: [bassrelic's fork](https://github.com/bassrelic/AvianVisitors/tree/add_german_species), 37 species
+- **Germany**: [bassrelic's fork](https://github.com/bassrelic/AvianVisitors-German-Fork/tree/add_german_species), 37 species
 
 ## South America
 
