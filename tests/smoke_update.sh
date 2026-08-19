@@ -81,7 +81,7 @@ as_station() {
 }
 
 setup_case() {
-  local name=$1 start=$2 selected_remote=${3:-$remote}
+  local name=$1 start=$2 selected_remote=${3:-$remote} clone_mode=${4:-full}
   station_user=bird${name}
   station_home=$test_root/$name/home
   repo_dir=$station_home/BirdNET-Pi
@@ -96,7 +96,17 @@ setup_case() {
 [safe]
     directory = $selected_remote
 EOF
-  as_station "$station_user" "$station_home" git clone -q "$selected_remote" "$repo_dir"
+  case "$clone_mode" in
+    full)
+      as_station "$station_user" "$station_home" \
+        git clone -q "$selected_remote" "$repo_dir"
+      ;;
+    shallow-main)
+      as_station "$station_user" "$station_home" \
+        git clone -q --depth=1 --branch main "file://$selected_remote" "$repo_dir"
+      ;;
+    *) fail "unknown clone mode: $clone_mode" ;;
+  esac
   as_station "$station_user" "$station_home" \
     git -C "$repo_dir" remote set-url origin "$official"
   as_station "$station_user" "$station_home" git -C "$repo_dir" config user.name 'Station'
@@ -259,6 +269,10 @@ as_station "$station_user" "$station_home" git -C "$repo_dir" update-ref \
 expect_success 'tampered default refspec'
 [ "$(as_station "$station_user" "$station_home" git -C "$repo_dir" rev-parse HEAD)" = "$release_two" ] \
   || fail 'default refspec redirected the release fetch'
+[ "$(as_station "$station_user" "$station_home" git -C "$repo_dir" \
+  config --get-all remote.origin.fetch)" \
+  = '+refs/heads/avian-visitors:refs/remotes/origin/avian-visitors' ] \
+  || fail 'tampered default refspec survived the verified update'
 
 setup_case wrapperauto release-one
 cp /source/scripts/update_birdnet.sh "$station_home/update-wrapper.sh"
@@ -368,6 +382,77 @@ mkdir -p "$test_root/legacy-restore"
 tar -C "$test_root/legacy-restore" -xf "$legacy_backup/legacy-collisions.tar"
 grep -qx 'legacy local copy' "$test_root/legacy-restore/avian/legacy.txt" \
   || fail 'legacy backup did not preserve the collided file'
+
+# Model a legacy Pi that first cloned main at depth one, then shallow-fetched
+# an early AvianVisitors release. Both boundaries remain in .git/shallow, so a
+# normal fetch of a later release cannot prove that main is its ancestor.
+git -C "$remote" update-ref refs/heads/avian-visitors "$release_one"
+setup_case shallowlegacy main "$remote" shallow-main
+as_station "$station_user" "$station_home" git -C "$repo_dir" fetch -q \
+  --no-tags --depth=1 origin \
+  refs/heads/avian-visitors:refs/remotes/origin/avian-visitors
+git -C "$remote" update-ref refs/heads/avian-visitors "$release_two"
+[ "$(as_station "$station_user" "$station_home" \
+  git -C "$repo_dir" rev-parse --is-shallow-repository)" = true ] \
+  || fail 'shallow legacy fixture is not shallow'
+[ "$(wc -l <"$repo_dir/.git/shallow")" -eq 2 ] \
+  || fail 'shallow legacy fixture does not have both history boundaries'
+if as_station "$station_user" "$station_home" git -C "$repo_dir" \
+  merge-base --is-ancestor main origin/avian-visitors; then
+  fail 'shallow legacy fixture did not hide the valid ancestor'
+fi
+mkdir -p "$repo_dir/avian/frontend"
+printf 'shallow legacy masks\n' >"$repo_dir/avian/frontend/masks.json"
+printf 'shallow legacy dims\n' >"$repo_dir/avian/frontend/dims.json"
+chown -R "$station_user:$station_user" "$repo_dir/avian"
+expect_success 'shallow legacy migration'
+[ "$(as_station "$station_user" "$station_home" \
+  git -C "$repo_dir" rev-parse --is-shallow-repository)" = false ] \
+  || fail 'shallow legacy migration did not complete the history'
+[ "$(as_station "$station_user" "$station_home" \
+  git -C "$repo_dir" branch --show-current)" = avian-visitors ] \
+  || fail 'shallow legacy migration did not select the release branch'
+[ "$(as_station "$station_user" "$station_home" \
+  git -C "$repo_dir" rev-parse HEAD)" = "$release_two" ] \
+  || fail 'shallow legacy migration did not reach the fetched release commit'
+[ "$(as_station "$station_user" "$station_home" git -C "$repo_dir" \
+  config --get-all remote.origin.fetch)" \
+  = '+refs/heads/avian-visitors:refs/remotes/origin/avian-visitors' ] \
+  || fail 'shallow legacy migration did not constrain its future fetches'
+[ "$(as_station "$station_user" "$station_home" git -C "$repo_dir" \
+  rev-parse --abbrev-ref --symbolic-full-name '@{upstream}')" \
+  = origin/avian-visitors ] \
+  || fail 'shallow legacy migration did not set the release upstream'
+grep -qx 'shallow legacy masks' "$repo_dir/avian/frontend/masks.json" \
+  || fail 'shallow legacy migration did not preserve masks.json'
+grep -qx 'shallow legacy dims' "$repo_dir/avian/frontend/dims.json" \
+  || fail 'shallow legacy migration did not preserve dims.json'
+
+setup_case refrollback main
+as_station "$station_user" "$station_home" git -C "$repo_dir" config \
+  remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
+cat >/usr/local/bin/git <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = -C ] && [ "${3:-}" = branch ] \
+  && [ "${4:-}" = --set-upstream-to=origin/avian-visitors ]; then
+  exit 73
+fi
+exec /usr/bin/git "$@"
+EOF
+chmod 0755 /usr/local/bin/git
+expect_failure 'fetch mapping rollback'
+rm -f /usr/local/bin/git
+[ "$(as_station "$station_user" "$station_home" \
+  git -C "$repo_dir" branch --show-current)" = main ] \
+  || fail 'fetch mapping failure did not restore main'
+if as_station "$station_user" "$station_home" git -C "$repo_dir" \
+  show-ref --verify --quiet refs/heads/avian-visitors; then
+  fail 'fetch mapping failure left its release branch'
+fi
+[ "$(as_station "$station_user" "$station_home" git -C "$repo_dir" \
+  config --get-all remote.origin.fetch)" \
+  = '+refs/heads/main:refs/remotes/origin/main' ] \
+  || fail 'failed migration did not restore the original fetch mapping'
 
 setup_case rollback main
 mkdir -p "$repo_dir/avian/frontend" "$repo_dir/custom"
