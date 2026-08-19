@@ -121,7 +121,20 @@ cat >/usr/local/bin/systemctl <<'EOF'
 printf '%s\n' "$*" >>/tmp/avian-pre-v1-bootstrap/systemctl.log
 exit 0
 EOF
-chmod 0755 /usr/local/bin/systemctl
+cat >/usr/local/bin/mktemp <<'EOF'
+#!/usr/bin/env bash
+for argument in "$@"; do
+  case "$argument" in
+    /tmp/avian-v1-bootstrap.*|/tmp/avian-service-refresh.*)
+      echo 'large verified fetch attempted to use /tmp' >&2
+      exit 88
+      ;;
+  esac
+done
+printf '%s\n' "$*" >>/tmp/avian-pre-v1-bootstrap/mktemp.log
+exec /usr/bin/mktemp "$@"
+EOF
+chmod 0755 /usr/local/bin/systemctl /usr/local/bin/mktemp
 
 runuser -u "$station_user" -- env HOME="$station_home" \
   USER="$station_user" PATH=/usr/local/bin:/usr/bin:/bin \
@@ -190,6 +203,16 @@ chmod 0440 /etc/sudoers.d/010_caddy-nopasswd
 
 bash /source/scripts/bootstrap_v1.sh >"$test_root/bootstrap.log" 2>&1 \
   || { cp "$test_root/bootstrap.log" "$test_root/update.log"; fail 'v1 bootstrap could not migrate untracked overlay files'; }
+
+grep -q '/var/tmp/avian-v1-bootstrap.' "$test_root/mktemp.log" \
+  || fail 'v1 bootstrap did not place its verified fetch on persistent storage'
+grep -q '/var/tmp/avian-service-refresh.' "$test_root/mktemp.log" \
+  || fail 'service refresh did not place its verified fetch on persistent storage'
+if find /var/tmp -maxdepth 1 -type d \
+  \( -name 'avian-v1-bootstrap.*' -o -name 'avian-service-refresh.*' \) \
+  -print -quit | grep -q .; then
+  fail 'verified fetch workspace survived a successful v1 handoff'
+fi
 
 [ "$(runuser -u "$collision_user" -- git -C "$collision_repo" branch --show-current)" = avian-visitors ] \
   || fail 'v1 bootstrap did not select the release branch'

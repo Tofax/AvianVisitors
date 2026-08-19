@@ -98,7 +98,20 @@ cat >/usr/local/bin/apt <<'EOF'
 touch /tmp/avian-service-refresh-smoke/apt.called
 exit 99
 EOF
-chmod 0755 /usr/local/bin/systemctl /usr/local/bin/apt
+cat >/usr/local/bin/mktemp <<'EOF'
+#!/usr/bin/env bash
+for argument in "$@"; do
+  case "$argument" in
+    /tmp/avian-service-refresh.*)
+      echo 'large verified fetch attempted to use /tmp' >&2
+      exit 88
+      ;;
+  esac
+done
+printf '%s\n' "$*" >>/tmp/avian-service-refresh-smoke/mktemp.log
+exec /usr/bin/mktemp "$@"
+EOF
+chmod 0755 /usr/local/bin/systemctl /usr/local/bin/apt /usr/local/bin/mktemp
 
 cp /source/scripts/reinstall_services.sh /usr/local/sbin/avian-service-refresh
 chown root:root /usr/local/sbin/avian-service-refresh
@@ -138,6 +151,13 @@ AVIAN_UPDATE_LOCK_FD=9 /usr/local/sbin/avian-service-refresh --legacy-migration 
 flock -u 9
 exec 9>&-
 run_refresh
+
+grep -q '/var/tmp/avian-service-refresh.' "$test_root/mktemp.log" \
+  || fail 'service refresh did not place its verified fetch on persistent storage'
+if find /var/tmp -maxdepth 1 -type d -name 'avian-service-refresh.*' \
+  -print -quit | grep -q .; then
+  fail 'service refresh left its verified fetch workspace behind'
+fi
 
 [ -e "$test_root/security.called" ] || fail 'security policy hook was not called'
 [ ! -e /etc/sudoers.d/010_caddy-nopasswd ] \
