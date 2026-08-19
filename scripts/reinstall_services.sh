@@ -138,7 +138,7 @@ current_head=$(git_station rev-parse --verify HEAD)
 # Privileged helper bytes must not be trusted merely because they are clean in
 # a station-owned checkout. Fetch the official release into a root-owned
 # temporary object store, then require the checkout to be on that exact commit.
-work_dir=$(mktemp -d /tmp/avian-service-refresh.XXXXXX)
+work_dir=$(mktemp -d /var/tmp/avian-service-refresh.XXXXXX)
 trusted_repo=$work_dir/official.git
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT

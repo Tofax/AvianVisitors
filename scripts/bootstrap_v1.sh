@@ -58,7 +58,7 @@ case "$configured_origin" in
   *) die "origin must be $OFFICIAL_ORIGIN" ;;
 esac
 
-work_dir=$(mktemp -d /tmp/avian-v1-bootstrap.XXXXXX)
+work_dir=$(mktemp -d /var/tmp/avian-v1-bootstrap.XXXXXX)
 trusted_repo=$work_dir/official.git
 cleanup() { rm -rf "$work_dir"; }
 trap cleanup EXIT
@@ -88,4 +88,6 @@ for index in "${!sources[@]}"; do
   mv -f "$temp_target" "$target"
 done
 
+cleanup
+trap - EXIT
 exec "$UPDATE_HELPER"
