@@ -4,7 +4,7 @@
 Run on a workstation or laptop, not the Pi. The on-Pi generate path
 (generate_one.py) cuts new birds with a quick chroma flood - good
 enough to draw, rough at the edges. This pulls each such bird's raw
-cream-ground render from the Pi over HTTP, mattes it locally with
+cream-ground render from the Pi over SSH, mattes it locally with
 BiRefNet (the ~1GB model the Pi can't fit), pushes the refined cutouts
 back over ssh, and rebuilds their masks in place. cuts.json entries
 clear as birds are upgraded, which also clears the menu notification.
@@ -18,14 +18,18 @@ The first run downloads the BiRefNet model (~1GB) to ~/.u2net/.
 from __future__ import annotations
 import argparse
 import json
+import re
+import shlex
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 
 CREAM_TOL = 11   # near-paper distance (matches the repo cutout pipeline)
 PLUMAGE = 18     # beyond this distance from paper counts as inked body
+PI_TARGET_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*@[A-Za-z0-9][A-Za-z0-9._:-]*$")
+PATH_PART_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
 def birefnet_cut(src: Path, dst: Path, sess) -> None:
@@ -81,9 +85,40 @@ def birefnet_cut(src: Path, dst: Path, sess) -> None:
     Image.fromarray(rgba[y0:y1, x0:x1], "RGBA").save(dst)
 
 
-def fetch(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=30) as r:
-        return r.read()
+def validate_target(value: str) -> str:
+    if not PI_TARGET_RE.fullmatch(value):
+        raise ValueError("--pi must be a safe user@host target")
+    return value
+
+
+def validate_repo(value: str) -> str:
+    repo = value.rstrip("/")
+    parts = repo.split("/")
+    if (not repo or repo.startswith("/") or any(
+            part in ("", ".", "..") or not PATH_PART_RE.fullmatch(part)
+            for part in parts)):
+        raise ValueError("--repo must be a safe relative path")
+    return repo
+
+
+def validate_slug(value: object) -> str:
+    if not isinstance(value, str) or not SLUG_RE.fullmatch(value):
+        raise ValueError(f"unsafe cutout name in cuts.json: {value!r}")
+    return value
+
+
+def read_remote(pi: str, path: str) -> bytes:
+    """Read one validated station file without publishing it through Caddy."""
+    result = subprocess.run(
+        ["ssh", pi, f"cat -- {shlex.quote(path)}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise RuntimeError(detail or f"ssh could not read {path}")
+    return result.stdout
 
 
 def main() -> int:
@@ -95,11 +130,14 @@ def main() -> int:
                     help="repo dir on the Pi, relative to its $HOME (default BirdNET-Pi)")
     args = ap.parse_args()
 
-    if "@" not in args.pi:
-        print("error: --pi must be user@host", file=sys.stderr)
+    try:
+        pi = validate_target(args.pi)
+        repo = validate_repo(args.repo)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
-    host = args.pi.split("@", 1)[1]
-    base = f"http://{host}/avian/assets/illustrations"
+    host = pi.split("@", 1)[1]
+    base = f"{repo}/avian/assets/illustrations"
 
     try:
         from rembg import new_session  # noqa: F401
@@ -110,11 +148,13 @@ def main() -> int:
         return 2
 
     try:
-        cuts = json.loads(fetch(f"{base}/cuts.json"))
+        cuts = json.loads(read_remote(pi, f"{base}/cuts.json"))
+        if not isinstance(cuts, dict):
+            raise ValueError("cuts.json is not an object")
+        slugs = sorted(validate_slug(k) for k, v in cuts.items() if v == "chroma")
     except Exception as e:
-        print(f"error: could not fetch cuts.json from {host}: {e}", file=sys.stderr)
+        print(f"error: could not read cuts.json from {host}: {e}", file=sys.stderr)
         return 1
-    slugs = sorted(k for k, v in cuts.items() if v == "chroma")
     if not slugs:
         print("nothing to upgrade - no instant cutouts recorded")
         return 0
@@ -127,7 +167,7 @@ def main() -> int:
     done, failed = [], []
     for slug in slugs:
         try:
-            raw = fetch(f"{base}/raw/{slug}.png")
+            raw = read_remote(pi, f"{base}/raw/{slug}.png")
             src = tmp / f"{slug}.raw.png"
             src.write_bytes(raw)
             out = tmp / f"{slug}.png"
@@ -146,28 +186,27 @@ def main() -> int:
     # scp overwrite fails; a rename into the group-writable dir doesn't.
     # cuts.json is only pruned after the masks rebuild succeeds, so a
     # failed run stays retryable instead of "nothing to upgrade".
-    repo = args.repo.rstrip("/")
     stage = f"{repo}/avian/assets/illustrations/.upgrade-stage"
     for s in done:
         cuts.pop(s, None)
     cj = tmp / "cuts.json"
     cj.write_text(json.dumps(cuts, indent=0, sort_keys=True) + "\n")
     print(f"pushing {len(done)} cutout(s) to {args.pi}:{stage}/")
-    if subprocess.run(["ssh", args.pi, f"mkdir -p {stage}"]).returncode != 0:
+    if subprocess.run(["ssh", pi, f"mkdir -p -- {shlex.quote(stage)}"]).returncode != 0:
         print("error: ssh mkdir failed", file=sys.stderr)
         return 1
     files = [str(tmp / f"{s}.png") for s in done] + [str(cj)]
-    if subprocess.run(["scp", "-q", *files, f"{args.pi}:{stage}/"]).returncode != 0:
+    if subprocess.run(["scp", "-q", *files, f"{pi}:{stage}/"]).returncode != 0:
         print("error: scp failed", file=sys.stderr)
         return 1
     # Braces, not parentheses: a subshell would drop the P assignment.
-    remote = (f"cd {repo}"
+    remote = (f"cd -- {shlex.quote(repo)}"
               f" && {{ test -x birdnet/bin/python3 && P=birdnet/bin/python3 || P=python3; }}"
               f" && mv -f avian/assets/illustrations/.upgrade-stage/*.png avian/assets/illustrations/"
-              f" && $P avian/scripts/build_masks.py --add {' '.join(done)}"
+              f" && $P avian/scripts/build_masks.py --add {' '.join(shlex.quote(s) for s in done)}"
               f" && mv -f avian/assets/illustrations/.upgrade-stage/cuts.json avian/assets/illustrations/"
               f" && rmdir avian/assets/illustrations/.upgrade-stage")
-    if subprocess.run(["ssh", args.pi, remote]).returncode != 0:
+    if subprocess.run(["ssh", pi, remote]).returncode != 0:
         print("error: remote install failed (staged files remain in .upgrade-stage; rerun after fixing)",
               file=sys.stderr)
         return 1

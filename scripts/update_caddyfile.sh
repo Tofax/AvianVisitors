@@ -124,7 +124,7 @@ $legacy_handles
   # The webroot also links the frontend asset directory. Publish only the
   # checked-in stamp artwork; local recording previews and future working
   # files beneath /assets remain private.
-  @publicFrontendStamp path_regexp publicFrontendStamp ^/assets/stamp/[A-Za-z0-9][A-Za-z0-9._-]*[.](png|jpg|svg)$
+  @publicFrontendStamp path /assets/stamp/owl-pale-treeline.jpg /assets/stamp/paper-texture-grey.png /assets/stamp/rough-concrete-cc0.png
   handle @publicFrontendStamp {
     file_server
   }

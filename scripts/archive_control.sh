@@ -67,6 +67,51 @@ birdnet_conf="$repo_dir/birdnet.conf"
 service_path=/etc/systemd/system/bird-archive.service
 timer_path=/etc/systemd/system/bird-archive.timer
 
+path_exists() {
+  [ -e "$1" ] || [ -L "$1" ]
+}
+
+require_safe_archive_dir() {
+  path_exists "$archive_dir" || return 0
+  [ -d "$archive_dir" ] && [ ! -L "$archive_dir" ] \
+    || fail "archive directory is not a regular directory"
+  [ "$(readlink -f -- "$archive_dir")" = "$archive_dir" ] \
+    || fail "archive directory leaves the station home"
+  [ "$(stat -c %U -- "$archive_dir")" = "$birdnet_user" ] \
+    || fail "archive directory has the wrong owner"
+}
+
+require_safe_regular_file() {
+  local path=$1 expected_owner=$2 label=$3
+  path_exists "$path" || return 0
+  [ -f "$path" ] && [ ! -L "$path" ] \
+    || fail "$label is not a regular file"
+  [ "$(stat -c %h -- "$path")" = 1 ] \
+    || fail "$label has multiple hard links"
+  [ "$(stat -c %U -- "$path")" = "$expected_owner" ] \
+    || fail "$label has the wrong owner"
+}
+
+safe_copy_into_archive() {
+  local source=$1 destination=$2 owner=$3 group=$4 mode=$5 label=$6
+  local temp
+  temp=$(mktemp "$archive_dir/.archive-write.XXXXXX") \
+    || fail "could not stage $label"
+  if ! cat -- "$source" >"$temp"; then
+    rm -f -- "$temp"
+    fail "could not stage $label"
+  fi
+  chown "$owner:$group" "$temp" || { rm -f -- "$temp"; fail "could not set $label owner"; }
+  chmod "$mode" "$temp" || { rm -f -- "$temp"; fail "could not set $label mode"; }
+  mv -fT -- "$temp" "$destination" \
+    || { rm -f -- "$temp"; fail "could not install $label"; }
+}
+
+require_safe_archive_dir
+require_safe_regular_file "$archive_script" root "archive worker"
+require_safe_regular_file "$archive_conf" "$birdnet_user" "archive config"
+require_safe_regular_file "$archive_status" "$birdnet_user" "archive status"
+
 conf_value() {
   local file=$1 key=$2 fallback=${3-}
   local value=''
@@ -84,6 +129,8 @@ conf_value() {
 
 write_conf_value() {
   local key=$1 value=$2
+  require_safe_archive_dir
+  require_safe_regular_file "$archive_conf" "$birdnet_user" "archive config"
   [ -f "$archive_conf" ] || fail "archive is not installed"
   local temp
   temp=$(mktemp "$archive_dir/.archive.conf.XXXXXX") || fail "could not create archive config"
@@ -98,8 +145,12 @@ write_conf_value() {
     rm -f "$temp"
     fail "could not update archive config"
   fi
-  install -o "$birdnet_user" -g "$birdnet_group" -m 0600 "$temp" "$archive_conf"
-  rm -f "$temp"
+  chown "$birdnet_user:$birdnet_group" "$temp" \
+    || { rm -f -- "$temp"; fail "could not set archive config owner"; }
+  chmod 0600 "$temp" \
+    || { rm -f -- "$temp"; fail "could not set archive config mode"; }
+  mv -fT -- "$temp" "$archive_conf" \
+    || { rm -f -- "$temp"; fail "could not replace archive config"; }
 }
 
 dependency_state() {
@@ -194,15 +245,23 @@ case "$action" in
     print_status
     ;;
   install)
+    require_safe_regular_file "$source_dir/archive_to_drive.sh" "$birdnet_user" "archive worker source"
+    require_safe_regular_file "$source_dir/archive.conf.example" "$birdnet_user" "archive config template"
     [ -f "$source_dir/archive_to_drive.sh" ] || fail "archive extra is missing from this checkout"
     [ -f "$source_dir/archive.conf.example" ] || fail "archive config template is missing"
+    require_safe_archive_dir
     install -d -o "$birdnet_user" -g "$birdnet_group" -m 0700 "$archive_dir"
-    install -o root -g root -m 0755 "$source_dir/archive_to_drive.sh" "$archive_script"
+    require_safe_archive_dir
+    require_safe_regular_file "$archive_script" root "archive worker"
+    require_safe_regular_file "$archive_conf" "$birdnet_user" "archive config"
+    safe_copy_into_archive "$source_dir/archive_to_drive.sh" "$archive_script" \
+      root root 0755 "archive worker"
     if [ ! -f "$archive_conf" ]; then
-      install -o "$birdnet_user" -g "$birdnet_group" -m 0600 "$source_dir/archive.conf.example" "$archive_conf"
+      safe_copy_into_archive "$source_dir/archive.conf.example" "$archive_conf" \
+        "$birdnet_user" "$birdnet_group" 0600 "archive config"
     else
-      chown "$birdnet_user:$birdnet_group" "$archive_conf"
-      chmod 0600 "$archive_conf"
+      safe_copy_into_archive "$archive_conf" "$archive_conf" \
+        "$birdnet_user" "$birdnet_group" 0600 "archive config"
     fi
     cat >"$service_path" <<EOF
 [Unit]

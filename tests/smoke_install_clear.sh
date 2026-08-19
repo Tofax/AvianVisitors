@@ -15,6 +15,17 @@ for preview_path in \
     || fail "private recording preview is not ignored: $preview_path"
 done
 
+for stamp_asset in \
+  owl-pale-treeline.jpg \
+  paper-texture-grey.png \
+  rough-concrete-cc0.png; do
+  grep -Fq "/assets/stamp/$stamp_asset" /source/scripts/update_caddyfile.sh \
+    || fail "Caddy public asset policy does not include: $stamp_asset"
+done
+if grep -Fq 'path_regexp publicFrontendStamp' /source/scripts/update_caddyfile.sh; then
+  fail "Caddy stamp policy is broader than the reviewed asset list"
+fi
+
 # Bundle discovery, installation, sharing, and regional generation belong to
 # the next release. Keep their endpoints, handoffs, and UI out of this one.
 deferred_bundle_pattern='BUNDLE_FEATURE_ENABLED|bird:style|local-packs/|bundles[.]php|bundle-generate[.]php|avianvisitors[.]com/bundles|install-bundle|bundle-catalog|data-bundle-(plan|start|share)|Bird bundle|regional bundle'

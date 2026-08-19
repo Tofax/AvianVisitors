@@ -64,6 +64,14 @@ chmod 0755 /usr/local/bin/rclone /usr/local/bin/sqlite3 /usr/local/bin/systemctl
 
 control=/source/scripts/archive_control.sh
 
+outside_dir=/tmp/archive-outside
+mkdir -p "$outside_dir"
+ln -s "$outside_dir" /home/bird/bird-archive
+if $control install >/dev/null 2>&1; then fail "archive directory symlink accepted"; fi
+[ -z "$(find "$outside_dir" -mindepth 1 -print -quit)" ] \
+  || fail "archive directory symlink wrote outside the station home"
+rm /home/bird/bird-archive
+
 install_json=$($control install)
 grep -q '"installed":true' <<<"$install_json" || fail "install state"
 grep -q '^User=bird$' /etc/systemd/system/bird-archive.service || fail "unit user"
@@ -72,6 +80,38 @@ systemd-analyze verify /etc/systemd/system/bird-archive.service \
   /etc/systemd/system/bird-archive.timer
 [ "$(stat -c '%U:%G:%a' /home/bird/bird-archive/archive_to_drive.sh)" = 'root:root:755' ] \
   || fail "worker ownership"
+
+cp /home/bird/bird-archive/archive.conf /tmp/archive.conf.saved
+printf 'outside sentinel\n' >/tmp/outside-conf
+outside_before=$(stat -c '%U:%G:%a:%s' /tmp/outside-conf)
+rm /home/bird/bird-archive/archive.conf
+ln -s /tmp/outside-conf /home/bird/bird-archive/archive.conf
+if $control install >/dev/null 2>&1; then fail "archive config symlink accepted"; fi
+[ "$(stat -c '%U:%G:%a:%s' /tmp/outside-conf)" = "$outside_before" ] \
+  || fail "archive config symlink changed outside metadata"
+grep -qx 'outside sentinel' /tmp/outside-conf \
+  || fail "archive config symlink changed outside contents"
+rm /home/bird/bird-archive/archive.conf
+mv /tmp/archive.conf.saved /home/bird/bird-archive/archive.conf
+chown bird:bird /home/bird/bird-archive/archive.conf
+chmod 0600 /home/bird/bird-archive/archive.conf
+
+mv /home/bird/bird-archive/archive.conf /tmp/archive-hardlink-conf
+chown bird:bird /tmp/archive-hardlink-conf
+chmod 0600 /tmp/archive-hardlink-conf
+ln /tmp/archive-hardlink-conf /home/bird/bird-archive/archive.conf
+if $control install >/dev/null 2>&1; then fail "archive config hard link accepted"; fi
+[ "$(stat -c %h /tmp/archive-hardlink-conf)" -eq 2 ] \
+  || fail "archive config hard-link test changed unexpectedly"
+rm /home/bird/bird-archive/archive.conf
+mv /tmp/archive-hardlink-conf /home/bird/bird-archive/archive.conf
+config_before=$(sha256sum /home/bird/bird-archive/archive.conf | awk '{print $1}')
+repeat_json=$($control install)
+grep -q '"installed":true' <<<"$repeat_json" || fail "repeat install state"
+[ "$(sha256sum /home/bird/bird-archive/archive.conf | awk '{print $1}')" = "$config_before" ] \
+  || fail "repeat install changed archive config"
+[ "$(stat -c '%U:%G:%a' /home/bird/bird-archive/archive.conf)" = 'bird:bird:600' ] \
+  || fail "repeat install changed archive config metadata"
 
 mkdir -p /home/bird/.config/rclone
 cat >/home/bird/.config/rclone/rclone.conf <<'EOF'
@@ -111,8 +151,10 @@ grep -q 'short-lived-secret' <<<"$enabled_json" && fail "access token leaked"
 
 if $control purge-on >/dev/null 2>&1; then fail "cleanup unlocked before a safe run"; fi
 echo 'OK 2026-08-04T03:20:00-07:00 verified_files=0' >/home/bird/bird-archive/status
+chown bird:bird /home/bird/bird-archive/status
 if $control purge-on >/dev/null 2>&1; then fail "empty run unlocked cleanup"; fi
 echo 'OK 2026-08-04T03:20:00-07:00 verified_files=3' >/home/bird/bird-archive/status
+chown bird:bird /home/bird/bird-archive/status
 purge_json=$($control purge-on)
 grep -q '"purge":true' <<<"$purge_json" || fail "cleanup opt-in"
 grep -q '^PURGE=true$' /home/bird/bird-archive/archive.conf || fail "cleanup config"
