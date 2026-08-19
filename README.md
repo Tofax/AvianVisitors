@@ -54,6 +54,35 @@ Clones this fork, installs BirdNET-Pi, symlinks the AvianVisitors overlay into t
 
 Collage: `http://birdnet.local/`. Stock BirdNET-Pi UI: `http://birdnet.local/index.php`. The menu button in the top right opens an admin overlay with settings, system, log, and tool panels.
 
+Stock BirdNET-Pi pages still render, but privileged legacy controls are not enabled. Use the Avian Visitors menu for the station controls it exposes, and SSH for remaining maintenance.
+
+Optional Google Drive backups are set up under **Tools → Your data → Drive archive**. Local cleanup stays unavailable until an archive run has been verified.
+
+### Updating an existing station
+
+For the first v1 update, keep the existing checkout and run:
+
+```bash
+upgrade=$(mktemp "$HOME/avian-v1-upgrade.XXXXXX")
+curl -fsSL https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitors/scripts/bootstrap_v1.sh -o "$upgrade"
+sudo bash "$upgrade"
+rm -f "$upgrade"
+```
+
+After v1, use **Tools → Pull latest** or run:
+
+```bash
+cd ~/BirdNET-Pi
+./scripts/update_birdnet.sh
+```
+
+The updater keeps generated mask data and stops if tracked files have local edits. If its service setup needs repair, use **Tools → Reinstall services** or run:
+
+```bash
+cd ~/BirdNET-Pi
+./scripts/reinstall_services.sh
+```
+
 ---
 
 ## 3. (Optional) Restyle the illustrations
@@ -69,6 +98,8 @@ python3 ~/BirdNET-Pi/avian/scripts/pregen.py --labels ~/BirdNET-Pi/model/labels.
 python3 ~/BirdNET-Pi/avian/scripts/cutout.py
 python3 ~/BirdNET-Pi/avian/scripts/build_masks.py
 ```
+
+On a Pi with 4 GB of RAM or less, add `--model u2net` to the `cutout.py` command; the default model may be [OOM-killed](https://github.com/Twarner491/AvianVisitors/issues/17).
 
 Filter to your region with `--ebird-region US-CA` (needs `EBIRD_API_KEY`). The full pipeline, prompt, reference images, and per-species tuning live in [`avian/scripts/README.md`](avian/scripts/README.md). Style lives in [`prompt.template.md`](avian/scripts/prompt.template.md).
 
