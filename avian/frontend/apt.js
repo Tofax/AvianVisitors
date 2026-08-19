@@ -193,7 +193,12 @@
   }
   // The buttons size from text content; wait for fonts so width is correct.
   if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(syncAllPills);
+    document.fonts.ready.then(function () {
+      syncAllPills();
+      // Label widths measured before the handwriting face loaded used
+      // fallback metrics; re-render so the packer gets the real ones.
+      if (labelsOn()) renderCollageFromData();
+    });
   }
   // Also sync after layout is definitely done.
   requestAnimationFrame(function () { requestAnimationFrame(syncAllPills); });
@@ -310,6 +315,36 @@
     return d ? d[0] / d[1] : 1.4;
   }
 
+  // ---- Collage labels ----
+  // Optional handwritten name under each bird, unioned into the packing
+  // footprint so the nester leaves room for it. Off by default; saved on
+  // this device like the theme. ?labels=1|0 overrides both (that is how
+  // the frame's shoot can force them without localStorage).
+  var LABEL_GAP = 2;   // px between a bird's bbox and its label strip
+  var labelParam = /[?&]labels=(1|0)\b/.exec(location.search);
+  function labelsOn() {
+    if (labelParam) return labelParam[1] === '1';
+    return readLS('bird:labels', 'off') === 'on';
+  }
+  var labelCtx = document.createElement('canvas').getContext('2d');
+  function assignLabels(tiles) {
+    // Recomputed before every pack. The font tracks the tile's current
+    // width - the shrink loop rescales tiles, and a fixed-size label
+    // would grow relative to shrinking birds and stall convergence.
+    var on = labelsOn();
+    tiles.forEach(function (t) {
+      t.labelW = 0; t.labelH = 0; t.labelPx = 0;
+      if (!on) return;
+      var name = t.data.com || t.data.sci;
+      if (!name || t.fullW < 56) return;   // too small to letter under
+      var px = Math.round(Math.max(12, Math.min(20, t.fullW * 0.14)));
+      labelCtx.font = '600 ' + px + 'px Hand, cursive';
+      t.labelPx = px;
+      t.labelW = Math.min(labelCtx.measureText(name).width + 6, t.fullW * 1.7);
+      t.labelH = LABEL_GAP + Math.round(px * 1.2);
+    });
+  }
+
   // Mask-aware nester. tiles: { fullW, fullH, mask, data }. Returns the
   // same tiles with .x, .y assigned (top-left in viewport coords).
   function maskPack(tiles, W, H, xBias, yBias, pad) {
@@ -330,6 +365,18 @@
       if (x1 >= GW) x1 = GW - 1; if (y1 >= GH) y1 = GH - 1;
       return [x0, y0, x1, y1];
     }
+    function labelRange(tile, tx, ty) {
+      // Grid-space rect for the tile's label strip (centred under the
+      // bbox), mirroring cellRange's truncate + clamp.
+      var lx = tx + (tile.fullW - tile.labelW) / 2;
+      var x0 = lx / GRID_STRIDE | 0;
+      var y0 = (ty + tile.fullH) / GRID_STRIDE | 0;
+      var x1 = (lx + tile.labelW) / GRID_STRIDE | 0;
+      var y1 = (ty + tile.fullH + tile.labelH) / GRID_STRIDE | 0;
+      if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0;
+      if (x1 >= GW) x1 = GW - 1; if (y1 >= GH) y1 = GH - 1;
+      return [x0, y0, x1, y1];
+    }
     function collides(tile, tx, ty) {
       var cells = tile.mask.cells;
       for (var i = 0; i < cells.length; i++) {
@@ -338,6 +385,15 @@
           var off = gy * GW;
           for (var gx = r[0]; gx <= r[2]; gx++) {
             if (grid[off + gx]) return true;
+          }
+        }
+      }
+      if (tile.labelH) {
+        var lr = labelRange(tile, tx, ty);
+        for (var ly = lr[1]; ly <= lr[3]; ly++) {
+          var loff = ly * GW;
+          for (var lx = lr[0]; lx <= lr[2]; lx++) {
+            if (grid[loff + lx]) return true;
           }
         }
       }
@@ -359,10 +415,27 @@
           for (var gx = gx0; gx <= gx1; gx++) grid[off + gx] = 1;
         }
       }
+      if (tile.labelH) {
+        // The label strip gets the same padded stamp, so neighbours keep
+        // their distance from the lettering too.
+        var lr = labelRange(tile, tx, ty);
+        var ly0 = lr[1] - pad, ly1 = lr[3] + pad;
+        var lx0 = lr[0] - pad, lx1 = lr[2] + pad;
+        if (ly0 < 0) ly0 = 0; if (lx0 < 0) lx0 = 0;
+        if (ly1 >= GH) ly1 = GH - 1; if (lx1 >= GW) lx1 = GW - 1;
+        for (var gy2 = ly0; gy2 <= ly1; gy2++) {
+          var off2 = gy2 * GW;
+          for (var gx2 = lx0; gx2 <= lx1; gx2++) grid[off2 + gx2] = 1;
+        }
+      }
     }
     function offGrid(tile, tx, ty) {
-      // True if the rendered tile bbox extends past the viewport.
-      return tx < 0 || ty < 0 || tx + tile.fullW > W || ty + tile.fullH > H;
+      // True if the rendered tile bbox (plus its label strip, which can
+      // hang below and slightly wider than the bbox) leaves the viewport.
+      var lw = tile.labelW || 0;
+      var ov = lw > tile.fullW ? (lw - tile.fullW) / 2 : 0;
+      return tx - ov < 0 || ty < 0 || tx + tile.fullW + ov > W ||
+        ty + tile.fullH + (tile.labelH || 0) > H;
     }
 
     var cx = W / 2, cy = H / 2;
@@ -539,6 +612,7 @@
     var yBias = narrow ? 1.7 : 1;   // gentler than the desktop bias so the
     // portrait cluster stays a bit wider / less tall
     var pad = narrow ? Math.max(1, COLLAGE_PAD - 1) : COLLAGE_PAD;
+    assignLabels(tiles);
     var placed = maskPack(tiles, W, H, xBias, yBias, pad);
 
     // Scale-to-fit: iterate shrink + repack until every tile lands on
@@ -550,10 +624,14 @@
       var L = Infinity, R = -Infinity, T2 = Infinity, B = -Infinity;
       arr.forEach(function (t) {
         if (t.x < -1000) return;
-        if (t.x < L) L = t.x;
-        if (t.x + t.fullW > R) R = t.x + t.fullW;
+        // A label strip can hang below the bbox and slightly wider; the
+        // bounds must cover it or re-centring pushes lettering off-screen.
+        var lw = t.labelW || 0;
+        var ov = lw > t.fullW ? (lw - t.fullW) / 2 : 0;
+        if (t.x - ov < L) L = t.x - ov;
+        if (t.x + t.fullW + ov > R) R = t.x + t.fullW + ov;
         if (t.y < T2) T2 = t.y;
-        if (t.y + t.fullH > B) B = t.y + t.fullH;
+        if (t.y + t.fullH + (t.labelH || 0) > B) B = t.y + t.fullH + (t.labelH || 0);
       });
       return { L: L, R: R, T: T2, B: B };
     }
@@ -572,6 +650,7 @@
         scale = Math.min(scale, sx, sy);
       }
       tiles.forEach(function (t) { t.fullW *= scale; t.fullH *= scale; });
+      assignLabels(tiles);   // font tracks the new tile widths
       placed = maskPack(tiles, W, H, xBias, yBias, pad);
       b = clusterBounds(placed);
     }
@@ -610,6 +689,15 @@
       btn.style.width = r.fullW + 'px';
       btn.style.height = r.fullH + 'px';
       btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">';
+      if (r.labelH) {
+        // Handwritten name under the bird, like a collector's pencil note.
+        // The packer reserved this strip, so it never sits on a neighbour.
+        var lab = document.createElement('span');
+        lab.className = 'gtile-label';
+        lab.textContent = s.com || s.sci;
+        lab.style.font = '600 ' + r.labelPx + 'px Hand, cursive';
+        btn.appendChild(lab);
+      }
       r.el = btn;
       collage.appendChild(btn);
     });
@@ -2033,6 +2121,19 @@
       + '  <div class="seg" data-theme-seg>' + btn('light', 'light') + btn('dark', 'dark') + '</div>'
       + '</div>';
   }
+  // Client-side collage-labels switcher; same instant-apply pattern as
+  // the theme row (data-labels-seg keeps it out of the Pi config flow).
+  function labelsRow() {
+    var cur = readLS('bird:labels', 'off');
+    var btn = function (v, label) {
+      return '<button type="button" data-labels="' + v + '" aria-current="' + (cur === v ? 'true' : 'false') + '">' + label + '</button>';
+    };
+    return ''
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Bird names</span><span class="hint">lettered under each bird in the collage</span></div>'
+      + '  <div class="seg" data-labels-seg>' + btn('off', 'off') + btn('on', 'on') + '</div>'
+      + '</div>';
+  }
   function wireSettingsControls(scope) {
     scope = scope || document;
     scope.querySelectorAll('.switch').forEach(function (sw) {
@@ -2053,7 +2154,7 @@
         setSaveState('change pending');
       });
     });
-    scope.querySelectorAll('.seg:not([data-theme-seg])').forEach(function (seg) {
+    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-labels-seg])').forEach(function (seg) {
       seg.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
           seg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
@@ -2604,6 +2705,7 @@
         adminBody.innerHTML =
           '<div class="admin-settings">'
           + themeRow()
+          + labelsRow()
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSlider('CONFIDENCE', 'Confidence threshold', 'min score to log a detection', v.CONFIDENCE, 0.1, 0.95, 0.05, 2)
           + settingsSlider('SENSITIVITY', 'Sensitivity', 'analyzer sensitivity', v.SENSITIVITY, 0.5, 1.5, 0.05, 2)
@@ -2629,6 +2731,22 @@
           [].forEach.call(themeSeg.querySelectorAll('button'), function (x) {
             x.setAttribute('aria-current', x === b ? 'true' : 'false');
           });
+        });
+        // Labels switcher applies + persists immediately too. The second
+        // render after the handwriting face loads swaps the measured
+        // fallback metrics for the real ones.
+        var labelsSeg = adminBody.querySelector('[data-labels-seg]');
+        if (labelsSeg) labelsSeg.addEventListener('click', function (ev) {
+          var b = ev.target.closest('button[data-labels]');
+          if (!b) return;
+          writeLS('bird:labels', b.getAttribute('data-labels'));
+          [].forEach.call(labelsSeg.querySelectorAll('button'), function (x) {
+            x.setAttribute('aria-current', x === b ? 'true' : 'false');
+          });
+          renderCollageFromData();
+          if (document.fonts && document.fonts.load) {
+            document.fonts.load('600 16px Hand').then(function () { renderCollageFromData(); });
+          }
         });
         var saveBtn = document.getElementById('saveBtn');
         if (saveBtn) saveBtn.addEventListener('click', saveSettings);

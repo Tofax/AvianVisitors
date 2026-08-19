@@ -1699,3 +1699,25 @@ body.av-local #dd-items  { display: block; }
 @media (max-width: 700px) {
   .rh-plot { height: 120px; }
 }
+
+/* ============ Collage labels ============ */
+/* Handwritten face (Caveat, OFL - license alongside the font file).
+   Loaded lazily: nothing references 'Hand' until labels are on. The
+   ./avian/... path resolves from the webroot, where styles.css is
+   symlinked next to the avian/ tree. */
+@font-face {
+  font-family: 'Hand';
+  src: url('./avian/frontend/fonts/Caveat.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+}
+/* Optional name under each bird, like a collector's pencil note. The
+   packer reserved the strip (labelW x labelH), so it never sits on a
+   neighbour; it inherits the tile's bloom and hover scale for free. */
+.gtile-label {
+  position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  margin-top: 1px;
+  color: var(--ink); white-space: nowrap; line-height: 1.2;
+  pointer-events: none;
+}
