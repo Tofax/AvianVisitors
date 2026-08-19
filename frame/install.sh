@@ -121,6 +121,7 @@ base_url = "http://birdnet.local"
 shoot = true
 shoot_title = "Avian Visitors"
 shoot_subtitle = "Heard Today"
+bird_names = false
 rotate = 90          # flip to 270 if the frame hangs the other way up
 saturation = 0.6
 timeout = 180        # a Zero 2 W needs ~70-120s to shoot the collage
@@ -153,10 +154,13 @@ else
     printf '%s\n' 'shoot = true         # this Pi renders the collage'
     printf '%s\n' 'shoot_title = "Avian Visitors"'
     printf '%s\n' 'shoot_subtitle = "Heard Today"'
+    printf '%s\n' 'bird_names = false'
     printf '%s\n' 'rotate = 90          # flip to 270 if the frame hangs the other way up'
     printf '%s\n' 'saturation = 0.6'
   } > "$CONFIG"
 fi
+
+sudo ln -sfn "$FRAME/birdframe-names" /usr/local/bin/birdframe-names
 
 echo "5/5  Installing systemd service + timer..."
 # Every mode runs display.py against the config on the standard 15-minute timer;
