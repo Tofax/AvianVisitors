@@ -180,7 +180,13 @@ done
 # Fetching is the only operation allowed before all working-tree and ancestry
 # checks pass. The explicit refspec ignores a station-controlled default fetch
 # mapping, and --no-tags keeps unrelated refs out of the update boundary.
-if ! git_station fetch --no-tags --prune origin \
+# Complete a shallow checkout in the same constrained fetch. Multiple shallow
+# boundaries can otherwise hide a valid legacy ancestor and look like a fork.
+shallow_repository=$(git_station rev-parse --is-shallow-repository) \
+  || die 'Git could not inspect the checkout history'
+fetch_history_args=()
+[ "$shallow_repository" != true ] || fetch_history_args=(--unshallow)
+if ! git_station fetch --no-tags --prune "${fetch_history_args[@]}" origin \
   "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH"; then
   die "could not fetch origin/$RELEASE_BRANCH"
 fi
@@ -199,6 +205,11 @@ target_commit=$(git_station rev-parse --verify "$target_ref^{commit}")
 original_release_head=''
 if git_station show-ref --verify --quiet "refs/heads/$RELEASE_BRANCH"; then
   original_release_head=$(git_station rev-parse --verify "refs/heads/$RELEASE_BRANCH^{commit}")
+fi
+original_fetch_refspecs=()
+if git_station config --get-all remote.origin.fetch >/dev/null 2>&1; then
+  read_git_nul original_fetch_refspecs \
+    config --null --get-all remote.origin.fetch
 fi
 
 staged_paths=()
@@ -238,6 +249,7 @@ generated_archive=''
 collision_archive=''
 collision_paths=()
 legacy_branch_created=false
+fetch_refspec_changed=false
 transaction_complete=false
 last_archive=''
 
@@ -331,6 +343,16 @@ rollback() {
     elif [ -n "$generated_archive" ]; then
       rollback_failed=true
     fi
+    if [ "$fetch_refspec_changed" = true ]; then
+      if git_station config --unset-all remote.origin.fetch >/dev/null 2>&1; then
+        for original_fetch_refspec in "${original_fetch_refspecs[@]}"; do
+          git_station config --add remote.origin.fetch "$original_fetch_refspec" \
+            >/dev/null 2>&1 || rollback_failed=true
+        done
+      else
+        rollback_failed=true
+      fi
+    fi
     if [ "$rollback_failed" = true ]; then
       echo "Rollback was incomplete. Backups remain at $backup_dir" >&2
     fi
@@ -419,6 +441,12 @@ else
   git_station merge --ff-only "$target_ref"
 fi
 
+# Depth-limited legacy clones normally fetch only main. Replace every inherited
+# mapping with the exact release mapping before recording the new upstream.
+release_fetch_refspec="+refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH"
+git_station config --replace-all remote.origin.fetch "$release_fetch_refspec" \
+  || die 'could not configure the release fetch mapping'
+fetch_refspec_changed=true
 git_station branch --set-upstream-to="origin/$RELEASE_BRANCH" "$RELEASE_BRANCH" >/dev/null
 
 if [ -n "$generated_archive" ]; then
