@@ -3355,11 +3355,10 @@ body.av-local #dd-items  { display: block; }
 /* ============ Collage labels ============ */
 /* Handwritten face (Caveat, OFL - license alongside the font file).
    Loaded lazily: nothing references 'Hand' until labels are on. The
-   ./avian/... path resolves from the webroot, where styles.css is
-   symlinked next to the avian/ tree. */
+   ./fonts/... path resolves through the production webroot link. */
 @font-face {
   font-family: 'Hand';
-  src: url('./avian/frontend/fonts/Caveat.ttf') format('truetype');
+  src: url('./fonts/Caveat.ttf') format('truetype');
   font-weight: 400 700;
   font-display: swap;
 }
