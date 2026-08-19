@@ -6,6 +6,8 @@
 # the unprivileged BirdNET-Pi user.
 
 set -u -o pipefail
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 CONTROL_VERSION=1
 
@@ -53,7 +55,8 @@ fi
 passwd_row=$(getent passwd "$birdnet_user")
 [ -n "$passwd_row" ] || fail "BirdNET-Pi user does not exist"
 birdnet_home=$(printf '%s\n' "$passwd_row" | cut -d: -f6)
-birdnet_group=$(id -gn "$birdnet_user")
+birdnet_uid=$(id -u "$birdnet_user")
+birdnet_gid=$(id -g "$birdnet_user")
 [[ "$birdnet_home" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "BirdNET-Pi home path is not safe"
 [[ "$birdnet_home" != *'..'* ]] || fail "BirdNET-Pi home path is not safe"
 
@@ -93,18 +96,155 @@ require_safe_regular_file() {
 }
 
 safe_copy_into_archive() {
-  local source=$1 destination=$2 owner=$3 group=$4 mode=$5 label=$6
-  local temp
-  temp=$(mktemp "$archive_dir/.archive-write.XXXXXX") \
-    || fail "could not stage $label"
-  if ! cat -- "$source" >"$temp"; then
-    rm -f -- "$temp"
-    fail "could not stage $label"
-  fi
-  chown "$owner:$group" "$temp" || { rm -f -- "$temp"; fail "could not set $label owner"; }
-  chmod "$mode" "$temp" || { rm -f -- "$temp"; fail "could not set $label mode"; }
-  mv -fT -- "$temp" "$destination" \
-    || { rm -f -- "$temp"; fail "could not install $label"; }
+  local source=$1 destination_name=$2 owner_id=$3 group_id=$4 mode=$5 label=$6
+  case "$destination_name" in
+    archive_to_drive.sh|archive.conf) ;;
+    *) fail "archive destination is not allowed" ;;
+  esac
+  /usr/bin/python3 - \
+    "$birdnet_home" "$birdnet_uid" "$source" "$destination_name" \
+    "$owner_id" "$group_id" "$mode" 2>/dev/null <<'PY' \
+    || fail "could not install $label"
+import os
+import secrets
+import stat
+import sys
+
+home, station_uid, source, destination, owner, group, mode = sys.argv[1:]
+station_uid = int(station_uid)
+owner = int(owner)
+group = int(group)
+mode = int(mode, 8)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+home_fd = os.open(home, flags | os.O_DIRECTORY)
+directory_fd = -1
+source_fd = -1
+temp_fd = -1
+temp_name = ".archive-write-" + secrets.token_hex(12)
+try:
+    directory_fd = os.open("bird-archive", flags | os.O_DIRECTORY, dir_fd=home_fd)
+    directory_stat = os.fstat(directory_fd)
+    if directory_stat.st_uid != station_uid:
+        raise PermissionError("archive directory owner changed")
+    source_fd = os.open(source, flags)
+    source_stat = os.fstat(source_fd)
+    if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1:
+        raise PermissionError("archive source is not a single regular file")
+    temp_fd = os.open(
+        temp_name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=directory_fd,
+    )
+    while True:
+        chunk = os.read(source_fd, 1024 * 1024)
+        if not chunk:
+            break
+        view = memoryview(chunk)
+        while view:
+            written = os.write(temp_fd, view)
+            view = view[written:]
+    os.fchown(temp_fd, owner, group)
+    os.fchmod(temp_fd, mode)
+    os.fsync(temp_fd)
+    os.close(temp_fd)
+    temp_fd = -1
+    os.replace(temp_name, destination, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+    os.fsync(directory_fd)
+except Exception:
+    try:
+        os.unlink(temp_name, dir_fd=directory_fd)
+    except Exception:
+        pass
+    raise
+finally:
+    for descriptor in (temp_fd, source_fd, directory_fd, home_fd):
+        if descriptor >= 0:
+            os.close(descriptor)
+PY
+}
+
+ensure_archive_dir() {
+  /usr/bin/python3 - "$birdnet_home" "$birdnet_uid" "$birdnet_gid" 2>/dev/null <<'PY' \
+    || fail "archive directory is unsafe"
+import os
+import sys
+
+home, owner, group = sys.argv[1:]
+owner = int(owner)
+group = int(group)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+home_fd = os.open(home, flags | os.O_DIRECTORY)
+directory_fd = -1
+created = False
+try:
+    try:
+        os.mkdir("bird-archive", 0o700, dir_fd=home_fd)
+        created = True
+    except FileExistsError:
+        pass
+    directory_fd = os.open("bird-archive", flags | os.O_DIRECTORY, dir_fd=home_fd)
+    directory_stat = os.fstat(directory_fd)
+    if not created and directory_stat.st_uid != owner:
+        raise PermissionError("archive directory has the wrong owner")
+    os.fchown(directory_fd, owner, group)
+    os.fchmod(directory_fd, 0o700)
+    os.fsync(directory_fd)
+finally:
+    if directory_fd >= 0:
+        os.close(directory_fd)
+    os.close(home_fd)
+PY
+}
+
+snapshot_archive_file() {
+  local source_name=$1 destination=$2 expected_owner_id=$3
+  case "$source_name" in
+    archive.conf|status) ;;
+    *) fail "archive source is not allowed" ;;
+  esac
+  /usr/bin/python3 - \
+    "$birdnet_home" "$birdnet_uid" "$source_name" "$destination" \
+    "$expected_owner_id" 2>/dev/null <<'PY'
+import os
+import stat
+import sys
+
+home, station_uid, source_name, destination, expected_owner = sys.argv[1:]
+station_uid = int(station_uid)
+expected_owner = int(expected_owner)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+home_fd = os.open(home, flags | os.O_DIRECTORY)
+directory_fd = -1
+source_fd = -1
+destination_fd = -1
+try:
+    directory_fd = os.open("bird-archive", flags | os.O_DIRECTORY, dir_fd=home_fd)
+    if os.fstat(directory_fd).st_uid != station_uid:
+        raise PermissionError("archive directory owner changed")
+    source_fd = os.open(source_name, flags, dir_fd=directory_fd)
+    source_stat = os.fstat(source_fd)
+    if (not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1
+            or source_stat.st_uid != expected_owner):
+        raise PermissionError("archive source is unsafe")
+    destination_fd = os.open(
+        destination,
+        os.O_WRONLY | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW,
+    )
+    while True:
+        chunk = os.read(source_fd, 1024 * 1024)
+        if not chunk:
+            break
+        view = memoryview(chunk)
+        while view:
+            written = os.write(destination_fd, view)
+            view = view[written:]
+    os.fsync(destination_fd)
+finally:
+    for descriptor in (destination_fd, source_fd, directory_fd, home_fd):
+        if descriptor >= 0:
+            os.close(descriptor)
+PY
 }
 
 require_safe_archive_dir
@@ -132,8 +272,13 @@ write_conf_value() {
   require_safe_archive_dir
   require_safe_regular_file "$archive_conf" "$birdnet_user" "archive config"
   [ -f "$archive_conf" ] || fail "archive is not installed"
-  local temp
-  temp=$(mktemp "$archive_dir/.archive.conf.XXXXXX") || fail "could not create archive config"
+  local snapshot temp
+  snapshot=$(mktemp /run/avian-archive-read.XXXXXX) || fail "could not read archive config"
+  temp=$(mktemp /run/avian-archive-write.XXXXXX) || { rm -f -- "$snapshot"; fail "could not create archive config"; }
+  if ! snapshot_archive_file archive.conf "$snapshot" "$birdnet_uid"; then
+    rm -f -- "$snapshot" "$temp"
+    fail "could not read archive config"
+  fi
   if ! awk -v wanted="$key" -v replacement="$value" '
     BEGIN { found=0 }
     $0 ~ "^[[:space:]]*" wanted "[[:space:]]*=" {
@@ -141,16 +286,13 @@ write_conf_value() {
     }
     { print }
     END { if (!found) print wanted "=" replacement }
-  ' "$archive_conf" >"$temp"; then
-    rm -f "$temp"
+  ' "$snapshot" >"$temp"; then
+    rm -f -- "$snapshot" "$temp"
     fail "could not update archive config"
   fi
-  chown "$birdnet_user:$birdnet_group" "$temp" \
-    || { rm -f -- "$temp"; fail "could not set archive config owner"; }
-  chmod 0600 "$temp" \
-    || { rm -f -- "$temp"; fail "could not set archive config mode"; }
-  mv -fT -- "$temp" "$archive_conf" \
-    || { rm -f -- "$temp"; fail "could not replace archive config"; }
+  safe_copy_into_archive "$temp" archive.conf \
+    "$birdnet_uid" "$birdnet_gid" 0600 "archive config"
+  rm -f -- "$snapshot" "$temp"
 }
 
 dependency_state() {
@@ -249,19 +391,25 @@ case "$action" in
     require_safe_regular_file "$source_dir/archive.conf.example" "$birdnet_user" "archive config template"
     [ -f "$source_dir/archive_to_drive.sh" ] || fail "archive extra is missing from this checkout"
     [ -f "$source_dir/archive.conf.example" ] || fail "archive config template is missing"
-    require_safe_archive_dir
-    install -d -o "$birdnet_user" -g "$birdnet_group" -m 0700 "$archive_dir"
+    ensure_archive_dir
     require_safe_archive_dir
     require_safe_regular_file "$archive_script" root "archive worker"
     require_safe_regular_file "$archive_conf" "$birdnet_user" "archive config"
-    safe_copy_into_archive "$source_dir/archive_to_drive.sh" "$archive_script" \
-      root root 0755 "archive worker"
+    safe_copy_into_archive "$source_dir/archive_to_drive.sh" archive_to_drive.sh \
+      0 0 0755 "archive worker"
     if [ ! -f "$archive_conf" ]; then
-      safe_copy_into_archive "$source_dir/archive.conf.example" "$archive_conf" \
-        "$birdnet_user" "$birdnet_group" 0600 "archive config"
+      safe_copy_into_archive "$source_dir/archive.conf.example" archive.conf \
+        "$birdnet_uid" "$birdnet_gid" 0600 "archive config"
     else
-      safe_copy_into_archive "$archive_conf" "$archive_conf" \
-        "$birdnet_user" "$birdnet_group" 0600 "archive config"
+      config_snapshot=$(mktemp /run/avian-archive-install.XXXXXX) \
+        || fail "could not read archive config"
+      if ! snapshot_archive_file archive.conf "$config_snapshot" "$birdnet_uid"; then
+        rm -f -- "$config_snapshot"
+        fail "could not read archive config"
+      fi
+      safe_copy_into_archive "$config_snapshot" archive.conf \
+        "$birdnet_uid" "$birdnet_gid" 0600 "archive config"
+      rm -f -- "$config_snapshot"
     fi
     cat >"$service_path" <<EOF
 [Unit]

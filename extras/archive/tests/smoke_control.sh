@@ -113,6 +113,57 @@ grep -q '"installed":true' <<<"$repeat_json" || fail "repeat install state"
 [ "$(stat -c '%U:%G:%a' /home/bird/bird-archive/archive.conf)" = 'bird:bird:600' ] \
   || fail "repeat install changed archive config metadata"
 
+# The station owns its home directory, so it can rename the archive directory
+# while the root helper is running. Root writes must stay anchored to the
+# directory descriptor that was opened before the rename, never follow the
+# replacement symlink into another location.
+race_outside=/tmp/archive-race-outside
+race_stop=/tmp/archive-race-stop
+mkdir -p "$race_outside"
+rm -f "$race_stop"
+runuser -u bird -- sh -c '
+  home=/home/bird
+  while [ ! -e /tmp/archive-race-stop ]; do
+    if [ -d "$home/bird-archive" ] && [ ! -L "$home/bird-archive" ] \
+        && [ ! -e "$home/bird-archive.real" ]; then
+      mv -T "$home/bird-archive" "$home/bird-archive.real" 2>/dev/null || true
+    fi
+    if [ -d "$home/bird-archive.real" ] && [ ! -e "$home/bird-archive" ]; then
+      ln -s /tmp/archive-race-outside "$home/bird-archive" 2>/dev/null || true
+    fi
+    [ ! -L "$home/bird-archive" ] || rm -f "$home/bird-archive"
+    if [ -d "$home/bird-archive.real" ] && [ ! -e "$home/bird-archive" ]; then
+      mv -T "$home/bird-archive.real" "$home/bird-archive" 2>/dev/null || true
+    fi
+  done
+' &
+race_pid=$!
+for _attempt in $(seq 1 200); do
+  $control install >/dev/null 2>&1 || true
+done
+touch "$race_stop"
+wait "$race_pid"
+if [ -L /home/bird/bird-archive ]; then
+  rm -f /home/bird/bird-archive
+fi
+if [ -d /home/bird/bird-archive.real ]; then
+  if [ -d /home/bird/bird-archive ]; then
+    unexpected=$(find /home/bird/bird-archive.real -mindepth 1 -maxdepth 1 \
+      ! -name archive_to_drive.sh ! -name archive.conf ! -name status -print -quit)
+    [ -z "$unexpected" ] \
+      || fail "archive race left unexpected station file: $unexpected"
+    rm -f /home/bird/bird-archive.real/archive_to_drive.sh \
+      /home/bird/bird-archive.real/archive.conf \
+      /home/bird/bird-archive.real/status
+    rmdir /home/bird/bird-archive.real
+  else
+    mv /home/bird/bird-archive.real /home/bird/bird-archive
+  fi
+fi
+[ -d /home/bird/bird-archive ] || fail "archive race did not restore directory"
+[ -z "$(find "$race_outside" -mindepth 1 -print -quit)" ] \
+  || fail "archive directory race wrote outside the station home"
+
 mkdir -p /home/bird/.config/rclone
 cat >/home/bird/.config/rclone/rclone.conf <<'EOF'
 [gdrive]
