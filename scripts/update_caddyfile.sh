@@ -7,6 +7,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 conf=/etc/birdnet/birdnet.conf
+site_overlay=/etc/caddy/avian-site-overlay.caddy
 [ -r "$conf" ] || { echo "BirdNET-Pi config was not found" >&2; exit 1; }
 
 conf_value() {
@@ -76,6 +77,25 @@ else
   }"
 fi
 
+site_overlay_import=''
+if [ -e "$site_overlay" ] || [ -L "$site_overlay" ]; then
+  if [ -L "$site_overlay" ] || [ ! -f "$site_overlay" ]; then
+    echo "Refusing unsafe Caddy site overlay: expected a regular file" >&2
+    exit 1
+  fi
+
+  caddy_group=$(getent group caddy) \
+    || { echo "Refusing Caddy site overlay: caddy group was not found" >&2; exit 1; }
+  caddy_gid=$(printf '%s\n' "$caddy_group" | awk -F: 'NR == 1 { print $3 }')
+  [ -n "$caddy_gid" ] \
+    || { echo "Refusing Caddy site overlay: caddy group was not found" >&2; exit 1; }
+  site_overlay_stat=$(stat -c '%u:%g:%a:%h' -- "$site_overlay")
+  [ "$site_overlay_stat" = "0:$caddy_gid:640:1" ] \
+    || { echo "Refusing unsafe Caddy site overlay: expected root:caddy 0640 with one link" >&2; exit 1; }
+
+  site_overlay_import="  import $site_overlay"$'\n'
+fi
+
 mkdir -p /etc/caddy
 if [ -f /etc/caddy/Caddyfile ]; then
   if [ ! -f /etc/caddy/Caddyfile.original ]; then
@@ -89,7 +109,7 @@ trap 'rm -f "$temp"' EXIT
 cat >"$temp" <<EOF
 # Managed by AvianVisitors. The prior file is Caddyfile.previous.
 http:// {
-  root * $EXTRACTED
+${site_overlay_import}  root * $EXTRACTED
 
   @shell path / /index.html
   header @shell Cache-Control "no-cache"
