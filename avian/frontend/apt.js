@@ -185,7 +185,12 @@
   wireToggleAdvance(winPick);
   wireToggleAdvance(atlasSortEl);
   wireToggleAdvance(document.getElementById('modalPoseToggle'));
-  function syncAllPills() { syncPill(slider); syncPill(winPick); if (atlasSortEl) syncPill(atlasSortEl); }
+  function syncAllPills() {
+    syncPill(slider); syncPill(winPick);
+    if (atlasSortEl) syncPill(atlasSortEl);
+    var st = document.getElementById('statsTabs');
+    if (st) syncPill(st);
+  }
   // The buttons size from text content; wait for fonts so width is correct.
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(syncAllPills);
@@ -723,6 +728,13 @@
       var rows = [].slice.call(side.querySelectorAll('li'));
       rows.forEach(function (el, i) { items.push({ el: el, d: 80 + (i / Math.max(1, rows.length - 1)) * SPREAD }); });
     }
+    // The rhythm strip trails the side panel slightly, like a footnote.
+    var rhy = document.querySelector('.stats-rhythm');
+    if (rhy) {
+      [].slice.call(rhy.querySelectorAll('h3, small')).forEach(function (el) { items.push({ el: el, d: 40 }); });
+      var rhp = rhy.querySelector('.rh-plot');
+      if (rhp) items.push({ el: rhp, d: 140 });
+    }
     items.forEach(function (o) { o.el.classList.remove('entering'); o.el.style.animationDelay = Math.round(lead + o.d) + 'ms'; });
     void plot.offsetWidth;
     items.forEach(function (o) { o.el.classList.add('entering'); });
@@ -877,6 +889,8 @@
     timeseries: null,   // ./avian/api/birdnet-api.php?action=timeseries (daily + hourly aggregates)
     firstseen: null,    // ./avian/api/birdnet-api.php?action=firstseen (newest lifelist additions)
     recent: null,       // ./avian/api/birdnet-api.php?action=recent&hours=N (refetched on picker change)
+    rhythm: null,       // ./avian/api/birdnet-api.php?action=rhythm (today by hour + week's average)
+    hourly: null,       // ./avian/api/birdnet-api.php?action=hourly (species-by-hour ledger, one day)
   };
 
   // Derived chart arrays, backfilled so 30 buckets always exist.
@@ -1107,6 +1121,198 @@
         return liRow(label, s.com, '', s.sci);
       }).join('')
       : liRow('-', 'no detections yet', '');
+  }
+
+  // ---- Day's Rhythm + hourly ledger ----
+  // Two today-centric readings folded into the stats view: the rhythm
+  // chart under the summary grid, the hourly table behind its own tab.
+  // Same idiom as the rest of the view: innerHTML strings, mono ticks,
+  // hairline rules; the SVG paths and heat cells carry class hooks so
+  // styles.css owns every color and both themes just work.
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function rh2(n) { return (n < 10 ? '0' : '') + n; }
+  function rhPath(pts) {
+    return pts.map(function (p, i) {
+      return (i ? 'L' : 'M') + p[0].toFixed(2) + ' ' + p[1].toFixed(2);
+    }).join(' ');
+  }
+  // Shared line-chart builder: series -> svg + ticks inside the .rh-plot.
+  // series: array of {cls, vals} drawn back-to-front; x labels sparse.
+  function rhLineChart(host, series, xLabels, yMax) {
+    var W = 100, H = 42, PADB = 2;
+    var grid = '', yt = '', xt = '';
+    // Integer tick values (~4 of them) so low maxima never produce duplicate
+    // labels; positioned in the same coordinate box as the SVG (which is
+    // inset 26px left / 18px bottom for the axis strips).
+    var step = Math.max(1, Math.ceil(yMax / 4));
+    for (var v = step; v <= yMax; v += step) {
+      var f = v / yMax;
+      grid += '<path class="grid" d="M0 ' + ((H - PADB) * (1 - f)).toFixed(2) + ' H' + W + '"/>';
+      yt += '<span class="rh-ytick" style="bottom:calc(18px + (100% - 18px) * ' +
+        ((PADB + f * (H - PADB)) / H).toFixed(4) + ')">' + fmtN(v) + '</span>';
+    }
+    var paths = series.map(function (s) {
+      var span = s.span || 1;   // fraction of the x-domain the series covers
+      var pts = s.vals.map(function (v, i) {
+        var fx = s.vals.length > 1 ? i / (s.vals.length - 1) : 0;
+        return [fx * W * span, (H - PADB) * (1 - Math.min(1, v / yMax))];
+      });
+      return '<path class="' + s.cls + '" d="' + rhPath(pts) + '"/>';
+    }).join('');
+    xLabels.forEach(function (l) {
+      xt += '<span class="rh-xtick" style="left:calc(26px + (100% - 26px) * ' + (l.f).toFixed(3) + ')">' + l.text + '</span>';
+    });
+    host.innerHTML =
+      '<svg class="rh-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+      grid + paths + '</svg>' + yt + xt;
+  }
+  function renderRhythm() {
+    var host = document.getElementById('statsRhythm');
+    if (!host) return;
+    var r = DATA.rhythm;
+    if (!r || (!(r.today || []).length && !(r.avg || []).length)) {
+      host.innerHTML = '<div class="rh-empty">nothing to chart yet</div>'; return;
+    }
+    var today = [], avg = [], h;
+    for (h = 0; h < 24; h++) { today[h] = 0; avg[h] = 0; }
+    (r.today || []).forEach(function (x) { today[x.hour] = x.detections; });
+    (r.avg || []).forEach(function (x) { avg[x.hour] = x.avg; });
+    var yMax = Math.max(1, Math.max.apply(null, today.concat(avg)));
+    // Draw today's line only through the current hour - hours that haven't
+    // happened yet aren't zeros, they just haven't happened.
+    var nowH = new Date().getHours();
+    rhLineChart(host,
+      [{ cls: 'ln-avg', vals: avg },
+       { cls: 'ln-today', vals: today.slice(0, nowH + 1), span: Math.max(0.001, nowH / 23) }],
+      [0, 6, 12, 18, 23].map(function (hh) { return { f: hh / 23, text: rh2(hh) + ':00' }; }),
+      yMax);
+  }
+
+  // The hourly ledger browses one calendar day at a time. null means
+  // "follow today": the 30s poll keeps it fresh and midnight rolls over
+  // naturally. Browsing a past day pins the table until the user returns.
+  var hourlyDate = null;   // 'YYYY-MM-DD' while browsing, null = today
+  function hourlyToday() {
+    var d = new Date();
+    return d.getFullYear() + '-' + rh2(d.getMonth() + 1) + '-' + rh2(d.getDate());
+  }
+  function fetchHourly(date) {
+    var url = './avian/api/birdnet-api.php?action=hourly' + (date ? '&date=' + date : '');
+    return fetchJson(url).then(function (j) {
+      // Accept only the day we are still looking at (poll vs browse races).
+      var want = hourlyDate || hourlyToday();
+      if (j && j.date === want) { DATA.hourly = j; renderHourly(); }
+    }).catch(function (e) { console.warn('hourly fetch failed', e); });
+  }
+  function renderHourly() {
+    var wrap = document.getElementById('heatmapWrap');
+    if (!wrap) return;
+    var d = DATA.hourly;
+    var date = (d && d.date) || hourlyDate || hourlyToday();
+    var atToday = date >= hourlyToday();
+    var pager = '<div class="heatmap-datepicker">'
+      + '<button class="heatmap-prev" type="button" aria-label="previous day">&larr;</button>'
+      + '<span class="heatmap-date">' + date + '</span>'
+      + '<button class="heatmap-next" type="button" aria-label="next day"' + (atToday ? ' disabled' : '') + '>&rarr;</button>'
+      + '</div>';
+    var list = (d && d.species) || [];
+    if (!list.length) {
+      wrap.innerHTML = '<table class="heatmap-table"><thead><tr><th>' + pager + '</th></tr></thead></table>'
+        + '<div class="heatmap-empty">no detections this day</div>';
+      return;
+    }
+    // One scale for the whole table so a cell's ink weight is comparable
+    // across species and hours; the printed count stays the honest number.
+    var maxN = 1;
+    var rowsArr = list.map(function (s) {
+      var hours = [];
+      for (var h = 0; h < 24; h++) hours[h] = 0;
+      (s.hours || []).forEach(function (x) { hours[x.hour] = x.n; if (x.n > maxN) maxN = x.n; });
+      return { sci: s.sci, com: s.com, total: s.total, hours: hours };
+    });
+    var html = '<table class="heatmap-table"><thead><tr><th>' + pager + '</th>';
+    for (var hh = 0; hh < 24; hh++) html += '<th>' + rh2(hh) + '</th>';
+    html += '<th>total</th></tr></thead><tbody>';
+    rowsArr.forEach(function (s) {
+      html += '<tr class="heatmap-row" data-sci="' + escHtml(s.sci) + '">'
+        + '<td class="heatmap-name"><span class="com">' + escHtml(s.com) + '</span>'
+        + '<span class="sci">' + escHtml(s.sci) + '</span></td>';
+      s.hours.forEach(function (c) {
+        if (c > 0) {
+          // Ink weight from the theme so dark mode just works; capped so
+          // the count stays readable on the heaviest cell.
+          var mix = Math.round(6 + 39 * (c / maxN));
+          html += '<td style="background:color-mix(in srgb, var(--ink) ' + mix + '%, transparent)">' + c + '</td>';
+        } else {
+          html += '<td></td>';
+        }
+      });
+      html += '<td class="heatmap-total">' + fmtN(s.total) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }
+  (function wireHourlyPager() {
+    var wrap = document.getElementById('heatmapWrap');
+    if (!wrap) return;
+    var input = document.createElement('input');
+    input.type = 'date';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', function () {
+      if (!input.value) return;
+      hourlyDate = input.value >= hourlyToday() ? null : input.value;
+      fetchHourly(hourlyDate);
+    });
+    function shift(off) {
+      var p = (hourlyDate || hourlyToday()).split('-');
+      var d = new Date(+p[0], +p[1] - 1, +p[2]);
+      d.setDate(d.getDate() + off);
+      return d.getFullYear() + '-' + rh2(d.getMonth() + 1) + '-' + rh2(d.getDate());
+    }
+    wrap.addEventListener('click', function (ev) {
+      if (ev.target.closest('.heatmap-prev')) {
+        hourlyDate = shift(-1); fetchHourly(hourlyDate); return;
+      }
+      if (ev.target.closest('.heatmap-next')) {
+        var nd = shift(1);
+        hourlyDate = nd >= hourlyToday() ? null : nd;
+        fetchHourly(hourlyDate); return;
+      }
+      if (ev.target.closest('.heatmap-date')) {
+        input.value = hourlyDate || hourlyToday();
+        input.max = hourlyToday();
+        if (input.showPicker) { try { input.showPicker(); } catch (e) { input.click(); } } else { input.click(); }
+      }
+    });
+  })();
+
+  // Tab switch: summary (grid + rhythm) or the hourly ledger. Remembered
+  // like the theme so the view reopens where you left it.
+  var statsTabsEl = document.getElementById('statsTabs');
+  var statsGridEl = document.getElementById('statsGrid');
+  var statsHeatmapEl = document.getElementById('statsHeatmap');
+  function setStatsTab(name, save) {
+    if (!statsTabsEl) return;
+    [].slice.call(statsTabsEl.querySelectorAll('button')).forEach(function (b) {
+      if (b.dataset.tab === name) b.setAttribute('aria-current', 'true');
+      else b.removeAttribute('aria-current');
+    });
+    statsGridEl.style.display = name === 'hourly' ? 'none' : '';
+    statsHeatmapEl.style.display = name === 'hourly' ? 'block' : '';
+    if (save) writeLS('bird:statsTab', name);
+    syncPill(statsTabsEl);
+  }
+  if (statsTabsEl) {
+    statsTabsEl.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button');
+      if (b) setStatsTab(b.dataset.tab, true);
+    });
+    wireToggleAdvance(statsTabsEl);
+    setStatsTab(readLS('bird:statsTab', 'summary'), false);
   }
 
   // ---- Atlas: field-guide card grid ----
@@ -1383,6 +1589,7 @@
     // Lists first, then the graph (see renderWindowDependent).
     renderStatsLists();
     drawHistograms(animate);
+    renderRhythm();
     renderAtlas(animate);
   }
 
@@ -1401,12 +1608,16 @@
   }
   function refreshAll(animate) {
     var forHours = currentHours;
+    // The hourly ledger follows today unless the user browsed a past day
+    // (a finished day can't gain detections, so a pinned day never refetches).
+    if (!hourlyDate) fetchHourly(null);
     return Promise.all([
       fetchJson('./avian/api/birdnet-api.php?action=stats').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=lifelist').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=timeseries&days=30').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=firstseen&limit=10').catch(function () { return null; }),
       fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours).catch(function () { return null; }),
+      fetchJson('./avian/api/birdnet-api.php?action=rhythm').catch(function () { return null; }),
     ]).then(function (parts) {
       DATA.stats = parts[0];
       DATA.lifelist = parts[1];
@@ -1415,6 +1626,8 @@
       // Only accept the recent slice if the window hasn't changed
       // since this poll started - otherwise keep what's there.
       if (forHours === currentHours && parts[4]) DATA.recent = parts[4];
+      // A failed rhythm poll keeps the last-known chart rather than blanking it.
+      if (parts[5]) DATA.rhythm = parts[5];
       recomputeDerived();
       renderTimeIndependent(animate);
       renderCollageFromData(animate);
@@ -3102,6 +3315,8 @@
     if (row) return jumpToSci(row.dataset.sci);
     var tlCol = ev.target.closest('.stats-tl-col[data-sci]');
     if (tlCol) return jumpToSci(tlCol.dataset.sci);
+    var hmRow = ev.target.closest('.heatmap-row[data-sci]');
+    if (hmRow) return jumpToSci(hmRow.dataset.sci);
   });
 
   // After the atlas re-renders (window change, fresh fetch), re-apply

@@ -526,13 +526,15 @@
   @keyframes stats-fade-in { from { opacity: 0; } to { opacity: 1; } }
   .stats-tl-col.entering, .stats-tl-gridline.entering,
   .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
-  .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering {
+  .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering,
+  .stats-rhythm h3.entering, .stats-rhythm small.entering, .rh-plot.entering {
     animation: stats-fade-in 340ms ease backwards;
   }
   @media (prefers-reduced-motion: reduce) {
     .bird-card.entering, .stats-tl-col.entering, .stats-tl-gridline.entering,
     .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
-    .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering { animation: none; }
+    .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering,
+    .stats-rhythm h3.entering, .stats-rhythm small.entering, .rh-plot.entering { animation: none; }
   }
   .gtile {
     position: absolute;
@@ -778,7 +780,7 @@
     align-self: stretch; max-height: 100%;
     padding: 6px 0;
   }
-  .stats-side h3 {
+  .stats-side h3, .stats-rhythm h3 {
     font: 700 10px ui-monospace, Menlo, monospace; color: var(--ink);
     letter-spacing: 0.18em; text-transform: uppercase; margin: 0 0 1px;
     border-left: 2px solid var(--accent); padding-left: 10px;
@@ -787,7 +789,7 @@
      rather than spreading to fill the column. */
   .stats-side .grp { flex: 0 0 auto; }
   .stats-side .grp + .grp { margin-top: 22px; }
-  .stats-side .grp small {
+  .stats-side .grp small, .stats-rhythm small {
     display: block; font: 9px ui-monospace, Menlo, monospace; color: var(--ink-soft);
     letter-spacing: 0.06em; margin: 0 0 3px 12px;
   }
@@ -1614,3 +1616,86 @@
  * See avian/forwarding/. */
 body.av-local #dd-locked { display: none; }
 body.av-local #dd-items  { display: block; }
+
+/* ============ Stats tabs (summary | hourly) ============ */
+/* Same recessed-pill recipe as the window picker; centered under the
+   title. The hourly ledger can outgrow the viewport, so the stats view
+   scrolls vertically instead of clipping. */
+.view#v1 { overflow-y: auto; }
+.stats-tabs {
+  display: inline-flex; gap: 0; padding: 4px;
+  background: var(--paper-2); border-radius: 999px;
+  box-shadow: var(--recess);
+  position: relative;
+  align-self: center; flex: 0 0 auto; margin: 0 0 10px;
+}
+.stats-tabs button {
+  background: transparent; border: 0; color: var(--ink-soft);
+  font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.18em;
+  padding: 9px 16px; border-radius: 999px; cursor: pointer; text-transform: uppercase;
+  transition: color 200ms ease;
+  position: relative; z-index: 1;
+}
+.stats-tabs button:hover { color: var(--ink); }
+.stats-tabs button[aria-current="true"] { color: var(--ink); }
+#statsHeatmap { display: none; }
+
+/* ============ The Day's Rhythm ============ */
+/* Third cell of the stats grid, spanning both columns: an SVG line pair
+   (today in ink, the week's average dashed behind). The SVG is inset
+   26px left / 18px bottom for the tick strips; styles own every color
+   so both themes just work. */
+.stats-rhythm { grid-column: 1 / -1; }
+.rh-plot { position: relative; margin-top: 14px; height: 150px; }
+.rh-svg { position: absolute; left: 26px; right: 0; top: 0; bottom: 18px;
+          width: calc(100% - 26px); height: calc(100% - 18px); overflow: visible; }
+.rh-svg .grid { stroke: var(--hairline); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.rh-svg .ln-today { fill: none; stroke: var(--ink);
+  stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rh-svg .ln-avg { fill: none; stroke: var(--ink-soft); stroke-width: 1.1;
+  stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.rh-ytick, .rh-xtick { position: absolute; font: 400 7.5px "SF Mono", Menlo, monospace;
+  color: var(--ink-soft); letter-spacing: 0.04em; }
+.rh-ytick { left: 0; transform: translateY(50%); }
+.rh-xtick { bottom: 0; transform: translateX(-50%); white-space: nowrap; }
+.rh-empty { font-style: italic; color: var(--ink-soft); font-size: 13px; padding: 18px 0 0 12px; }
+
+/* ============ Hourly species ledger ============ */
+/* One calendar day as a species-by-hour table: hairline row rules, mono
+   counts, cell ink mixed from the theme so dark mode just works. The
+   corner cell carries a date pager (arrows + native picker). */
+.stats-heatmap { margin: 4px auto 0; max-width: 1100px; width: 100%; }
+.heatmap-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.heatmap-table { border-collapse: collapse; white-space: nowrap; margin: 0 auto; }
+.heatmap-table th {
+  font: 400 10px ui-monospace, "SF Mono", Menlo, monospace; font-weight: normal;
+  color: var(--ink-soft); text-align: center; min-width: 26px;
+  letter-spacing: 0.02em; padding: 0 2px 6px;
+}
+.heatmap-table td {
+  font: 400 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--ink); text-align: center; letter-spacing: 0.02em;
+  padding: 3px 4px; border-bottom: 1px solid var(--hairline);
+}
+.heatmap-row[data-sci] { cursor: pointer; }
+.heatmap-row[data-sci]:hover { background: var(--paper-2); }
+.heatmap-name { text-align: left; white-space: nowrap; padding-right: 12px; }
+.heatmap-name .com { display: block; font: 600 12px/1.3 ui-serif, Georgia, serif; color: var(--ink); }
+.heatmap-name .sci { display: block; font: italic 10px/1.2 ui-serif, Georgia, serif; color: var(--ink-soft); }
+.heatmap-total { font-variant-numeric: tabular-nums; color: var(--ink-soft); padding-left: 10px; }
+.heatmap-empty { color: var(--ink-soft); font-style: italic; font-size: 13px; padding: 16px 0; text-align: center; }
+.heatmap-datepicker { display: flex; align-items: center; justify-content: flex-start; gap: 3px; white-space: nowrap; }
+.heatmap-datepicker button {
+  background: transparent; border: 0; color: var(--ink-soft); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0 2px;
+}
+.heatmap-datepicker button:hover { color: var(--ink); }
+.heatmap-datepicker button:disabled { opacity: 0.3; cursor: default; }
+.heatmap-datepicker .heatmap-date {
+  font: 600 13px/1.2 ui-serif, Georgia, serif; color: var(--ink); cursor: pointer;
+  padding: 0 2px; user-select: none;
+}
+.heatmap-datepicker .heatmap-date:hover { text-decoration: underline; }
+@media (max-width: 700px) {
+  .rh-plot { height: 120px; }
+}

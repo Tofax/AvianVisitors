@@ -10,7 +10,7 @@
 <!-- Apply the saved theme before first paint so dark mode doesn't flash
      light on load. The full switcher lives in Settings (writes bird:theme). -->
 <script>try{if(localStorage.getItem('bird:theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
-<link rel="stylesheet" href="./styles.css?v=r12">
+<link rel="stylesheet" href="./styles.css?v=r13">
 </head>
 <body class="av-local">
 <!-- Pill in the top-left slot, only visible on admin overlays
@@ -61,7 +61,12 @@
 
     <!-- ========== View 2 - Stats ========== -->
     <section class="view" id="v1" aria-label="Stats">
-      <div class="stats-grid">
+      <div class="stats-tabs" id="statsTabs" role="tablist">
+        <i class="seg-pill" aria-hidden="true"></i>
+        <button data-tab="summary" type="button" aria-current="true">summary</button>
+        <button data-tab="hourly" type="button">hourly</button>
+      </div>
+      <div class="stats-grid" id="statsGrid">
         <div class="stats-timeline" id="statsTimeline">
           <!-- Editorial detection timeline. Each column = one species
                from the current time window. The black square's vertical
@@ -86,6 +91,17 @@
             <ol id="statsFirstSeen"></ol>
           </div>
         </aside>
+        <div class="grp stats-rhythm">
+          <h3>The Day's Rhythm</h3>
+          <small>detections by hour, today in ink over the week's average</small>
+          <!-- SVG line chart, rendered by renderRhythm(). -->
+          <div class="rh-plot" id="statsRhythm"></div>
+        </div>
+      </div>
+      <!-- Hourly tab: species-by-hour ledger for one day, with a date
+           pager. Rendered by renderHourly(); hidden until its tab. -->
+      <div class="stats-heatmap" id="statsHeatmap">
+        <div class="heatmap-wrap" id="heatmapWrap"></div>
       </div>
     </section>
 
@@ -213,6 +229,6 @@
   </div>
 </section>
 
-<script src="./apt.js?v=r12"></script>
+<script src="./apt.js?v=r13"></script>
 </body>
 </html>
