@@ -7,6 +7,25 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+font_source=/source/avian/frontend/fonts/Caveat.ttf
+[ -f "$font_source" ] || fail "Caveat release font is missing"
+grep -Fq "url('./fonts/Caveat.ttf')" /source/avian/frontend/styles.css \
+  || fail "Caveat CSS does not use the public webroot path"
+if grep -Fq './avian/frontend/fonts/Caveat.ttf' /source/avian/frontend/styles.css; then
+  fail "Caveat CSS uses the private repository path"
+fi
+awk '
+  /^  @privateAvian \{/ { in_matcher=1 }
+  in_matcher && /path \/avian\/[*]/ { private_path=1 }
+  in_matcher && /not path \/avian\/api\/[*] \/avian\/assets\/[*]/ { reviewed_exceptions=1 }
+  in_matcher && /^  }/ { in_matcher=0 }
+  /^  handle @privateAvian \{/ { in_handler=1 }
+  in_handler && /respond 404/ { private_404=1 }
+  in_handler && /^  }/ { in_handler=0 }
+  END { exit !(private_path && reviewed_exceptions && private_404) }
+' /source/scripts/update_caddyfile.sh \
+  || fail "Caddy does not keep repository frontend paths private"
+
 for preview_path in \
   avian/frontend/assets/recording-previews/README.md \
   avian/frontend/assets/recording-previews/private-fixture.mp3 \
@@ -171,6 +190,11 @@ assert_avian_runtime_links() {
   assert_link "$extracted/grain.png" "$repo/avian/frontend/grain.png"
   assert_link "$extracted/stats-press.png" "$repo/avian/frontend/stats-press.png"
   assert_link "$extracted/fonts" "$repo/avian/frontend/fonts"
+  assert_served_file \
+    "$extracted/fonts/Caveat.ttf" \
+    "$repo/avian/frontend/fonts/Caveat.ttf"
+  cmp -s "$extracted/fonts/Caveat.ttf" "$font_source" \
+    || fail "installed Caveat font differs from the release asset"
   assert_link "$extracted/assets" "$repo/avian/frontend/assets"
   assert_link "$extracted/favicon.png" "$repo/avian/assets/favicon.png"
   assert_link "$extracted/favicon.ico" "$repo/avian/assets/favicon.png"
