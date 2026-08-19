@@ -1,4 +1,4 @@
-# AvianVisitors nightly archive — configuration
+# AvianVisitors nightly archive configuration
 # (sourced by ~/bird-archive/archive_to_drive.sh)
 
 # rclone remote and Drive folder that receives everything
