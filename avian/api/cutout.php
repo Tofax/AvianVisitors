@@ -2,7 +2,7 @@
 // AvianVisitors - bird image resolver.
 //
 // Lookup chain for /avian/api/cutout.php?sci=Calypte+anna:
-//   1. ../assets/illustrations/<slug>.png   (450+ bundled kachō-e renders)
+//   1. ../assets/illustrations/<slug>.png   (333 bundled species, two poses each)
 //   2. ../assets/cutouts/<slug>.png         (background-removed photo)
 //   3. cached rembg of a Wikipedia photo at $HOME/BirdSongs/Extracted/cutouts/
 //   4. fresh Wikipedia -> rembg -> cache (skipped gracefully if rembg unset)
@@ -10,8 +10,8 @@
 // The frontend's <img src> points here for every species - bundled
 // hits return instantly; cold misses fall through to the dynamic path.
 //
-// Default LAN deploy ships without auth. To expose publicly, gate
-// /avian/api/* with basic_auth in your Caddyfile - see avian/forwarding/.
+// Bundled and cached images are public. A cold Wikipedia/rembg job is allowed
+// only from the station's direct LAN address and only for a detected species.
 
 declare(strict_types=1);
 
@@ -36,7 +36,7 @@ $slug = trim((string)$slug, '-');
 // pose=1 (default) is perched. pose=2 is flight. Clamp to a two-digit
 // positive integer so a malformed ?pose= can't break the path.
 $pose = (int)($_GET['pose'] ?? 1);
-if ($pose < 1 || $pose > 99) $pose = 1;
+if ($pose !== 2) $pose = 1;
 $poseSuffix = $pose === 1 ? '' : "-$pose";
 
 function serve_png(string $path): void {
@@ -48,7 +48,7 @@ function serve_png(string $path): void {
 }
 
 // 1. Bundled illustration with pose suffix (the kachō-e PNG the repo
-//    ships with). 450+ species cover both perched + flight.
+//    ships with). The included set has 333 species in perched + flight poses.
 $bundled = dirname(__DIR__) . "/assets/illustrations/{$slug}{$poseSuffix}.png";
 if (is_file($bundled) && filesize($bundled) > 1024) {
     serve_png($bundled);
@@ -85,7 +85,41 @@ if (!is_executable($rembg)) {
     exit;
 }
 
+require_once __DIR__ . '/admin-auth.php';
+if (!avian_is_direct_local_request($_SERVER)) {
+    http_response_code(404);
+    echo 'no cached illustration for ' . htmlspecialchars($sci);
+    exit;
+}
+
+$dbPath = dirname(__DIR__, 2) . '/scripts/birds.db';
+if (!is_file($dbPath)) {
+    http_response_code(404);
+    echo 'species is not in this station';
+    exit;
+}
+$db = new SQLite3($dbPath, SQLITE3_OPEN_READONLY);
+$db->busyTimeout(1000);
+$statement = $db->prepare('SELECT 1 FROM detections WHERE Sci_Name = :s LIMIT 1');
+$statement->bindValue(':s', $sci, SQLITE3_TEXT);
+$result = $statement->execute();
+$detected = $result instanceof SQLite3Result && $result->fetchArray(SQLITE3_NUM) !== false;
+$db->close();
+if (!$detected) {
+    http_response_code(404);
+    echo 'species is not in this station';
+    exit;
+}
+
 if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
+$lock = @fopen("$cacheDir/.cutout.lock", 'c');
+if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
+    if (is_resource($lock)) fclose($lock);
+    http_response_code(429);
+    header('Retry-After: 10');
+    echo 'another cutout is being prepared';
+    exit;
+}
 
 // Wikipedia's REST API asks for a contact-able identifier. Override
 // via the AV_USER_AGENT env var (set in /etc/php/*/fpm/pool.d/www.conf
@@ -115,7 +149,7 @@ if (!$srcUrl) {
     exit;
 }
 
-$imgBytes = @file_get_contents($srcUrl, false, $ctx);
+$imgBytes = @file_get_contents($srcUrl, false, $ctx, 0, 12 * 1024 * 1024);
 if (!$imgBytes || strlen($imgBytes) < 1024) {
     http_response_code(503);
     echo 'failed to fetch source image';

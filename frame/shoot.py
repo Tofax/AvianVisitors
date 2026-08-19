@@ -41,7 +41,7 @@ RAW_ILLUSTRATIONS = ("https://raw.githubusercontent.com/Twarner491/AvianVisitors
 # Hide the controls and the other views, freeze animations. Titles + collage
 # stay. Injected before first paint.
 HIDE_CSS = """
-  .top, .slider, .return-to-atlas, #menu-dd, #detail-modal, #about-modal,
+  .top, .slider, .return-to-atlas, .menu-shell, #menu-dd, #detail-modal, #about-modal,
   .admin-screen, #collageTip, .modal-backdrop, #v1, #v2 { display: none !important; }
   .views { transform: none !important; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -59,6 +59,10 @@ def _frame_css(headline_px, eyebrow_px, lowercase, pad_top, pad_side, pad_bottom
         f".static-head {{ padding: 0 8px 14px !important; }}"
         f".static-head .pre {{ font-size: {eyebrow_px}px !important; }}"
         f".static-head h1 {{ font-size: {headline_px}px !important; }}"
+        ".gtile-label text { fill: #000 !important; filter: none !important;"
+        " font-weight: 400 !important; }"
+        ".empty-nest .empty { font-size: 18px !important; font-weight: 650 !important;"
+        " letter-spacing: 0.12em !important; color: #242424 !important; }"
     )
     if lowercase:
         css += ".static-head h1 { text-transform: none !important; }"
@@ -70,6 +74,15 @@ def _safe_continue(route):
         route.continue_()
     except Exception:
         pass
+
+
+def _frame_url(url, bird_names):
+    """Set the frame's label preference without disturbing other URL state."""
+    parts = urllib.parse.urlsplit(url)
+    query = [(key, value) for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+             if key != "labels"]
+    query.append(("labels", "1" if bird_names else "0"))
+    return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
 
 
 def _make_api_handler(floor_frac, window_hours, auth, species=None):
@@ -142,7 +155,7 @@ def _make_cutout_handler(base, local_dir=None):
     return handler
 
 
-def _make_js_handler(xbias, ybias, count_exp, pad, auth, misses):
+def _make_js_handler(xbias, ybias, count_exp, pad, label_min_px, auth, misses):
     """Rewrite the collage tunables inside the page's apt.js at capture time."""
     def handler(route):
         try:
@@ -151,7 +164,8 @@ def _make_js_handler(xbias, ybias, count_exp, pad, auth, misses):
             for pat, repl in ((r"var xBias = narrow \? 1 : T\.ellipseAspectBias;", f"var xBias = {xbias};"),
                               (r"var yBias = narrow \? 1\.7 : 1;", f"var yBias = {ybias};"),
                               (r"countExp:\s*[\d.]+,", f"countExp: {count_exp},"),
-                              (r"var pad = narrow \? Math\.max\(1, COLLAGE_PAD - 1\) : COLLAGE_PAD;", f"var pad = {pad};")):
+                              (r"var pad = narrow \? Math\.max\(1, COLLAGE_PAD - 1\) : COLLAGE_PAD;", f"var pad = {pad};"),
+                              (r"var LABEL_MIN_PX = \d+;", f"var LABEL_MIN_PX = {int(label_min_px)};")):
                 js, n = re.subn(pat, repl, js)
                 if not n:
                     misses.append(pat)
@@ -165,22 +179,35 @@ def _make_js_handler(xbias, ybias, count_exp, pad, auth, misses):
 def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
           headline_px=42, eyebrow_px=18, lowercase=False,
           mat=0.04, collage_vh=52, cluster_xbias=1.0, cluster_ybias=1.2,
-          count_exp=0.4, cluster_pad=1, small_floor=0.04, window_hours=None,
+          count_exp=0.4, cluster_pad=1, label_min_px=11, small_floor=0.04, window_hours=None,
           timeout_ms=45000, user=None, password=None, species=None, cutout_base=None,
-          cutout_local=None, empty_text="listening for birds…"):
+          cutout_local=None, empty_text="listening for birds…", bird_names=False):
     pad_side, pad_top, pad_bottom = int(vw * mat), int(vh * mat * 0.92), int(vh * mat)
     auth = "Basic " + base64.b64encode(f"{user}:{password or ''}".encode()).decode() if user else None
 
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--force-color-profile=srgb", "--disable-dev-shm-usage"])
         try:
-            ctx_kw = {"viewport": {"width": vw, "height": vh}, "device_scale_factor": dsf}
+            ctx_kw = {
+                "viewport": {"width": vw, "height": vh},
+                "device_scale_factor": dsf,
+                "color_scheme": "light",
+            }
             if user:
                 ctx_kw["http_credentials"] = {"username": user, "password": password or ""}
             page = browser.new_context(**ctx_kw).new_page()
             misses = []
             page.route("**/birdnet-api.php**", _make_api_handler(small_floor, window_hours, auth, species))
-            page.route("**/apt.js*", _make_js_handler(cluster_xbias, cluster_ybias, count_exp, cluster_pad, auth, misses))
+            page.route("**/apt.js*", _make_js_handler(
+                cluster_xbias, cluster_ybias, count_exp, cluster_pad,
+                label_min_px, auth, misses))
+            if bird_names:
+                hand_font = os.path.realpath(os.path.join(
+                    os.path.dirname(__file__), "..", "avian", "frontend", "fonts", "Caveat.ttf"))
+                if not os.path.isfile(hand_font):
+                    raise RuntimeError("collage label font is missing")
+                page.route("**/avian/frontend/fonts/Caveat.ttf*",
+                           lambda route: route.fulfill(path=hand_font))
             if cutout_base:
                 page.route("**/cutout.php*", _make_cutout_handler(cutout_base, cutout_local))
 
@@ -190,9 +217,16 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
                 "var s=document.createElement('style');s.textContent=" + json.dumps(css) +
                 ";document.head.appendChild(s);});")
 
-            resp = page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            resp = page.goto(_frame_url(url, bird_names), wait_until="domcontentloaded", timeout=timeout_ms)
             if resp is None or not resp.ok:
                 raise RuntimeError(f"site returned {resp.status if resp else 'no response'}")
+            if bird_names:
+                font_loaded = page.evaluate(
+                    "async () => { const f = await document.fonts.load('600 16px Hand');"
+                    " await document.fonts.ready;"
+                    " return f.length > 0 && document.fonts.check('600 16px Hand'); }")
+                if not font_loaded:
+                    raise RuntimeError("collage label font did not load")
             # Wait for the collage, or for the empty-state element the page shows
             # when the mic has heard nothing yet, so a birdless frame renders a
             # clean title card fast instead of hanging until the timeout. A page
@@ -206,6 +240,14 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
                         timeout=timeout_ms)
                 except PWTimeout:
                     print("some illustrations did not finish loading; capturing anyway", file=sys.stderr)
+                if bird_names:
+                    missing_labels = page.evaluate(
+                        "() => [...document.querySelectorAll('.gtile')]"
+                        ".filter(t => !t.querySelector('.gtile-label text'))"
+                        ".map(t => t.getAttribute('data-sci') || '?')")
+                    if missing_labels:
+                        raise RuntimeError(
+                            "frame labels missing for: " + ", ".join(missing_labels))
             elif page.query_selector(".nest-img") is not None:
                 # Birdless empty state: wait for the nest illustration to load so
                 # the frame never captures a blank collage area.
@@ -226,8 +268,12 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
             # Set the empty-state line for a birdless frame (the mic hasn't heard
             # anything yet, or BirdWeather has no recent detections nearby) and
             # darken it so it survives the e-ink dither and the matting step's ink
-            # detection (a no-op once there are birds).
-            page.evaluate("(t) => { const e = document.querySelector('.empty'); if (e) { e.textContent = t; e.style.color = '#555'; } }", empty_text)
+            # detection (a no-op once there are birds). empty_text=None hides the
+            # line entirely: the gen 3 frame shows the bare nest, no words.
+            if empty_text is None:
+                page.evaluate("() => { const e = document.querySelector('.empty'); if (e) e.style.display = 'none'; }")
+            else:
+                page.evaluate("(t) => { const e = document.querySelector('.empty'); if (e) e.textContent = t; }", empty_text)
             page.wait_for_timeout(250)
             # clip is CSS px; device_scale_factor scales the PNG to vw*dsf by vh*dsf = 1200x1600
             page.screenshot(path=out, clip={"x": 0, "y": 0, "width": vw, "height": vh})
@@ -292,6 +338,8 @@ def main():
     ap.add_argument("--dsf", type=int, default=2)
     ap.add_argument("--user")
     ap.add_argument("--password")
+    ap.add_argument("--bird-names", action="store_true",
+                    help="show common names along the birds")
     ap.add_argument("--timeout", type=int, default=45000)
     a = ap.parse_args()
     if a.bird_weather:
@@ -311,7 +359,8 @@ def main():
         look.update(vw=a.width, vh=a.height, dsf=a.dsf, mat=a.mat, collage_vh=a.collage_vh,
                     cluster_xbias=a.cluster_xbias, cluster_ybias=a.cluster_ybias,
                     cluster_pad=a.cluster_pad, small_floor=a.small_floor, lowercase=a.lowercase,
-                    window_hours=a.window_hours, user=a.user, password=a.password)
+                    window_hours=a.window_hours, user=a.user, password=a.password,
+                    bird_names=a.bird_names)
         try:
             shoot_birdweather(a.out, species, title=a.title, subtitle=a.subtitle,
                               timeout_ms=a.timeout, **look)
@@ -330,7 +379,8 @@ def main():
               mat=a.mat, collage_vh=a.collage_vh, cluster_xbias=a.cluster_xbias,
               cluster_ybias=a.cluster_ybias, count_exp=count_exp, cluster_pad=a.cluster_pad,
               small_floor=a.small_floor,
-              window_hours=a.window_hours, timeout_ms=a.timeout, user=a.user, password=a.password)
+              window_hours=a.window_hours, timeout_ms=a.timeout, user=a.user, password=a.password,
+              bird_names=a.bird_names)
     except Exception as e:
         print(f"shoot failed: {e}", file=sys.stderr)
         sys.exit(1)

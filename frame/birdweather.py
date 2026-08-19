@@ -180,13 +180,27 @@ def slugify(sci):
 
 
 def drawable_slugs(apt_js=APT_JS):
-    """Base slugs we have a cutout for, parsed once from the collage's bundled
-    DIMS table (perched and flight entries collapse to the base slug)."""
+    """Base slugs we have a cutout for (perched and flight entries collapse
+    to the base slug). The refreshed frontend keeps the table in dims.json
+    beside apt.js; older bundles inline it as `var DIMS = {...}` in apt.js,
+    so that parse stays as the fallback."""
     global _drawable
     if _drawable is None:
-        with open(apt_js, encoding="utf-8") as f:
-            block = re.search(r"var DIMS = (\{.*?\});", f.read(), re.S)
-        keys = re.findall(r'"([a-z0-9-]+)"\s*:', block.group(1)) if block else []
+        keys = []
+        dims_json = os.path.join(os.path.dirname(apt_js), "dims.json")
+        try:
+            with open(dims_json, encoding="utf-8") as f:
+                keys = list(json.load(f).keys())
+        except (OSError, ValueError):
+            pass
+        if not keys:
+            with open(apt_js, encoding="utf-8") as f:
+                block = re.search(r"var DIMS = (\{.*?\});", f.read(), re.S)
+            keys = re.findall(r'"([a-z0-9-]+)"\s*:', block.group(1)) if block else []
+        if not keys:
+            raise RuntimeError(
+                "no drawable species table: neither dims.json nor an inline "
+                "DIMS block; refusing to filter every bird into an empty nest")
         _drawable = {re.sub(r"-2$", "", k) for k in keys}
     return _drawable
 

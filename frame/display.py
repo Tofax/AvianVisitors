@@ -52,8 +52,9 @@ DEFAULTS = {
     "shoot_title": None, "shoot_subtitle": None,
     "shoot_headline_px": 42, "shoot_eyebrow_px": 18, "shoot_lowercase": False,
     "shoot_mat": 0.04, "shoot_small_floor": 0.04, "shoot_count_exp": 0.65,
+    "bird_names": False,
     "mat": 0.0,             # extra global shrink of the content inside the A5 opening
-    "opening": 0.7071,      # fraction of panel height the opening covers; 0.7071 = A5 matboard (default). Raise toward ~0.96 to fill a bare panel with no matboard.
+    "opening": 0.7071,      # opening height as a panel fraction; 0.7071 preserves A5
     "rotate": 90,           # 90 or 270 if the frame hangs the other way up
     "saturation": 0.6,
     "panel": "",            # "el133uf1" forces the 13.3" driver if auto() fails
@@ -133,10 +134,8 @@ def _paper(img):
     return tuple(int(statistics.median(c)) for c in zip(*px))
 
 
-# The opening is a 1:sqrt(2) rectangle centred in the panel; the content
-# floats inside it with `mat` of inner whitespace. `opening` sets how much
-# of the panel that rectangle covers -- 0.7071 reproduces an A5 matboard
-# opening (default), raise it toward ~0.96 to fill a bare panel.
+# The opening is a 1:sqrt(2) rectangle centred in the panel. `opening` sets
+# how much of the panel height it covers; 0.7071 preserves the A5 default.
 def opening_size(opening):
     if isinstance(opening, bool):
         raise ValueError("opening must be greater than 0 and at most 1")
@@ -147,8 +146,7 @@ def opening_size(opening):
     if not 0 < opening <= 1:
         raise ValueError("opening must be greater than 0 and at most 1")
     h = PANEL_H * opening
-    w = h / 1.41421
-    return w, h
+    return h / 1.41421, h
 
 
 def _place(content, paper, mat, opening):
@@ -259,7 +257,7 @@ def quantize_spectra6(img):
 
 
 def _draw_mat_box(img, opening):
-    """Dev aid: outline the mat opening so the matte and centring show."""
+    """Dev aid: outline the configured mat opening."""
     ow, oh = opening_size(opening)
     x0, y0 = round((PANEL_W - ow) / 2), round((PANEL_H - oh) / 2)
     ImageDraw.Draw(img).rectangle((x0, y0, PANEL_W - x0 - 1, PANEL_H - y0 - 1),
@@ -314,6 +312,16 @@ def in_quiet_hours(cfg, hour):
     return s <= hour < e if s < e else hour >= s or hour < e
 
 
+def frame_url(url, bird_names):
+    """Set the frame's label preference without disturbing other URL state."""
+    import urllib.parse
+    parts = urllib.parse.urlsplit(url)
+    query = [(k, v) for k, v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+             if k != "labels"]
+    query.append(("labels", "1" if bird_names else "0"))
+    return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
+
+
 # --- run --------------------------------------------------------------------
 def obtain_image(cfg, species=None):
     if cfg.get("species_source") == "birdweather":
@@ -323,7 +331,7 @@ def obtain_image(cfg, species=None):
         out = os.path.join(os.path.expanduser(cfg["cache"]), "frame.png")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         shoot_birdweather(out, species, title=cfg["shoot_title"], subtitle=cfg["shoot_subtitle"],
-                          timeout_ms=cfg["timeout"] * 1000)
+                          timeout_ms=cfg["timeout"] * 1000, bird_names=cfg["bird_names"])
         return Image.open(out).convert("RGB")
     if cfg["shoot"]:
         from shoot import shoot
@@ -333,11 +341,18 @@ def obtain_image(cfg, species=None):
               headline_px=cfg["shoot_headline_px"], eyebrow_px=cfg["shoot_eyebrow_px"],
               lowercase=cfg["shoot_lowercase"], mat=cfg["shoot_mat"],
               small_floor=cfg["shoot_small_floor"], count_exp=cfg["shoot_count_exp"], timeout_ms=cfg["timeout"] * 1000,
-              user=cfg["basic_user"], password=cfg["basic_pass"])
+              user=cfg["basic_user"], password=cfg["basic_pass"], window_hours=cfg["hours"],
+              bird_names=cfg["bird_names"])
         return Image.open(out).convert("RGB")
     src = cfg["image_url"] or cfg["image"]
     if not src:
         raise ValueError("set image, image_url, or shoot in config")
+    # A pre-rendered frame is still someone's render, so ask it for names the
+    # same way this Pi asks its own browser. A source that does not know the
+    # parameter ignores it and sends what it always sent, so this is safe
+    # against anything. URLs only: a local file path has no query string.
+    if cfg["image_url"]:
+        src = frame_url(src, cfg["bird_names"])
     return get_image(src, cfg["timeout"], _auth(cfg))
 
 

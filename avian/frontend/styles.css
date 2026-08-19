@@ -62,13 +62,20 @@
     flex: 0 0 auto;
     padding: 84px 32px 22px;
     text-align: center; position: relative; z-index: 5;
+    transform: translateZ(0);
+    transition: padding 440ms cubic-bezier(.22,1,.36,1),
+                background-color 300ms ease, box-shadow 300ms ease;
   }
   .static-head .pre {
     display: inline-block;
-    background: none; border: 0; padding: 0;
-    font: italic 400 clamp(13px, 1.4vw, 18px)/1 ui-serif, "Iowan Old Style", Georgia, serif;
+    background: none; border: 0; padding: 0 0 1px;
+    font: italic 400 clamp(13px, 1.4vw, 18px)/1.22 ui-serif, "Iowan Old Style", Georgia, serif;
     color: var(--ink-2); letter-spacing: 0.06em; margin-bottom: 6px;
-    cursor: pointer; transition: color 140ms ease;
+    cursor: pointer; overflow: hidden; max-height: 30px;
+    transition: color 140ms ease, opacity 260ms ease,
+                max-height 360ms cubic-bezier(.22,1,.36,1),
+                margin 360ms cubic-bezier(.22,1,.36,1),
+                transform 360ms cubic-bezier(.22,1,.36,1);
   }
   .static-head .pre:hover {
     color: var(--ink);
@@ -80,11 +87,54 @@
     font: 700 clamp(24px, 3.2vw, 40px)/1 ui-serif, "Iowan Old Style", "Bookman Old Style", Georgia, serif;
     letter-spacing: 0.06em; color: var(--ink); text-transform: uppercase;
     font-style: normal;
-    transition: opacity 240ms cubic-bezier(.7,.05,.2,1);
+    transition: opacity 240ms cubic-bezier(.7,.05,.2,1),
+                font-size 440ms cubic-bezier(.22,1,.36,1),
+                letter-spacing 440ms cubic-bezier(.22,1,.36,1),
+                transform 440ms cubic-bezier(.22,1,.36,1);
   }
   .static-head.swap-out h1 { opacity: 0; }
+  /* A scrolling view folds the editorial title into the control line. The
+     head remains a real layout row, rather than an overlay, so the atlas
+     never vanishes beneath an oversized invisible clipping plane. */
+  .stage.is-compact .static-head {
+    padding: 29px 172px 14px;
+    z-index: 22;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 9%, transparent);
+    -webkit-backdrop-filter: blur(15px) saturate(.9);
+    backdrop-filter: blur(15px) saturate(.9);
+  }
+  .stage.is-compact .static-head .pre {
+    opacity: 0; max-height: 0; margin-bottom: 0; padding-bottom: 0;
+    transform: translateY(-8px); pointer-events: none;
+  }
+  .stage.is-compact .static-head h1 {
+    font-size: clamp(19px, 1.85vw, 25px);
+    letter-spacing: .16em;
+    transform: translateY(-18px);
+  }
   @media (max-width: 700px) {
     .static-head { padding: 96px 18px 22px; }
+    .static-head .pre {
+      display: block; width: max-content; height: 17px;
+      margin-left: auto; margin-right: auto;
+      transition: color 140ms ease, opacity 260ms ease,
+                  max-height 360ms cubic-bezier(.22,1,.36,1),
+                  height 360ms cubic-bezier(.22,1,.36,1),
+                  margin 360ms cubic-bezier(.22,1,.36,1),
+                  transform 360ms cubic-bezier(.22,1,.36,1);
+    }
+    /* Keep the folded title on its own row beneath the fixed controls.
+       Its top edge derives directly from the control geometry rather than
+       the collapsed subtitle's inline line box. */
+    .stage.is-compact .static-head {
+      padding: calc(12px + var(--ctl-h) + 8px) 18px 14px;
+    }
+    .stage.is-compact .static-head .pre { display: block; height: 0; }
+    .stage.is-compact .static-head h1 {
+      font-size: 15px; letter-spacing: .11em;
+      transform: none; white-space: nowrap;
+    }
   }
 
   .views {
@@ -93,15 +143,48 @@
     transition: transform 480ms cubic-bezier(.7,.05,.2,1);
   }
   .view  { flex: 0 0 100%; height: 100%; overflow: auto; padding: 8px 56px 132px; position: relative; }
-  /* Collage and stats views both fit the viewport (no scroll). Atlas
-     keeps normal scroll. */
-  .view#v0, .view#v1 { overflow: hidden; padding: 8px 32px 88px; }
+  /* Collage and stats normally fit. Keeping their vertical axis automatic
+     lets short displays use the same folding header without manufacturing
+     a scrollbar on displays where the composition already fits. */
+  .view#v0, .view#v1 { overflow-x: hidden; overflow-y: auto; padding: 8px 32px 88px; }
+  .view { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .view::-webkit-scrollbar { width: 6px; }
+  .view::-webkit-scrollbar-thumb { background: transparent; }
   .view#v0 { display: flex; }
   .view#v1 { display: flex; flex-direction: column; }
   @media (max-width: 700px) { .view { padding: 8px 18px 132px; } .view#v0, .view#v1 { padding: 8px 16px 88px; } }
-
+  /* Atlas needs a continuous tablet transition. Jumping from the phone's
+     18px gutter to 56px at 701px removed 76px of usable wall in one pixel,
+     exactly when the issues also grew. The other views keep their authored
+     breakpoints; only the stamp sheet eases into its desktop margin. */
+  .view#v2 {
+    overflow-x: hidden;
+    overflow-y: hidden;
+    scrollbar-gutter: stable;
+    overscroll-behavior-y: none;
+    padding-left: clamp(18px, calc(12.6667vw - 70.6667px), 56px);
+    padding-right: clamp(18px, calc(12.6667vw - 70.6667px), 56px);
+  }
+  .view#v2[data-scrollable="true"] {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Keep a useful 293px packing sheet on the narrowest phones, then ease
+     back to the standard 18px inset by 340px. The rule belongs to the Atlas
+     view, not one sort, so changing filters never makes the wall jump sideways. */
+  @media (max-width: 350px) {
+    .view#v2 {
+      padding-left: clamp(8px, calc(50vw - 152px), 18px);
+      padding-right: clamp(8px, calc(50vw - 152px), 18px);
+    }
+  }
   /* ============ Top bar - window picker (left) + menu button (right). ============
      Visible on every view; the picker is the universal time-window control. */
+  /* Every top-bar control resolves to this height, so the window
+     picker, the menu button and the admin back-pill line up exactly. */
+  :root { --ctl-h: 36px; }
+  @media (max-width: 700px) { :root { --ctl-h: 27px; } }
   .top {
     position: fixed; top: 22px; left: 0; right: 0;
     display: flex; justify-content: space-between; align-items: center;
@@ -113,6 +196,7 @@
     background: var(--paper-2); border-radius: 999px;
     box-shadow: var(--recess);
     position: relative;
+    min-height: var(--ctl-h); box-sizing: border-box; align-items: center;
   }
   .top .window-pick button {
     background: transparent; border: 0; color: var(--ink-soft);
@@ -125,10 +209,12 @@
   .top .window-pick button[aria-current="true"] { color: var(--ink); }
   .menu-btn {
     background: var(--paper); border: 0; color: var(--ink);
-    font: 11px/1 ui-monospace, Menlo, monospace; padding: 9px 14px 8px;
+    font: 11px/1 ui-monospace, Menlo, monospace; padding: 0 14px;
     border-radius: 999px; cursor: pointer; letter-spacing: 0.18em; text-transform: lowercase;
     box-shadow: var(--raised);
     transition: transform 160ms ease;
+    min-height: var(--ctl-h); box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center;
   }
   .menu-btn:hover { transform: translateY(-1px); }
   .menu-btn:active { transform: translateY(0); }
@@ -140,8 +226,8 @@
     .top .window-pick button {
       font-size: 8.5px; padding: 6px 10px; letter-spacing: 0.12em;
     }
-    .menu-btn { font-size: 9px; padding: 6px 11px 5px; letter-spacing: 0.14em; }
-    .return-to-atlas { top: 10px; left: 10px; padding: 5px 10px; font-size: 8.5px; }
+    .menu-btn { font-size: 9px; padding: 0 11px; letter-spacing: 0.14em; }
+    .return-to-atlas { top: 10px; left: 10px; padding: 0 10px; font-size: 8.5px; }
   }
   @media (max-width: 420px) {
     .top .window-pick button { font-size: 8px; padding: 5px 7px; letter-spacing: 0.08em; }
@@ -150,7 +236,8 @@
   /* ============ Bottom slider - recessed track, raised active pill ============ */
   .slider {
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 0; padding: 4px; z-index: 30;
+    display: flex; align-items: center; gap: 0; padding: 4px; z-index: 30;
+    min-height: 40px; box-sizing: border-box;
     background: var(--paper-2); border-radius: 999px;
     box-shadow: var(--recess);
     position: fixed; /* re-emit for the pill positioning */
@@ -178,16 +265,221 @@
   }
 
   /* ============ Menu dropdown ============ */
-  #menu-dd {
-    position: fixed; top: 58px; right: 28px; z-index: 25;
-    width: 360px; max-width: calc(100vw - 24px);
-    max-height: calc(100vh - 80px); overflow: auto;
-    background: var(--paper); border-radius: 12px;
-    box-shadow: var(--edge-lg);
-    padding: 14px; opacity: 0; transform: translateY(-6px);
-    pointer-events: none; transition: opacity 200ms ease, transform 200ms ease;
+  /* ============ Menu - the button IS the card ============
+     One shell, fixed to the top-right corner, is the whole control: a
+     pill when closed, a sheet when open. Opening does not reveal a
+     second element, it grows this one.
+
+     The shape change is carried by .menu-surface, an empty layer that
+     holds the paper, the corner and the shadow. Growing an empty layer
+     with a transform is a composited scale plus one rounded-rect
+     repaint; growing the shell itself would relayout every row inside
+     it on every frame. The panel lives inside the surface so the
+     surface's rounded overflow clips it, and it carries the inverse
+     scale (driven from script) so the rows are never squashed: the net
+     transform on the contents is identity from the first frame, which
+     is why a row is already in its final place the moment it is
+     visible.
+
+     The pill's top-right corner is the anchor, so the control never
+     moves; the sheet unfurls left and down out of it.
+
+     Every duration below is a fraction of --m-dur rather than a
+     number, so one write from script retimes the whole gesture at
+     once. That is what lets an interrupted morph reverse over the
+     travel it has left instead of always taking the full 320ms. */
+
+  .menu-shell {
+    position: fixed; top: 22px; right: 28px; z-index: 31;
+    display: flex; justify-content: flex-end; align-items: flex-start;
+    --menu-w: 360px;
+    --menu-max-h: calc(100vh - 110px);
+    /* The two authored durations and curves stay readable from script in
+       either state, so an interrupted morph can ask for the one it is
+       about to run rather than the one it is in. --m-dur is what every
+       rule below is written against; script overwrites it inline with the
+       duration this particular gesture actually needs. */
+    --m-open: 320ms;
+    --m-close: 380ms;
+    --m-ease-open: cubic-bezier(.22,.61,.36,1);
+    --m-ease-close: cubic-bezier(.33,0,.15,1);
+    --m-dur: var(--m-open);
+    --m-ease: var(--m-ease-open);
+    /* Unconditional, so the 1px hover lift eases back to zero as the
+       morph begins. Scoping the transition to :not([data-open]) drops
+       the rule and the transform in the same recalc, which snaps the
+       whole control down a pixel on every mouse-initiated open. */
+    transition: transform 160ms ease;
   }
-  #menu-dd.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .menu-shell:not([data-open]):hover { transform: translateY(-1px); }
+  /* Content that grows after the sheet has settled - the spectrogram
+     opening, the lock screen giving way to the rows - takes the sheet
+     with it. */
+  .menu-shell[data-open][data-settled] {
+    transition: transform 160ms ease, height 240ms cubic-bezier(.7,.05,.2,1);
+  }
+
+  .menu-surface {
+    position: absolute; inset: 0; z-index: 0;
+    background: var(--paper);
+    border-radius: 999px;
+    box-shadow: var(--raised);
+    overflow: hidden;
+    transform-origin: 100% 0;
+  }
+  .menu-shell[data-open] .menu-surface {
+    border-radius: 14px;
+    box-shadow: var(--edge-lg);
+  }
+
+  /* Always out of flow at its final width, so its natural height can be
+     measured while it is still clipped down to a pill. */
+  #menu-dd {
+    position: absolute; top: 0; right: 0; z-index: 0;
+    width: var(--menu-w);
+    max-height: var(--menu-max-h);
+    overflow: hidden;
+    transform-origin: 100% 0;
+    visibility: hidden;
+  }
+  .menu-shell[data-open] #menu-dd { visibility: visible; }
+  /* Scrolling only once the shape has settled: a scrollbar inside the
+     counter-scaled panel would be drawn at the inverse scale mid-morph. */
+  .menu-shell[data-open][data-settled] #menu-dd { overflow-y: auto; }
+
+  /* The contents rise into the room the sheet has just made. The lift
+     is applied inside the counter-scaled panel, so 10px is 10px on
+     screen.
+
+     The delay is the one number that decides how the first half reads.
+     The sheet is a clip, not a layout, so a row is cropped by the
+     growing left edge until the shape is nearly home; starting the fade
+     at 31% of the duration keeps the contents under a fifth opacity
+     through the stretch where that crop still lands mid-word, and full
+     only once the edge has passed the sheet's own padding.
+
+     The top gutter is the pill's own height: the close mark sits
+     exactly where the pill was, so that strip has to stay clear or it
+     lands on the live-audio button and on the unlock form's submit
+     arrow. */
+  .menu-sheet {
+    padding: calc(var(--ctl-h) + 2px) 14px 14px;
+    opacity: 0; transform: translateY(10px);
+  }
+  .menu-shell[data-open] .menu-sheet {
+    opacity: 1; transform: none;
+    transition: opacity calc(var(--m-dur) * 0.53) ease-out calc(var(--m-dur) * 0.31),
+                transform calc(var(--m-dur) * 0.81) var(--m-ease) calc(var(--m-dur) * 0.22);
+  }
+
+  /* ---- The label ----
+     "menu" and the close mark share one grid cell, so swapping them
+     moves nothing and the button's width never changes. The word leaves
+     on its own short curve before the mark arrives, which is what keeps
+     the swap from reading as a pop.
+
+     z-index, not source order: the sheet's padding box reaches up into
+     the top gutter, and with both at z-index auto the sheet wins the hit
+     test even though the mark paints on top - the close would look right
+     and do nothing. */
+  .menu-shell .menu-btn {
+    position: relative; z-index: 1;
+    background: none; box-shadow: none;
+    display: grid; place-items: center;
+    transition: none;
+  }
+  .menu-shell[data-open] .menu-btn { position: absolute; top: 0; right: 0; }
+  /* The lift belongs to the shell now, or the label would slide off its
+     own paper. */
+  .menu-shell .menu-btn:hover, .menu-shell .menu-btn:active { transform: none; }
+  .menu-btn > * { grid-area: 1 / 1; }
+  .menu-btn .mb-w { transition: opacity 100ms ease, transform 180ms var(--m-ease) 90ms; }
+  .menu-btn .mb-x {
+    display: block; width: 13px; height: 13px;
+    opacity: 0; transform: rotate(-90deg) scale(.6);
+    transition: opacity 90ms ease, transform 90ms ease;
+  }
+  .menu-btn .mb-x svg { display: block; width: 100%; height: 100%; }
+  /* A little of the pill's raised paper survives as the close chip, on
+     the same recipe .modal-close uses so the two closes are one object. */
+  .menu-btn::before {
+    content: ''; grid-area: 1 / 1; place-self: center;
+    width: 28px; height: 28px; border-radius: 999px;
+    background: var(--paper-2); box-shadow: var(--raised);
+    opacity: 0; transform: scale(.55);
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+  .menu-shell[data-open] .menu-btn .mb-w {
+    opacity: 0; transform: translateY(-4px);
+    transition: opacity calc(var(--m-dur) * 0.31) ease,
+                transform calc(var(--m-dur) * 0.31) ease;
+  }
+  /* No X and no close chip: the open card's corner is just paper. The menu
+     word fades out above and clicking anywhere off the card closes it. */
+  .menu-shell[data-open] .menu-btn .mb-x { opacity: 0; }
+  .menu-shell[data-open] .menu-btn::before { opacity: 0; }
+
+  /* Whatever was waiting is on screen now. */
+  .menu-shell[data-open] .menu-btn.has-dot::after {
+    opacity: 0; transition: opacity calc(var(--m-dur) * 0.31) ease;
+  }
+
+  /* Closing is 30% quicker and leads with the contents: they must be
+     gone before the sheet is small enough to crop them. These rules sit
+     last and match the open ones' specificity, so [data-closing] wins
+     for as long as it is set - which is the whole collapse, not just the
+     end of it. The word has to come back while the sheet is still
+     shrinking, or the pill lands wearing a close mark. */
+  .menu-shell[data-closing] { --m-dur: var(--m-close); --m-ease: var(--m-ease-close); }
+  /* Dead to the pointer on the way out, so a click aimed at a row that
+     is already leaving cannot land on it. */
+  .menu-shell[data-closing] #menu-dd { pointer-events: none; }
+  .menu-shell[data-closing] .menu-sheet {
+    opacity: 0; transform: translateY(6px);
+    transition: opacity calc(var(--m-dur) * 0.5) ease,
+                transform calc(var(--m-dur) * 0.82) var(--m-ease);
+  }
+  .menu-shell[data-closing] .menu-btn .mb-w {
+    opacity: 1; transform: none;
+    transition: opacity calc(var(--m-dur) * 0.59) ease calc(var(--m-dur) * 0.32),
+                transform calc(var(--m-dur) * 0.86) var(--m-ease) calc(var(--m-dur) * 0.23);
+  }
+  .menu-shell[data-closing] .menu-btn .mb-x {
+    opacity: 0; transform: rotate(-70deg) scale(.7);
+    transition: opacity calc(var(--m-dur) * 0.36) ease,
+                transform calc(var(--m-dur) * 0.64) ease;
+  }
+  .menu-shell[data-closing] .menu-btn::before {
+    opacity: 0; transform: scale(.6);
+    transition: opacity calc(var(--m-dur) * 0.45) ease,
+                transform calc(var(--m-dur) * 0.68) ease;
+  }
+  .menu-shell[data-closing] .menu-btn.has-dot::after {
+    opacity: 1; transition: opacity calc(var(--m-dur) * 0.55) ease calc(var(--m-dur) * 0.41);
+  }
+
+  @media (max-width: 700px) {
+    .menu-shell {
+      top: 12px; right: 12px;
+      --menu-w: calc(100vw - 24px);
+      --menu-max-h: calc(100vh - 72px);
+    }
+    .menu-sheet { padding: calc(var(--ctl-h) + 2px) 10px 10px; }
+    .menu-btn::before { width: 22px; height: 22px; }
+    .menu-btn .mb-x { width: 11px; height: 11px; }
+  }
+
+  /* No morph at all: the sheet is simply there, or simply not. Script
+     skips the keyframes; this kills the fades that would otherwise still
+     run underneath them, which is exactly the half-measure the setting
+     exists to prevent. */
+  @media (prefers-reduced-motion: reduce) {
+    .menu-shell, .menu-shell .menu-surface, .menu-shell #menu-dd,
+    .menu-shell .menu-sheet, .menu-shell .menu-btn > *,
+    .menu-shell .menu-btn::before, .menu-shell .menu-btn::after {
+      transition: none !important;
+    }
+  }
 
   .lock-row {
     display: flex; gap: 6px; align-items: stretch;
@@ -385,11 +677,10 @@
     position: relative; z-index: 1;
     transition: color 200ms ease;
   }
-  .seg button[aria-current="true"] {
-    color: var(--ink);
-    background: var(--pill);
-    box-shadow: var(--raised);
-  }
+  /* The raised pill is a separate sliding element (.seg-pill), so the
+     active option only carries the ink change - same motion as the
+     window picker and the bottom slider. */
+  .seg button[aria-current="true"] { color: var(--ink); }
 
   /* Inline live-audio player - sits at the top of the unlocked drawer.
      A single play/stop button with a quiet running-indicator dot. */
@@ -404,7 +695,7 @@
     background: var(--ink-soft); flex-shrink: 0;
     transition: background 200ms ease;
   }
-  .live-audio[data-on="true"] .pulse {
+  .live-audio[data-state="streaming"] .pulse {
     background: #c44a3b;
     animation: pulsate 1.6s ease-in-out infinite;
   }
@@ -426,6 +717,21 @@
     letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
     box-shadow: var(--raised);
     display: inline-flex; align-items: center; gap: 6px;
+    transition: color 160ms ease, background-color 160ms ease,
+                box-shadow 160ms ease, opacity 160ms ease,
+                transform 140ms cubic-bezier(.23,1,.32,1);
+  }
+  .live-audio button:active:not([aria-disabled="true"]) { transform: scale(.97); }
+  .live-audio button[aria-disabled="true"] {
+    background: transparent;
+    color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    opacity: .68;
+    cursor: default;
+  }
+  .live-audio button:focus-visible {
+    outline: 1px solid var(--ink);
+    outline-offset: 2px;
   }
   .live-audio button svg { width: 9px; height: 9px; }
   .live-audio button + button { margin-left: 4px; }
@@ -439,8 +745,11 @@
     box-shadow: var(--recess);
     transition: height 240ms cubic-bezier(.7,.05,.2,1), margin 240ms ease;
   }
-  .live-audio[data-on="true"] + .live-spectro {
+  .live-audio[data-state="streaming"] + .live-spectro {
     height: 70px; margin: 0 0 8px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .live-audio[data-state="streaming"] .pulse { animation: none; opacity: 1; }
   }
   .live-status {
     font: 9.5px ui-monospace, Menlo, monospace; color: var(--ink-soft);
@@ -448,7 +757,6 @@
     margin: -4px 0 6px 0; padding: 0 4px;
     min-height: 13px;
   }
-  .live-status.err { color: #a83a2d; }
   .menu-links a .l-hint {
     display: block; font: 8.5px ui-serif, Georgia, serif; text-transform: none;
     letter-spacing: 0; color: var(--ink-soft); margin-top: 2px;
@@ -498,6 +806,8 @@
   .gcollage {
     flex: 1 1 auto; width: 100%; max-width: 1300px; margin: 0 auto;
     position: relative; min-height: 0;
+    transform-origin: 50% 48%;
+    transition: opacity 180ms ease-out, transform 180ms cubic-bezier(.2,.8,.2,1);
   }
   /* Centre-out bloom: each tile fades + scales in; JS staggers the
      animation-delay by distance from the cluster centre. backwards
@@ -512,6 +822,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .gtile.entering { animation: none; }
+    .gcollage { transition: none; }
   }
   /* Atlas: cards rise + fade in, row by row (JS staggers by row). */
   @keyframes bird-card-in {
@@ -526,13 +837,15 @@
   @keyframes stats-fade-in { from { opacity: 0; } to { opacity: 1; } }
   .stats-tl-col.entering, .stats-tl-gridline.entering,
   .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
-  .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering {
+  .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering,
+  .stats-rhythm h3.entering, .stats-rhythm small.entering, .rh-plot.entering {
     animation: stats-fade-in 340ms ease backwards;
   }
   @media (prefers-reduced-motion: reduce) {
     .bird-card.entering, .stats-tl-col.entering, .stats-tl-gridline.entering,
     .stats-tl-xtick.entering, .stats-tl-yaxis.entering,
-    .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering { animation: none; }
+    .stats-side h3.entering, .stats-side small.entering, .stats-side li.entering,
+    .stats-rhythm h3.entering, .stats-rhythm small.entering, .rh-plot.entering { animation: none; }
   }
   .gtile {
     position: absolute;
@@ -616,10 +929,109 @@
   }
 
   /* Page header is now shared at .stage > .static-head - see top of CSS. */
+  .stats-date-nav {
+    position: absolute; top: 3px; right: 0; z-index: 8;
+    display: inline-flex; align-items: center; gap: 2px;
+    color: var(--ink-soft);
+  }
+  .stats-date-nav[hidden] { display: none; }
+  .stats-date-nav button {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 24px; height: 24px; padding: 0;
+    border: 0; background: transparent; color: inherit; cursor: pointer;
+    transition: color 140ms ease, transform 140ms cubic-bezier(.23,1,.32,1);
+  }
+  .stats-date-nav button svg { width: 12px; height: 12px; display: block; }
+  .stats-date-nav .stats-date-label {
+    min-width: 68px; padding: 0 3px;
+    font: 600 12.5px/1.2 ui-serif, "Iowan Old Style", Georgia, serif;
+    color: var(--ink); letter-spacing: 0.015em;
+  }
+  .stats-date-nav button:active:not(:disabled) { transform: scale(.96); }
+  .stats-date-nav button:disabled { opacity: .24; cursor: default; }
+  .stats-date-nav button:focus-visible {
+    outline: 1px solid var(--ink-soft); outline-offset: 1px;
+  }
+  .stats-date-nav > button:focus-visible { border-radius: 3px; }
+  .stats-calendar {
+    position: absolute; top: calc(100% + 7px); right: 0;
+    width: 252px; box-sizing: border-box; padding: 12px;
+    color: var(--ink); background: var(--paper); border-radius: 9px;
+    box-shadow: var(--edge-lg), 0 12px 30px rgba(26,22,18,.08);
+    transform-origin: 100% 0;
+    opacity: 0; transform: translateY(-2px) scale(.98);
+    visibility: hidden; pointer-events: none;
+    transition: opacity 160ms ease-out, transform 160ms cubic-bezier(.23,1,.32,1), visibility 0s linear 160ms;
+  }
+  .stats-calendar[aria-hidden="false"] {
+    opacity: 1; transform: translateY(0) scale(1);
+    visibility: visible; pointer-events: auto;
+    transition: opacity 160ms ease-out, transform 160ms cubic-bezier(.23,1,.32,1);
+  }
+  .stats-calendar.no-motion { transition: none; }
+  .stats-calendar-head {
+    display: grid; grid-template-columns: 26px 1fr 26px;
+    align-items: center; margin-bottom: 9px;
+  }
+  .stats-calendar-head button { min-width: 26px; width: 26px; height: 26px; }
+  .stats-calendar-head > span {
+    text-align: center;
+    font: 500 10px/1.2 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .03em;
+  }
+  .stats-calendar-week, .stats-calendar-days {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+  }
+  .stats-calendar-days { justify-items: center; }
+  .stats-calendar-week { margin-bottom: 3px; }
+  .stats-calendar-week span {
+    text-align: center;
+    font: 7.5px/1 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: .08em;
+  }
+  .stats-calendar-days span { height: 28px; }
+  .stats-calendar-days button {
+    position: relative; min-width: 28px; width: 28px; height: 28px; padding: 0;
+    border: 0; border-radius: 50%; background: transparent;
+    color: var(--ink); cursor: pointer;
+    font: 500 9.5px/1 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    transition: color 120ms ease, background 120ms ease, transform 120ms cubic-bezier(.23,1,.32,1);
+  }
+  .stats-calendar-days button.has-data::after {
+    content: ''; position: absolute; left: 50%; bottom: 3px;
+    width: 2px; height: 2px; margin-left: -1px;
+    border-radius: 50%; background: var(--accent-2);
+  }
+  .stats-calendar-days button.is-today { box-shadow: inset 0 0 0 1px var(--hairline); }
+  .stats-calendar-days button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+  .stats-calendar-days button[aria-selected="true"]::after { background: var(--paper); }
+  .stats-calendar-days button:disabled { opacity: .2; cursor: default; }
+  .stats-calendar-days button:active:not(:disabled) { transform: scale(.94); }
+  .stats-calendar-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 9px; padding-top: 8px;
+    box-shadow: inset 0 1px 0 var(--hairline);
+  }
+  .stats-calendar-foot button {
+    min-width: 0; height: 22px; padding: 0 2px;
+    font: 8px/1 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: .08em;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .stats-date-nav button:hover:not(:disabled) { color: var(--ink); }
+    .stats-date-nav .stats-date-label:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .stats-calendar-days button:hover:not(:disabled):not([aria-selected="true"]) { background: var(--paper-2); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stats-date-nav button { transition: color 140ms ease; }
+    .stats-calendar { transition: none; transform: none; }
+  }
   /* Stats grid: charts stack on the LEFT, text sections on the RIGHT.
      Each chart is a full-bleed card; each text section is a list with
      subtle separators. Sized to fit the viewport without scrolling. */
   .stats-grid {
+    position: relative;
     flex: 1 1 auto; min-height: 0;
     display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 80px;
     max-width: 1100px; margin: 0 auto; width: 100%;
@@ -627,6 +1039,11 @@
   }
   @media (max-width: 900px) {
     .stats-grid { grid-template-columns: 1fr; gap: 40px; }
+    .stats-date-nav {
+      position: relative; top: auto; right: auto;
+      grid-column: 1 / -1; justify-self: end; margin-bottom: -31px;
+    }
+    .stats-grid .stats-side { padding-top: 6px; }
     /* Single-column: the timeline has no tall grid sibling to stretch
        against, so pin it to a usable height instead of letting it
        collapse to its (zero) intrinsic height. clamp() keeps it sane
@@ -637,17 +1054,19 @@
      columns (set in drawHistograms) and scrolls horizontally for the rest,
      with larger labels/ticks so it's legible + tappable. */
   @media (max-width: 700px) {
+    .stats-calendar { width: min(252px, calc(100vw - 40px)); }
     .stats-timeline { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
     .stats-tl-label { font-size: 11px; }
     .stats-tl-label .sci { font-size: 9px; }
     .stats-tl-xtick { font-size: 8px; }
   }
   /* Desktop two-column: size the grid to the side panel's content height
-     (the timeline stretches to match it) and centre it vertically, so the
-     chart sits beside the text at the same height instead of stretching to
-     the full viewport. */
+     (the timeline stretches to match it). Top-anchored, not vertically
+     centred: when the hourly ledger expands it must grow only downward, so
+     the top of the chart stays pinned to the top of the side panel rather
+     than the whole block drifting up as it gets taller. */
   @media (min-width: 901px) {
-    .stats-grid { flex: 0 1 auto; margin: auto; }
+    .stats-grid { flex: 0 1 auto; margin: 0 auto; }
   }
 
   /* Editorial detection timeline. One evenly-spaced column per species,
@@ -691,6 +1110,8 @@
     background: var(--hairline);
     pointer-events: none;
   }
+  .stats-tl-gridline.pick-clear { top: 42px; }
+  .stats-tl-gridline.pick-approach { top: 18px; }
   .stats-tl-square {
     position: absolute; left: 50%;
     transform: translateX(-50%);
@@ -754,12 +1175,23 @@
     font: 7px/1 "SF Mono", Menlo, monospace; color: var(--ink-soft);
     white-space: nowrap;
   }
-  .stats-tl-empty {
-    position: absolute; inset: 0;
+  .stats-data-empty {
     display: flex; align-items: center; justify-content: center;
-    font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft);
-    text-transform: lowercase; letter-spacing: 0.18em;
+    min-height: 100%;
   }
+  .stats-data-empty,
+  .window-empty {
+    text-align: center;
+    font: 11px/1.4 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink-soft);
+    text-transform: lowercase; letter-spacing: 0.18em;
+    white-space: nowrap;
+  }
+  @media (max-width: 350px) {
+    .stats-data-empty,
+    .window-empty { font-size: 10px; letter-spacing: 0.14em; }
+  }
+  .stats-timeline > .stats-data-empty { position: absolute; inset: 0; }
   /* Trim note - shown when the plot can't fit every species column and
      falls back to the most-heard subset. A paper background keeps it
      legible even if a tall label reaches the corner behind it. */
@@ -773,12 +1205,16 @@
   /* (Old chart-card / .stats-charts CSS removed - replaced by the
      editorial .stats-timeline above.) */
 
+  /* Top-anchored, not vertically centred: the chart column grows downward when
+     the hourly ledger expands, and a centred side panel would re-centre into
+     the taller row and appear to jump down. Its resting height is synced to
+     --chart-h, so pinning it to the top looks identical while collapsed. */
   .stats-side {
-    display: flex; flex-direction: column; justify-content: center;
+    display: flex; flex-direction: column; justify-content: flex-start;
     align-self: stretch; max-height: 100%;
-    padding: 6px 0;
+    padding: 46px 0 6px;
   }
-  .stats-side h3 {
+  .stats-side h3, .stats-rhythm h3 {
     font: 700 10px ui-monospace, Menlo, monospace; color: var(--ink);
     letter-spacing: 0.18em; text-transform: uppercase; margin: 0 0 1px;
     border-left: 2px solid var(--accent); padding-left: 10px;
@@ -787,7 +1223,7 @@
      rather than spreading to fill the column. */
   .stats-side .grp { flex: 0 0 auto; }
   .stats-side .grp + .grp { margin-top: 22px; }
-  .stats-side .grp small {
+  .stats-side .grp small, .stats-rhythm small {
     display: block; font: 9px ui-monospace, Menlo, monospace; color: var(--ink-soft);
     letter-spacing: 0.06em; margin: 0 0 3px 12px;
   }
@@ -799,6 +1235,13 @@
     font: 12.5px/1.25 ui-serif, Georgia, serif; color: var(--ink);
     align-items: baseline;
     transition: background 140ms ease, color 140ms ease;
+  }
+  .stats-side li.stats-window-empty {
+    grid-template-columns: 1fr;
+    padding: 4px 0;
+  }
+  .stats-side li.stats-window-empty .window-empty {
+    display: block; margin-left: 12px; text-align: left;
   }
   .stats-side li[data-sci] { cursor: pointer; }
   .stats-side li[data-sci]:hover { background: var(--paper-2); }
@@ -819,11 +1262,905 @@
     /* The bar is transparent and floats (z-index) over the scrolling cards;
        only the pill is opaque. Cards scroll behind it and clip at the top of
        the view, under the title, as they did before it was pinned. */
-    position: sticky; top: 0; z-index: 2;
+    position: sticky; top: 0; z-index: 10;
     max-width: 1280px; margin: 0 auto 18px;
     display: flex; justify-content: flex-end; align-items: center;
     pointer-events: none;
   }
+.stage.is-compact .atlas-controls {
+  top: 4px;
+}
+
+/* ---- Atlas postcard ---------------------------------------------------
+   A compact field-guide postcard. Texture stays beneath the interface so
+   type, illustrations and stamps are never flattened into a blurred layer. */
+#postcard-modal {
+  position: fixed; inset: 0; z-index: 90;
+  display: grid; place-items: center;
+  padding: clamp(16px, 4vw, 54px);
+  visibility: hidden; pointer-events: none;
+}
+#postcard-modal[aria-hidden="false"] { visibility: visible; pointer-events: auto; }
+.postcard-backdrop {
+  position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--paper) 34%, transparent);
+  opacity: 0;
+  transition: opacity 240ms cubic-bezier(.23,1,.32,1);
+}
+.postcard-backdrop::before {
+  content: "";
+  position: absolute; inset: 0;
+  -webkit-backdrop-filter: blur(7px) saturate(.92);
+  backdrop-filter: blur(7px) saturate(.92);
+  -webkit-mask-image: radial-gradient(ellipse 72% 78% at 50% 50%, #000 0 45%, rgba(0,0,0,.8) 59%, transparent 84%);
+  mask-image: radial-gradient(ellipse 72% 78% at 50% 50%, #000 0 45%, rgba(0,0,0,.8) 59%, transparent 84%);
+}
+#postcard-modal.is-blurring .postcard-backdrop {
+  opacity: 1;
+  transition: none;
+}
+#postcard-modal.is-open .postcard-backdrop { opacity: 1; }
+body.postcard-open { overflow: hidden; }
+
+.postcard-sheet {
+  --card-stock: #f7f6f2;
+  --card-panel: var(--paper);
+  --card-panel-soft: var(--paper);
+  --card-control: var(--paper-2);
+  --card-control-active: var(--paper);
+  --card-action-surface: color-mix(in srgb, var(--card-control) 90%, #ead7b5 10%);
+  --card-action-active: color-mix(in srgb, var(--card-control-active) 94%, #ead7b5 6%);
+  --card-ink: #29251f;
+  --card-muted: #77736b;
+  --card-rule: rgba(61, 51, 37, .13);
+  --card-halo: rgba(255, 252, 240, .66);
+  --card-image-shadow: rgba(44, 35, 24, .13);
+  --card-shadow: 0 2px 1px rgba(42, 34, 24, .07), 0 26px 68px rgba(38, 30, 20, .22);
+  --card-stock-wash: color-mix(in srgb, var(--card-stock) 94%, transparent);
+  --card-panel-wash: color-mix(in srgb, var(--card-panel) 96.5%, transparent);
+  --card-paper-blend: multiply;
+  position: relative;
+  width: min(880px, calc(100vw - 56px));
+  height: min(520px, calc(100dvh - 56px));
+  min-height: 450px;
+  display: grid;
+  grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+  gap: 8px;
+  padding: 8px;
+  color: var(--card-ink);
+  background-color: var(--card-stock);
+  background-image:
+    linear-gradient(var(--card-stock-wash), var(--card-stock-wash)),
+    url('./assets/stamp/paper-texture-grey.png');
+  background-position: 0 0, center;
+  background-size: auto, 680px 510px;
+  background-repeat: repeat;
+  background-blend-mode: normal, var(--card-paper-blend);
+  border: 1px solid color-mix(in srgb, var(--card-ink) 18%, transparent);
+  border-radius: 3px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  isolation: isolate;
+  transform: translateY(12px) rotate(var(--sheet-turn, 0deg));
+  opacity: 0;
+  transition: transform 280ms cubic-bezier(.23,1,.32,1), opacity 200ms cubic-bezier(.23,1,.32,1);
+  will-change: transform, opacity;
+}
+.postcard-sheet { scrollbar-width: none; overscroll-behavior: contain; }
+.postcard-sheet::-webkit-scrollbar { display: none; }
+.postcard-sheet::before {
+  display: none;
+}
+.postcard-sheet::after { display: none; }
+#postcard-modal.is-open .postcard-sheet { transform: translateY(0) rotate(var(--sheet-turn, 0deg)); opacity: 1; }
+#postcard-modal.is-positioned .postcard-sheet { transition: none; transform: translateY(0) rotate(var(--sheet-turn, 0deg)); opacity: 0; }
+
+/* The grip belongs to the compact drawer only. Keeping it out of desktop
+   layout preserves the two-column postcard grid exactly. */
+.postcard-drawer-handle { display: none; }
+
+:root[data-theme="dark"] .postcard-sheet {
+  --card-stock: #202124;
+  --card-panel: #292a2e;
+  --card-panel-soft: #292a2e;
+  --card-control: #35363b;
+  --card-control-active: #44464c;
+  --card-action-surface: color-mix(in srgb, var(--card-control) 96%, #b9955c 4%);
+  --card-action-active: color-mix(in srgb, var(--card-control-active) 97%, #b9955c 3%);
+  --card-ink: #efede8;
+  --card-muted: #a6a5aa;
+  --card-rule: rgba(239, 238, 234, .13);
+  --card-halo: rgba(205, 210, 222, .065);
+  --card-image-shadow: rgba(0, 0, 0, .34);
+  --card-shadow: 0 2px 1px rgba(0,0,0,.25), 0 30px 76px rgba(0,0,0,.48);
+  --card-stock-wash: color-mix(in srgb, var(--card-stock) 96%, transparent);
+  --card-panel-wash: color-mix(in srgb, var(--card-panel) 97%, transparent);
+  --card-paper-blend: soft-light;
+}
+:root[data-theme="dark"] .postcard-backdrop {
+  background: color-mix(in srgb, #0b0c0f 58%, transparent);
+}
+
+.postcard-visual {
+  position: relative; z-index: 1;
+  min-width: 0; min-height: 0;
+  padding: 0;
+}
+.postcard-bird-frame {
+  position: relative;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  /* Corners nearest the postcard edge stay cut like card stock; the
+     inward-facing corners are softer so the nested panels read separately. */
+  border-radius: 2px 9px 9px 2px;
+  background-color: var(--card-panel);
+  background-image:
+    radial-gradient(circle at 48% 43%, var(--card-halo), transparent 56%),
+    linear-gradient(var(--card-panel-wash), var(--card-panel-wash)),
+    url('./assets/stamp/paper-texture-grey.png'),
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--card-panel) 94%, var(--card-stock) 6%),
+      var(--card-panel) 62%,
+      color-mix(in srgb, var(--card-panel) 92%, var(--card-stock) 8%));
+  background-position: 0 0, 0 0, center, 0 0;
+  background-size: auto, auto, 680px 510px, auto;
+  background-repeat: repeat;
+  background-blend-mode: normal, normal, var(--card-paper-blend), normal;
+  box-shadow: inset 0 0 0 1px var(--card-rule), inset 0 -28px 60px color-mix(in srgb, var(--card-ink) 3%, transparent);
+}
+.postcard-artwork {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+}
+.postcard-bird-frame #modalImg {
+  display: block;
+  width: 100%; height: 100%;
+  padding: clamp(30px, 5vw, 68px);
+  object-fit: contain;
+  filter: drop-shadow(0 12px 9px var(--card-image-shadow));
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+.postcard-bird-frame #modalImg.is-loading { opacity: 0; }
+.postcard-bird-frame .postcard-artwork[data-art-state="missing"],
+.postcard-bird-frame .postcard-artwork[data-art-state="fallback"] {
+  display: grid;
+  place-items: center;
+  padding: 26px 20px 58px;
+}
+.postcard-bird-frame .postcard-artwork[data-art-state="missing"] #modalImg,
+.postcard-bird-frame .postcard-artwork[data-art-state="fallback"] #modalImg {
+  flex: 0 1 auto;
+  width: min(74%, 270px);
+  height: auto;
+  max-height: calc(100% - 48px);
+  padding: 0;
+  object-fit: contain;
+  opacity: .72;
+  filter: drop-shadow(0 8px 7px var(--card-image-shadow));
+}
+.postcard-bird-frame .postcard-pose-toggle {
+  position: absolute; z-index: 3;
+  left: 14px; bottom: 14px;
+}
+/* The Font Awesome birds are solid silhouettes, so full-strength selected
+   ink reads heavier than the Atlas filter's fine stroked glyphs. Keep the
+   shared Atlas pill and colour tokens intact, then soften only the optical
+   weight of a hovered, focused, or selected pose icon. */
+.postcard-bird-frame .postcard-pose-toggle button svg {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+.postcard-bird-frame .postcard-pose-toggle button:hover svg,
+.postcard-bird-frame .postcard-pose-toggle button:focus-visible svg,
+.postcard-bird-frame .postcard-pose-toggle button[aria-current="true"] svg {
+  opacity: .72;
+}
+.postcard-bird-frame .postcard-pose-toggle[data-unavailable="true"],
+.postcard-bird-frame .postcard-pose-toggle button[data-unavailable="true"] { display: none; }
+.postcard-bird-frame .postcard-pose-toggle button .tip {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.postcard-links {
+  position: absolute; z-index: 3;
+  right: 14px; bottom: 14px;
+  display: flex; gap: 6px; padding: 0;
+  background: transparent;
+}
+.postcard-links a,
+.postcard-generate {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 28px; padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--card-muted);
+  background: var(--card-action-surface);
+  box-shadow: inset 0 0 0 1px var(--card-rule), 0 4px 12px rgba(38,30,20,.07);
+  font: 600 9px/1 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: .04em;
+  text-decoration: none;
+  transition: color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+.postcard-links a:active,
+.postcard-generate:active:not(:disabled) { transform: scale(.93); }
+.postcard-links a:focus-visible,
+.postcard-generate:focus-visible {
+  outline: 1px solid var(--card-ink);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .postcard-links a:hover,
+  .postcard-generate:hover:not(:disabled) {
+    color: var(--card-ink);
+    background: var(--card-action-active);
+    transform: scale(.97);
+  }
+}
+
+.postcard-content {
+  position: relative; z-index: 1;
+  min-width: 0; min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  overflow: hidden;
+}
+.postcard-identity {
+  flex: 0 0 128px;
+  min-height: 128px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(124px, 27%, 170px);
+  grid-template-rows: 1fr;
+  gap: clamp(12px, 2vw, 22px);
+  align-items: stretch;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--card-rule);
+  border-radius: 9px 2px 9px 9px;
+  background-color: var(--card-panel);
+  background-image:
+    linear-gradient(var(--card-panel-wash), var(--card-panel-wash)),
+    url('./assets/stamp/paper-texture-grey.png');
+  background-position: 0 0, center;
+  background-size: auto, 680px 510px;
+  background-repeat: repeat;
+  background-blend-mode: normal, var(--card-paper-blend);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--card-control-active) 60%, transparent);
+}
+.postcard-heading { min-width: 0; display: flex; flex-direction: column; }
+.postcard-heading h2 {
+  margin: 0;
+  max-width: 100%;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font: 500 clamp(24px, 2.5vw, 34px)/1.08 ui-serif, "Iowan Old Style", Georgia, serif;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+}
+.postcard-stats {
+  width: max-content; max-width: 100%;
+  display: flex; align-items: baseline; gap: 7px;
+  margin-top: auto;
+  padding: 8px 0 0;
+  overflow: hidden;
+  color: var(--card-muted);
+  font: 500 9.5px/1.2 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.postcard-stats > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.postcard-stats b {
+  color: var(--card-ink);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.postcard-stamp-slot {
+  position: relative;
+  width: 100%; min-height: 0;
+  align-self: stretch;
+  z-index: 3;
+  overflow: hidden;
+  border-radius: 4px;
+  padding: 4px;
+}
+.postcard-stamp-slot .stamp-fit {
+  position: absolute !important;
+  top: calc(50% - 2px) !important; right: 4px !important; left: auto !important;
+  transform-origin: 100% 50% !important;
+  transform: translateY(-50%) scale(var(--postcard-scale, .66)) rotate(var(--postcard-turn, 0deg)) !important;
+  filter: none !important;
+  transition: none !important;
+}
+.postcard-stamp-slot .stamp,
+.postcard-flight .stamp {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(var(--scale, 1)) rotate(var(--tilt, 0deg));
+  transform-origin: 50% 50%;
+  filter: none !important;
+}
+.postcard-flight {
+  position: fixed; z-index: 100;
+  pointer-events: none;
+  transform-origin: center;
+  will-change: transform;
+}
+.postcard-flight > .stamp-fit {
+  position: absolute !important;
+  inset: 0 auto auto 0 !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+.postcard-section {
+  margin: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--card-rule);
+  border-radius: 9px;
+  background-color: var(--card-panel);
+  background-image:
+    linear-gradient(var(--card-panel-wash), var(--card-panel-wash)),
+    url('./assets/stamp/paper-texture-grey.png');
+  background-position: 0 0, center;
+  background-size: auto, 680px 510px;
+  background-repeat: repeat;
+  background-blend-mode: normal, var(--card-paper-blend);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--card-control-active) 45%, transparent), 0 5px 15px rgba(52, 42, 29, .03);
+}
+.postcard-recordings { border-radius: 9px 9px 2px 9px; }
+.postcard-section[open] {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.postcard-section::details-content {
+  min-height: 0;
+  overflow: hidden;
+}
+.postcard-section[open]::details-content {
+  flex: 1 1 auto;
+}
+.postcard-about[open] { flex: 1 1 auto; }
+.postcard-recordings[open] { flex: 1 1 150px; }
+.postcard-section summary {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px; align-items: center;
+  padding: 0 14px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.postcard-section summary::-webkit-details-marker { display: none; }
+.postcard-section summary:focus { outline: 0; }
+.postcard-section summary:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--card-ink) 34%, transparent);
+  outline-offset: -2px;
+}
+.postcard-section summary > span {
+  font: 500 20px/1 ui-serif, "Iowan Old Style", Georgia, serif;
+  letter-spacing: -.025em;
+}
+.postcard-section summary > small {
+  justify-self: end;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--card-muted);
+  font: 500 8px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.postcard-section summary > i { display: none; }
+.postcard-section[open] summary { box-shadow: none; }
+.postcard-section-body {
+  height: 100%;
+  padding: 2px 14px 13px;
+  background: transparent;
+}
+.postcard-about .postcard-section-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-block: 12px;
+}
+.postcard-about[open] .postcard-section-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.postcard-about[open] .postcard-section-body::-webkit-scrollbar { display: none; }
+.postcard-about .desc {
+  flex: 0 0 auto;
+  margin: 0;
+  max-width: 70ch;
+  color: color-mix(in srgb, var(--card-ink) 82%, transparent);
+  font: 12.5px/1.46 ui-serif, Georgia, serif;
+}
+.postcard-about .desc p { margin: 0; }
+.postcard-about .desc p + p { margin-top: 10px; }
+.postcard-about .desc.placeholder { color: var(--card-muted); }
+.postcard-about .modal-meta {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, max-content));
+  justify-content: space-between;
+  align-items: baseline;
+  align-content: center;
+  gap: 8px;
+  margin-top: 0;
+  padding-block: 11px;
+}
+.postcard-about .meta-item {
+  min-height: 0; padding: 0;
+  min-width: 0;
+  display: inline-flex; align-items: baseline; gap: 5px;
+  border-radius: 0;
+  background: transparent;
+}
+.postcard-about .meta-item .k,
+.postcard-about .meta-item .v {
+  font: 500 8.25px/1.3 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: .01em;
+  text-transform: none;
+}
+.postcard-about .meta-item .k {
+  flex: 0 0 auto;
+  color: var(--card-muted);
+}
+.postcard-about .meta-item .v {
+  min-width: 0;
+  margin-left: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--card-ink);
+}
+.postcard-about .about-distinctive {
+  flex: 0 0 auto;
+  margin-top: 0;
+  color: var(--card-muted);
+  font-size: 11.5px;
+  line-height: 1.42;
+}
+
+.postcard-recordings[open] {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.postcard-recordings .postcard-section-body {
+  position: static;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column;
+  height: 100%;
+  padding: 0 14px;
+  overflow: hidden;
+}
+.postcard-recordings .rec-table-head,
+.postcard-recordings .rec-row-toggle {
+  display: grid;
+  grid-template-columns: minmax(76px, 1fr) minmax(64px, .7fr) minmax(92px, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.postcard-recordings .rec-table-head {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0;
+  color: var(--card-muted);
+  font: 600 7.5px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  text-align: left;
+}
+.postcard-recordings .rec-table-head span { text-align: left; }
+.postcard-recordings ol {
+  flex: 1; min-height: 0; height: auto; max-height: none;
+  margin: 0; padding: 0 0 14px;
+  list-style: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+.postcard-recordings ol::-webkit-scrollbar { display: none; }
+.postcard-recordings .rec-row {
+  display: block;
+  margin: 0; padding: 0;
+  border: 0; border-top: 1px solid var(--card-rule);
+  border-radius: 0;
+  color: inherit; background: transparent;
+  box-shadow: none;
+}
+.postcard-recordings .rec-row:hover { background: transparent; }
+.postcard-recordings .rec-row:first-child { border-top: 0; }
+.postcard-recordings .rec-row-toggle {
+  width: 100%; min-height: 48px;
+  padding: 9px 0;
+  border: 0;
+  color: inherit; background: transparent;
+  text-align: left; cursor: pointer;
+  transform-origin: center;
+  transition: transform 160ms cubic-bezier(.23,1,.32,1);
+}
+.postcard-recordings .rec-row-toggle:focus { outline: 0; }
+.postcard-recordings .rec-row-toggle:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--card-ink) 18%, transparent);
+  outline-offset: -3px;
+  border-radius: 3px;
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--card-ink) 54%, transparent);
+}
+.postcard-recordings .when,
+.postcard-recordings .conf,
+.postcard-recordings .date-time { min-width: 0; display: block; }
+.postcard-recordings .when b,
+.postcard-recordings .conf b,
+.postcard-recordings .date-time b {
+  display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--card-ink);
+  font: 500 12px/1 ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.postcard-recordings .conf,
+.postcard-recordings .date-time { text-align: left; }
+.postcard-recordings .rec-spectro {
+  position: relative;
+  height: 0; margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--card-rule);
+  border-radius: 5px;
+  color: var(--card-ink);
+  background: var(--card-panel);
+  opacity: 0;
+  transition: height 220ms cubic-bezier(.22,1,.36,1), margin 220ms ease, opacity 160ms ease;
+}
+.postcard-recordings .rec-row.expanded .rec-spectro { height: 142px; margin: 1px 0 13px; opacity: 1; }
+.postcard-recordings .rec-spectro canvas {
+  position: absolute; z-index: 0; inset: 0 0 30px;
+  display: block; width: 100%; height: calc(100% - 30px);
+  image-rendering: auto; opacity: 0;
+}
+.postcard-recordings .rec-spectro canvas.ready { opacity: 1; }
+.postcard-recordings .rec-spectro img,
+.postcard-recordings .rec-spectro .rec-spectro-image {
+  position: absolute; z-index: 0; inset: 0 0 30px;
+  display: block; width: 100%; height: calc(100% - 30px);
+  object-fit: cover;
+  object-position: 50% 60%;
+  background: var(--card-panel);
+}
+.postcard-recordings .rec-spectro-loading {
+  position: absolute; inset: 0 0 30px; z-index: 1;
+  display: grid; place-items: center;
+  color: var(--card-muted);
+  font: 500 8px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .08em; text-transform: uppercase;
+  pointer-events: none;
+}
+.postcard-recordings .rec-spectro .rec-spectro-played {
+  position: absolute; z-index: 2; inset: 0 auto 30px 0;
+  width: 0;
+  background: color-mix(in srgb, var(--card-ink) 5%, transparent);
+  pointer-events: none;
+}
+:root[data-theme="dark"] .postcard-recordings .rec-spectro .rec-spectro-played {
+  background: color-mix(in srgb, var(--card-ink) 5%, transparent);
+}
+.postcard-recordings .rec-loop-region {
+  position: absolute; z-index: 3; top: 0; bottom: 30px;
+  width: 25%; left: 0;
+  border-inline: 1px solid color-mix(in srgb, var(--card-ink) 46%, transparent);
+  background: color-mix(in srgb, var(--card-ink) 4.5%, transparent);
+  opacity: 0; pointer-events: none;
+}
+.postcard-recordings .rec-spectro[data-loop] .rec-loop-region { opacity: 1; }
+.postcard-recordings .rec-spectro .rec-spectro-cursor {
+  position: absolute; z-index: 4; top: 10px; bottom: 30px; left: 0;
+  width: 1px; height: auto;
+  background: var(--card-ink); border-radius: 0; box-shadow: none;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+}
+.postcard-recordings .rec-spectro.armed .rec-spectro-cursor { opacity: .72; }
+.postcard-recordings .rec-spectro .rec-spectro-cursor::after {
+  content: ""; position: absolute; left: 50%; top: -7px; bottom: auto;
+  width: 4px; height: 9px; border-radius: 999px;
+  background: var(--card-ink);
+  box-shadow: none;
+  transform: translateX(-50%);
+}
+.postcard-recordings .rec-spectro .rec-spectro-scrub {
+  position: absolute; z-index: 5; inset: 0 0 30px;
+  cursor: ew-resize;
+  touch-action: pan-y;
+}
+.postcard-recordings .rec-spectro .rec-spectro-scrub:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--card-ink) 45%, transparent);
+  outline-offset: -2px;
+}
+.postcard-recordings .rec-loop-handle {
+  display: none;
+  position: absolute; z-index: 6; top: 0; bottom: 30px;
+  width: 16px; padding: 0;
+  border: 0; background: transparent;
+  color: var(--card-ink); cursor: col-resize;
+  transform: translateX(-50%);
+  touch-action: none;
+}
+.postcard-recordings .rec-spectro[data-loop] .rec-loop-handle { display: block; }
+.postcard-recordings .rec-loop-handle::before {
+  content: ""; position: absolute; top: 12px; bottom: 0; left: 50%;
+  width: 1px; background: currentColor;
+  transform: translateX(-50%); opacity: .52;
+}
+.postcard-recordings .rec-loop-handle::after {
+  content: ""; position: absolute; top: 3px; left: 50%;
+  width: 4px; height: 10px;
+  border: 0; border-radius: 999px;
+  background: currentColor;
+  transform: translateX(-50%);
+  opacity: .82;
+}
+.postcard-recordings .rec-loop-handle:focus-visible { outline: 0; }
+.postcard-recordings .rec-loop-handle:focus-visible::after {
+  box-shadow: 0 0 0 2px var(--card-panel), 0 0 0 3px var(--card-ink);
+}
+.postcard-recordings .rec-player-controls {
+  position: absolute; z-index: 7; inset: auto 0 0;
+  height: 30px; padding: 0 6px;
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center; gap: 7px;
+  border-top: 1px solid var(--card-rule);
+  color: var(--card-ink); background: var(--card-panel);
+}
+.postcard-recordings .rec-player-toggle,
+.postcard-recordings .rec-loop-toggle {
+  border: 0; color: inherit; background: transparent;
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, opacity 140ms ease;
+}
+.postcard-recordings .rec-player-toggle {
+  width: 24px; height: 24px; padding: 0;
+  display: grid; place-items: center;
+  border-radius: 3px;
+  box-shadow: none;
+  opacity: .86;
+}
+.postcard-recordings .rec-player-toggle svg { display: block; width: 11px; height: 11px; }
+.postcard-recordings .rec-player-toggle[data-active="true"] {
+  color: var(--card-ink); background: transparent;
+  box-shadow: none;
+  opacity: .66;
+}
+.postcard-recordings .rec-player-toggle[data-error="true"] { opacity: .38; cursor: not-allowed; }
+.postcard-recordings .rec-player-time {
+  overflow: hidden; white-space: nowrap;
+  color: var(--card-muted);
+  font: 500 8px/1 ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+.postcard-recordings .rec-loop-toggle {
+  height: 22px; padding: 0 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 4px;
+  color: var(--card-muted);
+  font: 600 7px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.postcard-recordings .rec-loop-toggle svg { width: 13px; height: 13px; }
+.postcard-recordings .rec-loop-toggle[aria-pressed="true"] {
+  color: var(--card-ink); background: var(--card-control);
+}
+.postcard-recordings .rec-player-toggle:focus-visible,
+.postcard-recordings .rec-loop-toggle:focus-visible {
+  outline: 1px solid var(--card-ink); outline-offset: 2px;
+}
+.postcard-recordings .rec-player-toggle:active,
+.postcard-recordings .rec-loop-toggle:active { transform: scale(.96); }
+@media (hover: hover) and (pointer: fine) {
+  .postcard-recordings .rec-player-toggle:hover { background: transparent; opacity: 1; }
+  .postcard-recordings .rec-player-toggle[data-active="true"]:hover { opacity: .78; }
+  .postcard-recordings .rec-loop-toggle:hover { background: var(--card-control); }
+}
+.postcard-recordings .rec-empty {
+  padding: 20px 0;
+  color: var(--card-muted);
+  font: 10px/1.3 ui-monospace, Menlo, monospace;
+}
+@media (hover: hover) and (pointer: fine) {
+  .postcard-recordings .rec-row-toggle:hover { transform: scale(.994); }
+}
+.postcard-recordings .rec-row-toggle:active { transform: scale(.988); }
+.postcard-generate {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  z-index: 3;
+  left: 14px;
+  bottom: 14px;
+  max-width: calc(100% - 168px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.postcard-generate[hidden] { display: none; }
+.postcard-generate:disabled { cursor: default; opacity: .58; }
+
+@media (max-width: 860px) {
+  #postcard-modal {
+    --drawer-drag-y: 0px;
+    --drawer-bottom-bleed: 5px;
+    place-items: end center;
+    padding: 12px 10px 0;
+  }
+  .postcard-backdrop::before {
+    -webkit-mask-image: radial-gradient(ellipse 88% 82% at 50% 50%, #000 0 50%, rgba(0,0,0,.72) 66%, transparent 92%);
+    mask-image: radial-gradient(ellipse 88% 82% at 50% 50%, #000 0 50%, rgba(0,0,0,.72) 66%, transparent 92%);
+  }
+  .postcard-sheet {
+    width: min(740px, calc(100vw - 20px));
+    height: calc(100dvh - 12px + var(--drawer-bottom-bleed));
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: clamp(130px, calc(50dvh - 100px), 350px) minmax(0, 1fr);
+    padding: 26px 8px calc(8px + env(safe-area-inset-bottom, 0px) + var(--drawer-bottom-bleed));
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+    transform-origin: 50% 100%;
+    transform: translateY(calc(12px + var(--drawer-drag-y)));
+  }
+  #postcard-modal.is-open .postcard-sheet,
+  #postcard-modal.is-positioned .postcard-sheet { transform: translateY(var(--drawer-drag-y)); }
+  .postcard-drawer-handle {
+    position: absolute; z-index: 5;
+    inset: 0 0 auto;
+    width: 100%; height: 44px;
+    display: grid; place-items: start center;
+    padding: 10px 0 0;
+    border: 0;
+    border-radius: 0;
+    color: var(--card-ink);
+    background: transparent;
+    appearance: none;
+    cursor: grab;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .postcard-drawer-handle > span {
+    width: 38px; height: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 24%, transparent);
+    transition: background-color 140ms ease, transform 140ms cubic-bezier(.23,1,.32,1);
+  }
+  .postcard-drawer-handle:focus { outline: 0; }
+  .postcard-drawer-handle:focus-visible {
+    outline: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+    outline-offset: -5px;
+  }
+  .postcard-drawer-handle:active > span { transform: scaleX(.92); }
+  .postcard-sheet.is-drawer-dragging,
+  #postcard-modal.is-drawer-dragging .postcard-sheet {
+    transition: none;
+  }
+  .postcard-sheet.is-drawer-dragging .postcard-drawer-handle,
+  #postcard-modal.is-drawer-dragging .postcard-drawer-handle { cursor: grabbing; }
+  #postcard-modal .postcard-sheet.is-drawer-closing,
+  #postcard-modal.is-drawer-closing .postcard-sheet {
+    transform: translateY(calc(100dvh + var(--drawer-drag-y)));
+    opacity: 1;
+    transition: transform 280ms cubic-bezier(.32,.72,0,1), opacity 200ms cubic-bezier(.23,1,.32,1);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .postcard-drawer-handle:hover > span {
+      background: color-mix(in srgb, currentColor 34%, transparent);
+    }
+  }
+  .postcard-sheet::after { display: none; }
+  .postcard-visual { min-height: 0; padding: 0; overflow: hidden; }
+  .postcard-bird-frame { border-radius: 2px 2px 9px 9px; }
+  .postcard-content {
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .postcard-identity { min-height: 148px; flex: 0 0 148px; grid-template-columns: minmax(0,1fr) minmax(124px, 180px); gap: 16px; border-radius: 9px; }
+  .postcard-about[open],
+  .postcard-recordings[open] { flex: 1 1 0; min-height: 0; }
+  .postcard-recordings { border-radius: 9px 9px 2px 2px; }
+  .postcard-stamp-slot { min-height: 0; }
+  .postcard-heading h2 { font-size: clamp(27px, 5vw, 36px); }
+}
+@media (max-width: 520px) {
+  #postcard-modal { padding: 10px 8px 0; }
+  .postcard-sheet {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 10px + var(--drawer-bottom-bleed));
+    border-radius: 12px 12px 0 0;
+  }
+  .postcard-content { padding: 0; }
+  .postcard-identity { min-height: 142px; flex-basis:142px; grid-template-columns: minmax(0, 1fr) 112px; gap: 9px; }
+  .postcard-heading h2 { font-size: clamp(24px, 7vw, 32px); }
+  .postcard-stats { margin-top: auto; padding-top: 8px; gap: 5px; font-size: 8px; }
+  .postcard-stamp-slot { min-height: 0; }
+  .postcard-section summary { min-height: 46px; padding: 0 13px; gap: 8px; }
+  .postcard-section summary > span { font-size: 18px; }
+  .postcard-section summary > small { font-size: 7px; }
+  .postcard-about .modal-meta { gap: 5px; }
+  .postcard-about .meta-item { gap: 4px; }
+  .postcard-about .meta-item .k,
+  .postcard-about .meta-item .v { font-size: 7px; }
+  .postcard-recordings .postcard-section-body { padding-inline: 13px; }
+  .postcard-recordings .rec-table-head,
+  .postcard-recordings .rec-row-toggle { grid-template-columns: minmax(66px, .9fr) minmax(54px, .6fr) minmax(84px, 1fr); gap: 7px; }
+  .postcard-recordings .rec-table-head { font-size: 6.8px; letter-spacing: .065em; }
+  .postcard-recordings .when b,
+  .postcard-recordings .conf b,
+  .postcard-recordings .date-time b { font-size: 10.5px; }
+  .postcard-links a,
+  .postcard-generate { padding-inline: 8px; font-size: 8px; }
+}
+@media (max-width: 860px) and (max-height: 520px) {
+  .postcard-sheet {
+    grid-template-rows: clamp(64px, 18dvh, 104px) minmax(0, 1fr);
+  }
+  .postcard-bird-frame #modalImg { padding: clamp(10px, 3dvh, 18px); }
+  .postcard-bird-frame .postcard-artwork[data-art-state="missing"],
+  .postcard-bird-frame .postcard-artwork[data-art-state="fallback"] {
+    padding: 4px 142px 4px 104px;
+  }
+  .postcard-bird-frame .postcard-artwork[data-art-state="missing"] #modalImg,
+  .postcard-bird-frame .postcard-artwork[data-art-state="fallback"] #modalImg {
+    width: auto;
+    max-width: 110px;
+    max-height: 36px;
+    padding: 0;
+  }
+  .postcard-content { gap: 6px; }
+  .postcard-identity {
+    min-height: 78px;
+    flex-basis: 78px;
+    padding: 6px 10px;
+  }
+  .postcard-heading h2 { font-size: clamp(20px, 3.6vw, 25px); }
+  .postcard-section summary { min-height: 32px; }
+}
+@media (max-width: 350px) {
+  .postcard-heading h2 { font-size: 20px; }
+  .postcard-about .postcard-section-body { padding-inline: 9px; }
+  .postcard-about .modal-meta { gap: 2px; }
+  .postcard-about .meta-item { gap: 2px; }
+  .postcard-about .meta-item .k,
+  .postcard-about .meta-item .v { font-size: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .postcard-backdrop, .postcard-sheet, .postcard-section summary > i::after,
+  .postcard-recordings .rec-spectro { transition-duration: 1ms !important; }
+}
   .atlas-sort { pointer-events: auto; }
   .atlas-sort {
     display: inline-flex; padding: 3px; position: relative;
@@ -989,9 +2326,12 @@
   .atlas-empty {
     grid-column: 1 / -1;
     padding: 80px 16px; text-align: center;
+  }
+  .atlas-empty:not(.window-empty) {
     font: 12px/1.6 ui-serif, Georgia, serif; color: var(--ink-2);
   }
-  .atlas-empty p { margin: 0 0 4px; }
+  .atlas-empty p { margin: 0; }
+  .atlas-empty:not(.window-empty) p { margin-bottom: 4px; }
   .atlas-empty p.hint {
     font: 10px ui-monospace, Menlo, monospace; color: var(--ink-soft);
     letter-spacing: 0.06em;
@@ -1026,7 +2366,8 @@
   .return-to-atlas {
     position: fixed; top: 18px; left: 20px; z-index: 6;
     display: none; align-items: center; gap: 6px;
-    padding: 7px 14px; border-radius: 999px;
+    padding: 0 14px; border-radius: 999px;
+    min-height: var(--ctl-h); box-sizing: border-box;
     background: var(--paper-2);
     color: var(--ink-soft);
     font: 10px ui-monospace, Menlo, monospace; letter-spacing: 0.18em;
@@ -1049,36 +2390,52 @@
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     margin-bottom: 22px;
   }
+  /* Same sheet as a service card: same radius, same edge, same padding, so the
+     two pages read as one interface rather than two. */
+  /* Same sheet as a service card: radius 10, the softer edge, squircle corners
+     (added to the corner-shape list), so system and tools read as one page. */
   .admin-card {
-    background: var(--paper); border-radius: 8px;
-    padding: 14px 16px; box-shadow: var(--edge);
+    position: relative;
+    background: var(--paper); border-radius: 10px;
+    padding: 14px 12px 12px; box-shadow: var(--edge);
   }
   .admin-card h3 {
-    margin: 0 0 6px; font: 10px ui-monospace, Menlo, monospace;
+    margin: 0 0 6px; padding-right: 24px;
+    font: 10px ui-monospace, Menlo, monospace;
     letter-spacing: 0.18em; text-transform: uppercase;
     color: var(--ink-soft); font-weight: 500;
   }
   .admin-card .v { font: 20px ui-serif, Georgia, serif; color: var(--ink); }
   .admin-card .sub { font: 11px ui-monospace, Menlo, monospace; color: var(--ink-soft); margin-top: 4px; }
-  .admin-card.alert { box-shadow: 0 0 0 1px var(--accent), var(--edge); }
-  .admin-card.alert h3 { color: var(--accent); }
-  .admin-card.warn { box-shadow: 0 0 0 1px #c47a1f, var(--edge); }
-  .admin-card.warn h3 { color: #c47a1f; }
-  .admin-section-head {
-    font: 700 11px ui-monospace, Menlo, monospace;
-    letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--ink); margin: 24px 0 10px;
-    border-left: 2px solid var(--accent-2); padding-left: 10px;
+  /* Quiet metric glyph in the top-right corner, matching the tool-card icons. */
+  .admin-card .ic {
+    position: absolute; top: 13px; right: 12px;
+    color: var(--ink-soft); opacity: 0.5;
   }
+  .admin-card .ic svg { width: 18px; height: 18px; display: block; }
+  /* State reads through the icon + heading, not a heavy frame: the ring is
+     only a whisper above the resting edge so the page stays as calm as tools. */
+  .admin-card.alert { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent), var(--edge); }
+  .admin-card.alert h3, .admin-card.alert .ic { color: var(--accent); }
+  .admin-card.warn { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2) 13%, transparent), var(--edge); }
+  .admin-card.warn h3, .admin-card.warn .ic { color: var(--accent-2); }
+  .admin-card.alert .ic, .admin-card.warn .ic { opacity: 0.8; }
+  .admin-section-head {
+    font: 700 10px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink); margin: 26px 0 10px;
+    border-left: 2px solid var(--accent); padding-left: 10px;
+  }
+  .admin-section-head:first-child { margin-top: 0; }
   table.admin-tbl {
     width: 100%; border-collapse: collapse;
     font: 12px ui-monospace, Menlo, monospace;
-    background: var(--paper); border-radius: 8px; overflow: hidden;
+    background: var(--paper); border-radius: 10px; overflow: hidden;
     box-shadow: var(--edge);
   }
   table.admin-tbl th, table.admin-tbl td {
-    border-bottom: 1px solid var(--rule, #c8bfae);
-    padding: 9px 12px; text-align: left;
+    border-bottom: 1px solid color-mix(in srgb, var(--hairline) 60%, transparent);
+    padding: 10px 14px; text-align: left;
   }
   table.admin-tbl tr:last-child th, table.admin-tbl tr:last-child td { border-bottom: 0; }
   table.admin-tbl th {
@@ -1086,27 +2443,34 @@
     font-size: 9.5px; letter-spacing: 0.14em; font-weight: 500;
   }
   table.admin-tbl .pill {
-    display: inline-block; padding: 1px 8px; border-radius: 999px;
-    font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    display: inline-grid; place-items: center; height: 20px; padding: 0 9px;
+    border-radius: 999px; font: 700 8px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--paper-2); color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
   }
-  table.admin-tbl .pill.active { background: rgba(90,122,58,.18); color: #4d6730; }
-  table.admin-tbl .pill.inactive { background: rgba(168,52,29,.18); color: var(--accent); }
-  table.admin-tbl .pill.failed { background: rgba(168,52,29,.18); color: var(--accent); }
+  table.admin-tbl .pill.active { color: var(--ink); }
+  table.admin-tbl .pill.inactive,
+  table.admin-tbl .pill.failed {
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
   table.admin-tbl button.restart {
-    font: 9.5px ui-monospace, Menlo, monospace;
-    letter-spacing: 0.04em; text-transform: lowercase;
-    padding: 4px 10px; border: 0; background: var(--paper-2);
-    border-radius: 4px; cursor: pointer; color: var(--ink-soft);
-    box-shadow: var(--raised);
+    height: 20px; padding: 0 11px; border: 0; cursor: pointer;
+    font: 700 8px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--paper-2); color: var(--ink-soft); border-radius: 999px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
+    transition: color 160ms ease, box-shadow 160ms ease;
   }
-  table.admin-tbl button.restart:hover { color: var(--ink); }
+  table.admin-tbl button.restart:hover { color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink-soft) 45%, transparent); }
   table.admin-tbl button.restart[disabled] { opacity: .5; cursor: wait; }
   .admin-logs-toolbar {
     display: flex; gap: 8px; align-items: center; margin-bottom: 14px;
   }
   .admin-logs-toolbar select, .admin-logs-toolbar input[type="number"] {
     font: 12px ui-monospace, Menlo, monospace;
-    padding: 6px 10px; border: 1px solid var(--rule, #c8bfae);
+    padding: 6px 10px; border: 1px solid var(--hairline);
     border-radius: 4px; background: var(--paper); color: var(--ink);
   }
   .admin-logs-toolbar label {
@@ -1114,47 +2478,227 @@
     text-transform: uppercase; color: var(--ink-soft);
   }
   .admin-logs-pane {
-    background: #1c1a14; color: #d7cba8;
+    background: var(--paper-2); color: var(--ink);
+    box-shadow: var(--recess);
     font: 12px/1.5 ui-monospace, Menlo, monospace;
     padding: 14px 16px; border-radius: 8px;
     max-height: 65vh; overflow: auto; white-space: pre-wrap;
   }
+  /* Six services across, one row. Below the breakpoint they wrap to a grid
+     rather than shrink to nothing. */
+  .tool-row {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  @media (max-width: 900px) {
+    .tool-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 520px) {
+    .tool-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .tool-card {
+    position: relative;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    text-align: left; cursor: pointer;
+    background: var(--paper); border: 0; border-radius: 10px;
+    padding: 14px 12px 12px; box-shadow: var(--edge);
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+  .tool-card:hover { transform: translateY(-2px); box-shadow: var(--edge), 0 6px 16px rgba(26,22,18,0.07); }
+  .tool-card:active { transform: translateY(0); }
+  .tool-card .ic { color: var(--ink-soft); margin-bottom: 8px; transition: color 200ms ease; }
+  .tool-card:hover .ic { color: var(--ink); }
+  .tool-card .ic svg { width: 20px; height: 20px; display: block; }
+  .tool-card .ttl {
+    font: 13.5px/1.2 ui-serif, "Iowan Old Style", Georgia, serif; color: var(--ink);
+  }
+  .tool-card .dsc {
+    font: 10px/1.35 ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    letter-spacing: 0.02em;
+  }
+  .tool-card .state:not(:empty) {
+    margin-top: 7px; font: 9px/1.3 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em; color: var(--ink-soft);
+  }
+  /* Live unit state, top right. Hovering the card swaps it for the action,
+     so the badge is both the reading and the button. */
+  /* Top of the badge sits on the same line as the top of the icon and stands
+     the same 20px, so the card's two marks read as one row rather than as a
+     label floating above a picture. */
+  .tool-card .badge {
+    position: absolute; top: 14px; right: 12px;
+    height: 20px; min-width: 20px; padding: 0 9px;
+    display: grid; place-items: center; border-radius: 999px;
+    font: 700 8px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    background: var(--paper-2); color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
+    transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  }
+  .tool-card .badge i { grid-area: 1 / 1; font-style: normal; transition: opacity 140ms ease; }
+  .tool-card .badge .act { opacity: 0; }
+  .tool-card:hover .badge .now { opacity: 0; }
+  .tool-card:hover .badge .act { opacity: 1; }
+  .tool-card:hover .badge { color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink-soft) 45%, transparent); }
+  .tool-card .badge[data-live="running"] { color: var(--ink); }
+  .tool-card .badge[data-live="error"],
+  .tool-card .badge[data-live="stopped"] {
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .tool-card[data-state="busy"] { opacity: 0.65; cursor: wait; }
+  .tool-card[data-state="ok"] .state { color: var(--ink); }
+  .tool-card[data-state="err"] .state { color: var(--accent); }
   .admin-actions-grid {
     display: grid; gap: 12px;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
+  .admin-actions-grid.archive-open { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-action {
-    background: var(--paper); border-radius: 8px;
-    padding: 14px 16px; box-shadow: var(--edge);
+    position: relative;
+    background: var(--paper); border-radius: 10px;
+    padding: 14px 12px 12px; box-shadow: var(--edge);
+    transition: transform 200ms ease, box-shadow 200ms ease;
   }
-  .admin-action h4 { margin: 0 0 6px; font: 15px ui-serif, Georgia, serif; color: var(--ink); }
-  .admin-action p { margin: 0 0 10px; font: 12.5px ui-serif, Georgia, serif; color: var(--ink-soft); }
-  .admin-action button.run {
-    font: 9.5px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
-    text-transform: lowercase; padding: 6px 12px; border: 0;
-    background: var(--ink); color: var(--paper); border-radius: 999px;
-    cursor: pointer;
+  /* The whole card is the control wherever the card has exactly one thing to
+     do, which is the pattern the services page already sets. */
+  a.admin-action { display: block; text-decoration: none; cursor: pointer; }
+  a.admin-action:hover,
+  .archive-card.is-pressable:hover { transform: translateY(-2px); box-shadow: var(--edge), 0 6px 16px rgba(26,22,18,0.07); }
+  .archive-card.is-pressable { cursor: pointer; }
+  .archive-card.is-pressable:active { transform: translateY(0); }
+  .archive-card.is-pressable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .admin-action h4 { margin: 0 0 4px; font: 14px ui-serif, "Iowan Old Style", Georgia, serif; color: var(--ink); }
+  .admin-action p {
+    margin: 0 0 10px; font: 10px/1.4 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft); letter-spacing: 0.02em;
   }
+  /* Same seat as a service card's state badge: top right, on the first
+     line's own level, so the two pages scan identically. */
+  .admin-action .run {
+    position: absolute; top: 14px; right: 12px;
+    font: 9px ui-monospace, Menlo, monospace; letter-spacing: 0.12em;
+    text-transform: uppercase; padding: 0 9px; height: 20px; line-height: 20px;
+    border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--paper-2); color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
+    transition: color 160ms ease;
+  }
+  a.admin-action:hover .run { color: var(--ink); }
+  /* Room for the badge so a long title cannot run under it. */
+  a.admin-action h4 { padding-right: 84px; }
+  .admin-action a.run { display: inline-block; text-decoration: none; }
   .admin-action button.run[disabled] { opacity: .5; cursor: wait; }
   .admin-action .out {
     margin-top: 10px; font: 10.5px ui-monospace, Menlo, monospace;
     color: var(--ink-soft); white-space: pre-wrap;
   }
+  .maintenance-card[aria-busy="true"] { opacity: 0.72; }
+  .maintenance-card .state:not(:empty) {
+    display: block; margin-top: 8px;
+    color: var(--ink-soft); font: 9px/1.35 ui-monospace, Menlo, monospace;
+  }
+  .archive-card h4 { padding-right: 52px; }
+  .archive-card.is-open { grid-column: 1 / -1; }
+  .archive-card[aria-busy="true"] { opacity: 0.72; }
+  .archive-detail {
+    margin-top: 12px; padding-top: 12px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--hairline) 55%, transparent);
+  }
+  .archive-detail.is-controls {
+    margin-top: 7px; padding-top: 0; box-shadow: none;
+  }
+  .archive-detail > p {
+    margin: 0 0 10px; font: 10px/1.45 ui-monospace, Menlo, monospace;
+    color: var(--ink-soft);
+  }
+  .archive-detail code { color: var(--ink); }
+  .archive-detail pre {
+    background: var(--paper-2); color: var(--ink);
+    box-shadow: var(--recess);
+    margin: 0; padding: 12px 40px 12px 14px; border-radius: 8px;
+    font: 11px/1.4 ui-monospace, Menlo, monospace;
+    overflow: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  .archive-action-row {
+    display: flex; align-items: center; gap: 10px; min-height: 26px;
+    margin-top: 12px;
+  }
+  .archive-inline-state {
+    color: var(--ink-soft); font: 9px/1.35 ui-monospace, Menlo, monospace;
+  }
+  .archive-inline-state.is-error { color: var(--accent-2); }
+  .archive-command-error {
+    margin-top: 9px; color: var(--accent-2);
+    font: 9px/1.4 ui-monospace, Menlo, monospace;
+  }
+  .archive-control-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 14px;
+    align-items: center; padding: 6px 0 2px;
+  }
+  .archive-label {
+    display: block; color: var(--ink);
+    font: 12.5px/1.2 ui-serif, Georgia, serif;
+  }
+  .archive-control-row .switch[disabled] { opacity: 0.38; cursor: not-allowed; }
+  .archive-run-row {
+    display: flex; align-items: center; gap: 10px; padding: 4px 0 6px;
+    color: var(--ink-soft); font: 9px/1.35 ui-monospace, Menlo, monospace;
+  }
+  .archive-card .archive-schedule {
+    position: absolute; top: 14px; right: 12px;
+  }
+  .archive-card .archive-schedule[disabled] { opacity: 0.38; cursor: wait; }
+  .archive-card .archive-run-button {
+    position: static; display: inline-flex; align-items: center;
+  }
+  .archive-button {
+    height: 26px; border: 0; border-radius: 999px; cursor: pointer;
+    padding: 0 12px; background: var(--ink-2); color: var(--paper);
+    font: 700 8.5px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    transition: transform 160ms ease, opacity 160ms ease;
+  }
+  .archive-button.quiet {
+    background: var(--paper-2); color: var(--ink-soft);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
+  }
+  .archive-button:hover { opacity: 0.82; }
+  .archive-button:active { transform: scale(0.97); }
+  .archive-button[disabled] { opacity: 0.4; cursor: wait; }
+  /* The code block carries its own copy affordance in the corner, the way the
+     service badge sits on the icon's line. */
+  .admin-action .code {
+    position: relative; cursor: pointer; margin-top: 10px;
+    border-radius: 8px; transition: box-shadow 160ms ease;
+  }
+  .admin-action .code:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink-soft) 30%, transparent); }
+  .admin-action .code:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .admin-action .code .copy {
+    position: absolute; top: 8px; right: 8px; z-index: 1;
+    display: grid; place-items: center;
+    width: 24px; height: 24px; color: var(--ink-soft);
+    background: var(--paper); border-radius: 999px;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
+    opacity: 0; transition: opacity 160ms ease, color 160ms ease;
+  }
+  .admin-action .code .copy svg { width: 11px; height: 11px; display: block; }
+  .admin-action .code:hover .copy,
+  .admin-action .code:focus-visible .copy,
+  .admin-action .code[data-copied] .copy { opacity: 1; }
+  .admin-action .code[data-copied] .copy { color: var(--ink); }
+  .admin-action .code[data-copy-error] .copy { opacity: 1; color: var(--accent-2); }
   .admin-action.deploy pre {
-    background: #1c1a14; color: #d7cba8;
+    background: var(--paper-2); color: var(--ink);
+    box-shadow: var(--recess);
+    margin: 0;
     font: 11px ui-monospace, Menlo, monospace;
-    padding: 12px 14px; border-radius: 6px;
+    padding: 12px 14px; border-radius: 8px;
     overflow: auto; white-space: pre-wrap; word-break: break-all;
     margin: 0;
   }
-  .admin-action.deploy button.copy {
-    font: 9.5px ui-monospace, Menlo, monospace; letter-spacing: 0.06em;
-    text-transform: lowercase; padding: 5px 10px;
-    background: var(--paper-2); color: var(--ink-soft);
-    border: 0; border-radius: 4px; cursor: pointer; box-shadow: var(--raised);
-    margin-top: 8px;
-  }
-  .admin-action.deploy button.copy:hover { color: var(--ink); }
+
   .admin-unreachable {
     background: var(--paper); border-radius: 8px;
     padding: 14px 16px; color: var(--accent);
@@ -1173,21 +2717,26 @@
   /* Mobile compact: drawer takes near-full width, admin pads tighter,
      section heads + cards downsize. */
   @media (max-width: 700px) {
-    #menu-dd { top: 50px; right: 8px; left: 8px; width: auto; padding: 10px; }
     .admin-screen { inset: 52px 0 60px 0; }
     .admin-frame { padding: 0 14px 32px; }
     .admin-title { margin-bottom: 18px; }
     .admin-title h1 { font-size: 22px; }
     .admin-grid { gap: 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
-    .admin-card { padding: 12px 14px; }
+    /* Same sheet as a service card: same radius, same edge, same padding, so the
+     two pages read as one interface rather than two. */
+  .admin-card { padding: 12px 14px; }
     .admin-card .v { font-size: 18px; }
     .admin-section-head { margin: 18px 0 8px; font-size: 10px; letter-spacing: 0.12em; }
     table.admin-tbl th, table.admin-tbl td { padding: 7px 8px; font-size: 11px; }
     .admin-actions-grid { gap: 10px; grid-template-columns: 1fr; }
+    .admin-actions-grid.archive-open { grid-template-columns: 1fr; }
     .admin-action { padding: 12px 14px; }
     /* Slider track bottom nav: tuck closer to bottom edge */
-    .slider { bottom: 14px; padding: 3px; }
-    .slider button { font-size: 9.5px; padding: 6px 11px; }
+    .slider { bottom: 14px; min-height: 34px; padding: 3px; }
+    .slider button {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 28px; font-size: 9.5px; padding: 0 11px;
+    }
   }
   @media (max-width: 700px) {
     /* Detail-modal: full-screen on small screens. */
@@ -1306,6 +2855,24 @@
   .modal-grid {
     display: grid; grid-template-columns: 1fr 1.15fr; gap: 32px;
     align-items: start;
+  }
+  /* The text column is capped to the illustration's height in script, so the
+     summary is the part that gives: it takes the leftover room and fades out
+     rather than pushing this column past the picture. */
+  /* .chip sets display, which outranks the hidden attribute's UA rule, so a
+     button script has hidden still drew. Anything marked hidden stays gone. */
+  [hidden] { display: none !important; }
+  .modal-info { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .modal-info .modal-stats { flex: 0 0 auto; }
+  .modal-info .desc {
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+  }
+  .modal-info .modal-meta { flex: 0 0 auto; }
+  @media (max-width: 700px) {
+    .modal-info { overflow: visible; height: auto !important; }
+    .modal-info .desc { -webkit-mask-image: none; mask-image: none; }
   }
   @media (max-width: 700px) {
     .modal-grid { grid-template-columns: 1fr; gap: 22px; }
@@ -1608,9 +3175,479 @@
  * returns items immediately with no auth, so the live JS skips the lock
  * flow entirely.
  *
- * Forwarded install (body.av-forwarded): show the lock row so users
- * type the basic-auth password before items unlock. Pair with
- * AV_REQUIRE_AUTH=1 in php-fpm env + Caddy basic_auth on /avian/api/.
- * See avian/forwarding/. */
+ * Forwarded install (body.av-forwarded): show the lock row so users type the
+ * station password before the private API session opens. See avian/forwarding/. */
 body.av-local #dd-locked { display: none; }
 body.av-local #dd-items  { display: block; }
+
+/* ============ Stats chart slot ============ */
+/* The timeline and the hourly ledger share the left cell; the icon pick
+   floats at its top-right, same recessed-pill recipe as the atlas sort.
+   The view scrolls so the rhythm below always has room. */
+.view#v1 { overflow-y: auto; }
+:root { --chart-h: clamp(280px, 46vh, 430px); }
+/* Both charts stand in the same slot at the same height, so the icon toggle
+   swaps what is drawn and never moves anything below it. */
+.stats-chart { position: relative; display: flex; flex-direction: column; min-width: 0; height: var(--chart-h); }
+#statsTimeline, #statsHeatmap { height: 100%; min-height: 0; }
+.chart-pick {
+  position: absolute; top: 0; right: 0; z-index: 3;
+  display: inline-flex; padding: 3px;
+  background: var(--paper-2); border-radius: 999px;
+  box-shadow: var(--recess);
+}
+.chart-pick button {
+  background: transparent; border: 0; color: var(--ink-soft);
+  width: 30px; height: 26px; padding: 0; border-radius: 999px;
+  cursor: pointer; position: relative; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color 200ms ease;
+}
+.chart-pick button svg { width: 15px; height: 15px; display: block; }
+.chart-pick button:hover { color: var(--ink); }
+.chart-pick button[aria-current="true"] { color: var(--ink); }
+.chart-pick button .tip {
+  position: absolute; top: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%); white-space: nowrap;
+  font: 9px ui-monospace, Menlo, monospace; letter-spacing: 0.14em;
+  text-transform: lowercase; color: var(--ink-soft);
+  background: var(--paper); padding: 3px 8px; border-radius: 4px;
+  box-shadow: var(--raised);
+  opacity: 0; pointer-events: none; transition: opacity 160ms ease;
+}
+.chart-pick button:hover .tip { opacity: 1; }
+#statsHeatmap { display: none; }
+
+/* ============ The Day's Rhythm ============ */
+/* Third cell of the stats grid, spanning both columns: an SVG line pair
+   (today in ink, the week's average dashed behind). The SVG is inset
+   26px left / 18px bottom for the tick strips; every color routes
+   through the theme variables. */
+.stats-rhythm { grid-column: 1 / -1; padding-bottom: 120px; }
+.rh-plot { position: relative; margin-top: 14px; height: 150px; touch-action: pan-y; }
+.rh-svg { position: absolute; left: 26px; right: 0; top: 0; bottom: 18px;
+          width: calc(100% - 26px); height: calc(100% - 18px); overflow: visible; }
+.rh-svg .grid { stroke: var(--hairline); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.rh-svg .ln-today { fill: none; stroke: var(--ink);
+  stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rh-svg .ln-avg { fill: none; stroke: var(--ink-soft); stroke-width: 1.1;
+  stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.rh-ytick, .rh-xtick { position: absolute; font: 400 7.5px "SF Mono", Menlo, monospace;
+  color: var(--ink-soft); letter-spacing: 0.04em; }
+.rh-ytick { left: 0; transform: translateY(50%); }
+.rh-xtick { bottom: 0; transform: translateX(-50%); white-space: nowrap; }
+.rh-plot > .stats-data-empty { height: 100%; }
+
+/* Hover/scrub crosshair over the rhythm plot: two dashed guides forming an
+   L from the snapped point to each axis, a hollow marker on the point, and a
+   mono pill at each axis end. Painted by attachCrosshair (apt.js); every
+   colour routes through the theme variables so dark inherits for free. The
+   overlay is pointer-events:none, so the chart is untouched until a pointer
+   arrives and the overlay never intercepts anything itself. */
+.rh-xhair { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.rh-xhair.on { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) { .rh-xhair { transition: opacity .12s ease; } }
+/* Guides move by transform only, so pointermove never touches a
+   layout-affecting property. */
+.rh-xh-v { position: absolute; top: 0; width: 0; height: 0; border-left: 1px dashed var(--ink-soft); }
+.rh-xh-h { position: absolute; left: 0; width: 0; height: 0; border-top: 1px dashed var(--ink-soft); }
+.rh-xh-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%; background: var(--paper); border: 1.5px solid var(--ink); }
+.rh-xh-rx, .rh-xh-ry { position: absolute; font: 500 10px/1 "SF Mono", Menlo, monospace;
+  color: var(--ink); background: var(--paper); padding: 2px 4px; border-radius: 4px;
+  white-space: nowrap; box-shadow: var(--edge); letter-spacing: 0.02em; }
+.rh-xh-rx { bottom: 0; }   /* hour pill rides the x-axis strip */
+.rh-xh-ry { left: 0; }     /* count pill rides the y-axis gutter, covering (not doubling) its tick */
+/* While a pointer is armed the static ticks step back so the live pills own
+   the axes. One class on the host keeps the helper generic - this stylesheet
+   alone decides what dims. */
+.rh-plot.rh-live .rh-ytick, .rh-plot.rh-live .rh-xtick { opacity: 0.32; }
+@media (prefers-reduced-motion: no-preference) {
+  .rh-ytick, .rh-xtick { transition: opacity 0.12s ease; }
+}
+
+/* ============ Hourly species ledger ============ */
+/* One calendar day as a species-by-hour table: hairline row rules, mono
+   counts, cell ink mixed from the theme's ink variable. The global Stats
+   date control owns the calendar for this table. */
+.stats-heatmap { min-width: 0; width: 100%; padding-top: 46px;
+                 display: flex; flex-direction: column; }
+/* The ledger never scrolls: it trims to the rows that fit and lets the
+   hour columns share the width, so the whole reading is on screen at
+   once the way the timeline is. */
+.heatmap-wrap { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+/* Expanded ledger. The whole nested chain is height-bounded for the fit-to-slot
+   behaviour, so growing means releasing every link: the grid stretch
+   (align-self), the chart height, the heatmap's 100% and the wrap's flex. The
+   row then grows with the content and the page extends, which is the point -
+   no scrollbar, every species on screen. */
+.stats-chart.rh-grow { align-self: start; height: auto; min-height: var(--chart-h); }
+.stats-chart.rh-grow #statsHeatmap { height: auto; }
+.stats-chart.rh-grow .stats-heatmap { flex: 0 0 auto; }
+.stats-chart.rh-grow .heatmap-wrap { flex: 0 0 auto; overflow: visible; }
+.stats-chart.rh-grow .heatmap-wrap { overflow: visible; }
+/* During an expand/collapse the JS drives the column height with the Web
+   Animations API; this class only clips the overflow for the duration, so the
+   rows being revealed wipe in under the growing edge instead of popping in. */
+.stats-chart.rh-anim { overflow: hidden; }
+.stats-chart.rh-anim .heatmap-wrap { overflow: hidden; }
+.heatmap-table { border-collapse: collapse; white-space: nowrap; width: 100%; table-layout: fixed; }
+.heatmap-corner { width: 30%; min-width: 150px; }
+.heatmap-table th {
+  font: 400 9.5px ui-monospace, "SF Mono", Menlo, monospace; font-weight: normal;
+  color: var(--ink-soft); text-align: center;
+  letter-spacing: 0; padding: 0 1px 8px; overflow: visible;
+}
+.heatmap-table th:first-child { padding-left: 0; }
+/* The fixed layout would give the total column an hour column's width, and the
+   centred "total" then spills past the table's right edge and is clipped. Give
+   it room and right-align it so the word (and the counts below) finish. */
+.heatmap-table th.heatmap-total,
+.heatmap-table td.heatmap-total { width: 46px; text-align: right; padding-right: 0; }
+.heatmap-table td {
+  font: 400 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--ink); text-align: center; letter-spacing: 0.02em;
+  padding: 3px 4px; border-bottom: 1px solid var(--hairline);
+}
+.heatmap-row[data-sci] { cursor: pointer; }
+.heatmap-row[data-sci]:hover { background: var(--paper-2); }
+.heatmap-table td.heatmap-name { text-align: left; white-space: nowrap; padding-right: 12px; }
+.heatmap-name .com { display: block; font: 600 12px/1.3 ui-serif, Georgia, serif; color: var(--ink); }
+.heatmap-name .sci { display: block; font: italic 10px/1.2 ui-serif, Georgia, serif; color: var(--ink-soft); }
+.heatmap-total { font-variant-numeric: tabular-nums; color: var(--ink-soft); padding-left: 10px; }
+.heatmap-wrap > .stats-data-empty { height: 100%; }
+/* A quiet text link, not a button: the user preferred the plain word here. */
+.heatmap-trim {
+  align-self: flex-start; margin-top: 10px;
+  /* Left padding matches the name cell's, so the link starts on the same
+     vertical as the species names above it rather than hard against the edge. */
+  background: none; border: 0; cursor: pointer; padding: 2px 0 2px 4px;
+  color: var(--ink-soft); font: italic 11px/1.3 ui-serif, Georgia, serif;
+  letter-spacing: 0.01em;
+  transition: color 140ms ease;
+}
+.heatmap-trim:hover { color: var(--ink); text-decoration: underline; }
+/* When the collapsed ledger has more species below the fold, fade the lower
+   rows into paper so the cut reads as "there is more" rather than a hard edge.
+   The button sits below the fade, always fully legible. */
+.heatmap-wrap[data-more] .heatmap-table {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent 100%);
+}
+@media (max-width: 700px) {
+  .rh-plot { height: 120px; }
+  /* Twenty-four 2-digit hour labels cannot share a phone-width ledger
+     without colliding. The renderer marks a three-hour cadence for long
+     windows while keeping every heading in shorter 1H and 12H readings. */
+  .heatmap-table th.heatmap-hour:not(.heatmap-hour-major) {
+    color: transparent;
+    font-size: 0;
+  }
+  .heatmap-table th.heatmap-hour-major { font-size: 8px; }
+  /* At phone width, long ledgers work as heatmaps rather than tiny numeric
+     tables. Row totals remain visible; shorter hour ranges keep cell counts. */
+  .heatmap-table.heatmap-compressed td:not(.heatmap-name):not(.heatmap-total) {
+    color: transparent;
+    font-size: 0;
+  }
+}
+
+/* ============ Collage labels ============ */
+/* Handwritten face (Caveat, OFL - license alongside the font file).
+   Loaded lazily: nothing references 'Hand' until labels are on. The
+   ./avian/... path resolves from the webroot, where styles.css is
+   symlinked next to the avian/ tree. */
+@font-face {
+  font-family: 'Hand';
+  src: url('./avian/frontend/fonts/Caveat.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+}
+/* Optional name for each bird, set either on a curve fitted to its
+   silhouette or level in a clearing the bird leaves (see the label run in
+   apt.js). The svg sits over the tile but draws past it, since a name
+   alongside a bird runs off it into open paper. */
+.gtile-label {
+  position: absolute;
+  overflow: visible; pointer-events: none;
+}
+/* The lettering is filtered so it reads as ink laid into the print rather
+   than type set on top of it. Two noises do the work. A fine one shifts the
+   contour by about half a pixel, which is the scale of paper tooth, so the
+   edge reads as fibre rather than as a wobble; its feature size (1/0.5 = 2px)
+   has to stay above Caveat's widest stroke here, because noise finer than a
+   stroke cuts it instead of moving it. A coarser one, stretched sideways so
+   density drifts ALONG a stroke rather than banding across it, drives the
+   alpha between 0.42 and 0.84.
+
+   That ramp is where the lettering's weight now lives, which is why the fill
+   stays a flat var(--ink-soft): mean alpha is the intercept plus half the
+   slope, and it measures 0.63 of the solid fill in both themes, because the
+   filter touches alpha and never colour. Raise the pair to lift the weight;
+   they are the only knob.
+
+   The Spectra 6 panel has six inks and no grey between them, so frame captures
+   keep this exact face but replace the softened fill and filter with solid
+   black at a lighter weight. */
+.gtile-label text {
+  fill: var(--ink-soft);
+  filter: url(#lbl-ink-m);
+}
+.gtile-label text[data-ink="s"] { filter: url(#lbl-ink-s); }
+.gtile-label text[data-ink="l"] { filter: url(#lbl-ink-l); }
+/* Zero-size carrier, so the injected filter cannot open a line box. */
+.gtile-label-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* ============ Generation + notifications ============ */
+/* Small waiting-dot: on the menu button when anything inside needs
+   attention, and inline on the drawer/settings rows that carry it. */
+.notif-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); margin-left: 6px; vertical-align: 2px;
+}
+.menu-btn { position: relative; }
+.menu-btn.has-dot::after {
+  content: ''; position: absolute; top: -2px; right: -2px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--paper);
+}
+/* Secret settings field (API keys): value is never echoed back, so the
+   input always starts empty with a state-carrying placeholder. */
+.admin-settings input.secret {
+  background: var(--paper-2); border: 0; border-radius: 8px;
+  box-shadow: var(--recess); color: var(--ink);
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 9px 12px; width: min(300px, 46vw);
+}
+.admin-settings input.secret::placeholder { color: var(--ink-soft); }
+.station-coords {
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--ink-soft); letter-spacing: 0.06em;
+}
+.station-coords.warn { color: var(--accent); }
+/* Instant-cutouts notice: count + a ready-to-paste upgrade command. */
+.cutouts-note { padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+.cutouts-note .label { font: 600 13px ui-serif, Georgia, serif; color: var(--ink); }
+.cutouts-note .hint {
+  display: block; font: 9px ui-monospace, Menlo, monospace;
+  color: var(--ink-soft); letter-spacing: 0.06em; margin-top: 4px;
+}
+.cutcmd {
+  display: block; margin: 10px 0 8px; padding: 10px 12px;
+  background: var(--paper-2); border-radius: 8px; box-shadow: var(--recess);
+  font: 10.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink);
+  overflow-x: auto; white-space: pre;
+}
+
+
+/* ============ Settings: grouped sections ============ */
+/* The panel divides into what you see, what the analyzer does, where the
+   station is, and what happens to the disk. A little air between them
+   beats a rule. */
+.admin-settings section + section { margin-top: 30px; }
+
+/* ============ Station location ============ */
+.station-pick { display: inline-flex; align-items: center; gap: 8px; }
+.pin-btn {
+  background: var(--paper); border: 0; border-radius: 999px;
+  box-shadow: var(--raised); color: var(--ink-soft);
+  width: 28px; height: 28px; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color 160ms ease, transform 160ms ease;
+}
+.pin-btn:hover { color: var(--ink); transform: translateY(-1px); }
+.pin-btn svg { width: 14px; height: 14px; display: block; }
+
+/* The map only exists while it is open, and only then does it reach the
+   network. Tiles and search are OpenStreetMap. */
+.map-modal { position: fixed; inset: 0; z-index: 60; display: flex;
+             align-items: center; justify-content: center; }
+.map-backdrop { position: absolute; inset: 0; background: rgba(20,17,13,0.45);
+                animation: map-fade 200ms ease both; }
+.map-card {
+  position: relative; width: min(560px, 92vw);
+  background: var(--paper); border-radius: 12px; box-shadow: var(--edge-lg);
+  overflow: hidden; display: flex; flex-direction: column;
+  animation: map-rise 260ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes map-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes map-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.985) }
+  to   { opacity: 1; transform: none }
+}
+@keyframes map-sink {
+  from { opacity: 1; transform: none }
+  to   { opacity: 0; transform: translateY(6px) scale(0.99) }
+}
+.map-modal.closing .map-backdrop { animation: map-fade 180ms ease both reverse; }
+.map-modal.closing .map-card { animation: map-sink 180ms cubic-bezier(0.4, 0, 1, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .map-backdrop, .map-card,
+  .map-modal.closing .map-backdrop, .map-modal.closing .map-card { animation: none; }
+}
+.map-head { display: flex; gap: 10px; align-items: center; padding: 12px 14px; }
+.map-head input {
+  flex: 1; background: var(--paper-2); border: 0; border-radius: 8px;
+  box-shadow: var(--recess); color: var(--ink);
+  font: 10.5px/1.3 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: .02em; padding: 9px 12px;
+}
+.map-head input::placeholder { color: var(--ink-soft); }
+.map-view {
+  position: relative; height: min(360px, 48vh); margin: 0 14px; overflow: hidden;
+  border-radius: 10px; cursor: grab; background: var(--paper-2); touch-action: none;
+}
+.map-view::after {
+  content: ''; position: absolute; inset: 0; z-index: 5;
+  border: 1px solid var(--hairline); border-radius: inherit;
+  pointer-events: none;
+}
+.map-view:active { cursor: grabbing; }
+.map-tiles img { position: absolute; width: 256px; height: 256px; user-select: none; }
+/* the pin is fixed at the centre; the map moves under it, so whatever is
+   beneath the point is the location */
+.map-pin {
+  position: absolute; left: 50%; top: 50%; width: 14px; height: 14px;
+  margin: -7px 0 0 -7px; border-radius: 50%;
+  border: 2px solid var(--paper); background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4); pointer-events: none;
+}
+.map-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.map-zoom button {
+  width: 26px; height: 26px; border: 0; border-radius: 6px; cursor: pointer;
+  background: var(--paper); color: var(--ink); box-shadow: var(--raised);
+  font: 14px/1 ui-monospace, Menlo, monospace;
+}
+/* Search hits float over the map rather than pushing it down, so the card
+   never changes height and the map stays draggable behind them. */
+.map-hits {
+  position: absolute; left: 12px; top: 12px; right: 48px;
+  max-height: 172px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  margin: 0; padding: 6px; list-style: none;
+  background: var(--paper); border-radius: 10px; box-shadow: var(--edge-lg);
+  animation: map-fade 140ms ease both;
+  scrollbar-width: thin; scrollbar-color: var(--hairline) transparent;
+}
+.map-hits::-webkit-scrollbar { width: 6px; }
+.map-hits::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 3px; }
+.map-hits li { margin: 0; }
+.map-hits li + li { border-top: 1px solid var(--hairline); }
+.map-hits button {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: transparent; border: 0; border-radius: 6px;
+  padding: 8px 10px;
+  transition: background 120ms ease;
+}
+.map-hits button:hover { background: var(--paper-2); }
+/* Head of the name distinguishes the hit, the tail is context. */
+.map-hits .place {
+  display: block; color: var(--ink);
+  font: 10.5px/1.35 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.map-hits .where {
+  display: block; color: var(--ink-soft);
+  font: 9px/1.4 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.04em;
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.map-hits .map-note {
+  padding: 9px 10px; color: var(--ink-soft);
+  font: 9.5px/1.3 "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em;
+}
+.map-foot { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+/* Same raised lozenge the rest of the interface uses for an action. */
+.map-use {
+  background: var(--paper-2); border: 0; border-radius: 999px;
+  box-shadow: var(--raised); color: var(--ink); cursor: pointer;
+  font: 9.5px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.10em; text-transform: lowercase;
+  padding: 8px 13px; white-space: nowrap;
+  transition: color 160ms ease, transform 160ms ease;
+}
+.map-use:hover { color: var(--ink); transform: translateY(-1px); }
+.map-coords { font: 10.5px "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
+.map-attr { font: 8.5px "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-soft); margin-left: auto; }
+
+/* Continuous corners rather than a quarter circle, which is what the rest of
+   the drawing already implies: a woodblock outline has no compass arcs in it.
+   corner-shape is recent, so this is additive - a browser that does not know
+   it keeps the plain radius it already had. Reach is limited to the sheets and
+   the pills; a 999px radius is a capsule either way, but naming it keeps the
+   two families consistent if the radius ever changes. */
+@supports (corner-shape: superellipse(4)) {
+  .bird-card, .modal-card, .about-card, .map-card, .map-view, .map-hits,
+  .admin-card, .admin-action, .tool-card, .menu-card,
+  .tool-card .badge, .pin-btn, .map-use,
+  .heatmap-wrap, .admin-action.deploy pre, table.admin-tbl,
+  table.admin-tbl .pill, table.admin-tbl button.restart {
+    corner-shape: superellipse(4);
+  }
+}
+
+/* ============ Stats screen: a stochastic screen over the ink ============
+   The rest of the interface is printed matter, so the stats view goes
+   through a press too. What lies over it is one baked tile
+   (avian/frontend/stats-press.png, inlined below as a data URI), used as a
+   MASK on a flat var(--paper) fill: a field of small ink-broken dots with
+   the sheet's own tooth showing between them.
+
+   The dots are placed by blue-noise dart throwing, not on a rotated grid.
+   That is the whole design. A halftone lattice, however worn, is still a
+   lattice, and a second frequency laid over a first is what produces
+   interference rather than texture. Blue noise has a minimum spacing, so
+   the dots never clump into blotches, but there is no grid at any zoom and
+   nothing for the eye to beat against. It is how FM screening actually
+   works, and how a tired relief block actually breaks up. Every dot also
+   carries its own radius, modulated by a long-wavelength inking field, so
+   the screen is irregular in weight as well as in position; a field
+   irregular only in position still reads as one grain repeated.
+
+   It goes over the CONTENT, not the page, and that is structural rather
+   than tuned. The layer is painted in var(--paper) and blended with
+   lighten, and lighten of paper against paper is paper, so the background
+   comes out bit-identical. Only ink, which is darker than paper
+   everywhere, is bitten into: each dot lifts a small paper-coloured pit,
+   so a solid glyph stops being a slab and becomes ink laid on a sheet.
+   Dark theme is the same tile with the blend flipped to darken, because
+   there the paper is the dark end. The tile carries no colour of its own,
+   which is why one file serves both.
+
+   Strength is baked into the tile's alpha, and there is deliberately no
+   opacity here. A CSS opacity on this layer makes the compositor round
+   through premultiplied 8-bit, and that alone moves background pixels by
+   1/255. To make the screen heavier or lighter, change CAP in
+   scripts/gen_stats_press.py and re-bake. To make it coarser or finer,
+   change mask-size: the dot pitch scales with it, and 96px is 1:1 (the
+   tile is baked at 192 so one tile pixel is one device pixel at 2x).
+
+   Alpha is capped below 1, so a 1px gridline or a 9px glyph stem can be
+   worn but never cut through.
+
+   Caveat worth carrying: --paper-2 (#f3f2ee light / #212329 dark) and
+   --paper-3 surfaces ARE touched, because a paper-coloured screen is
+   lighter than they are. On this view that is the row hover fill, and the
+   lift reads as the same tooth. The chart picker is lifted clear below,
+   because a control should not read as worn. */
+#v1 { position: relative; }
+#v1::after {
+  content: ''; position: absolute; inset: 0;
+  pointer-events: none; z-index: 5;
+  background-color: var(--paper);
+  --press: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADABAMAAACg8nE0AAAAMFBMVEX///////////////////////////////////////////////////////////////9Or7hAAAAAEHRSTlMAESIzRFVmd4iZqrvM3e7/dpUBFQAAKT1JREFUeNpNXMF2o7oSlMD2WhKYNWCbNTgJa+PErG0nYR1j0P9/wqtq4blvzp25MwmmQequrupuRdnwS/urqh72T61PKvan6GTL0j9WtVJqM5fZaJX75nVK/eIL1uwblc34ph5ypfHlJva2msqPezW2/uCt18rdrWtHZa0XC3ujspvJ8RkV+dPmAQN9h39UZvUsXdHWvGjbKYPvdxZ/qtWdF+Nv79as/Mo3pXV+tmXvjz/qR9vtZF31wCW2UD3uJ2b4QaV2ShVudqXNaQDPUFr/4Lc3t/UkV1xyuXV1OtyV9njpOfrF9Yn3ha1mviheq8NDFrhMOzM8ysLa4mWAVu1krZuXv+/wNjap8Tmsy2pUCvfUjVL9bZiN9rUytIYn9vhUWbxZfoi/yp3COzi7bazRqadltTqpCPbxRnfLNdKNdWNptc0e+HZ8V3wJvMEa1hM7zKuOW2PdmU++a+zWv8Oi9kZbY+2gRs09wn9ioC9UNqr2FB2tXWEv46daP+z2WdrNmF750LDYyXvSgLKHe/YwaaNs5fd3d4atyv/AgPJY2klbr05q8wdPediLaqwaGrW6qizfeixy5yzuIm9aiiNhfWKuk/yCtQgX6VVn2j9tW9y1wg5cKt+9acs9MHCMD1wZ47JVA1v4lSyfrnytscQP3EUMfJXGiIH2CQPRDwzpo+qfuI+yprpZe5ht0fom9fevXLU3bgKs813z5YFw5XL3oVar2fQnNYz8eoLd9gW/EZ9t+8RH8X7tuPXNMNv+pnE54qgpVnM1w1+vvMNDWRqRGwdP2WLZkr/wFV5jlf9TH53anqzH83FFFTbaJI3SbykNZL4bpsiPsX/o7XPtLb6Ab9KB1eGkbH9dnlc2DquBP2olb9HLS3003P32oXu6iYkmZfEeOpmsb45Y/tWc788wEOF52hkGtr6Q3del0l+1cmZ7fzm9rlS12LOTkqs+EB+DTU7bE81oxqqx2HncBnb4GFpWbV92O2uzpz4bXYYwSn298oAI1c/R32IAG6oyLvJki2Q2UaPo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");
+  -webkit-mask-image: var(--press);  mask-image: var(--press);
+  -webkit-mask-size: 96px 96px;      mask-size: 96px 96px;
+  -webkit-mask-repeat: repeat;       mask-repeat: repeat;
+  mix-blend-mode: lighten;
+}
+:root[data-theme="dark"] #v1::after { mix-blend-mode: darken; }
+/* The picker is an affordance, not printed content, so it sits over the
+   screen rather than under it. */
+.stats-chart .chart-pick { z-index: 6; }
+
+/* The frame screenshots to a six-ink panel with no grey ramp, where a fine
+   screen turns into dither noise. Same hook the grain used. */
+:root[data-grain="off"] #v1::after { display: none; }
+@media (prefers-contrast: more), (forced-colors: active) {
+  #v1::after { display: none; }
+}

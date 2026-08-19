@@ -6,9 +6,12 @@
 //   stats       - totals (detections, unique species, today, last hour)
 //   lifelist    - every species with first_seen, last_seen, total_count
 //   recent      - &hours=N (default 24): species heard in the window
+//   rhythm      - &hours=N: minute-by-minute rhythm for the selected window
+//   hourly      - species-by-hour ledger for one calendar day
 //   species     - &sci=<sci_name>: per-species detail page
 //   timeseries  - &days=N: daily detection counts per species
 //   firstseen   - every species' earliest detection
+//   calendar    - detection totals by calendar date
 //
 // Default LAN deploy ships without auth. If you've exposed the Pi via
 // Cloudflare or a tunnel, add a Caddy `basic_auth` matcher around the
@@ -55,25 +58,62 @@ function one(SQLite3 $db, string $sql, array $bind = []) {
     return $r[0] ?? null;
 }
 
+function validIsoDate(string $date): bool {
+    $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+    return $parsed !== false && $parsed->format('Y-m-d') === $date;
+}
+
+// A stats date is always interpreted in the station's SQLite local clock.
+// Today ends at the current second; a historical date ends at 23:59:59.
+// Returning the same shape from every date-aware action keeps the frontend's
+// timeline, lists, ledger, and rhythm on one coherent cutoff.
+function dateContext(SQLite3 $db): array {
+    $today = one($db, "SELECT DATE('now','localtime') AS d")['d'] ?? date('Y-m-d');
+    $asked = $_GET['date'] ?? null;
+    if ($asked !== null && (!is_string($asked) || !validIsoDate($asked) || $asked > $today)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'bad date']);
+        exit;
+    }
+    $date = $asked ?? $today;
+    $isToday = $date === $today;
+    $anchor = $isToday
+        ? (one($db, "SELECT DATETIME('now','localtime') AS t")['t'] ?? ($today.' 23:59:59'))
+        : $date.' 23:59:59';
+    return ['date' => $date, 'today' => $today, 'is_today' => $isToday, 'anchor' => $anchor];
+}
+
+function windowClause(int $hours): string {
+    $through = "DATETIME(Date||' '||Time) <= DATETIME(:anchor)";
+    if ($hours >= 1000000) return $through;
+    return $through." AND DATETIME(Date||' '||Time) > DATETIME(:anchor,'-".$hours." hours')";
+}
+
 $action = $_GET['action'] ?? 'stats';
 
 switch ($action) {
 
     case 'stats': {
-        $total       = (int)(one($db, 'SELECT COUNT(*) AS n FROM detections')['n'] ?? 0);
-        $species     = (int)(one($db, 'SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections')['n'] ?? 0);
-        $today       = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = DATE('now','localtime')")['n'] ?? 0);
-        $todaySpec   = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date = DATE('now','localtime')")['n'] ?? 0);
-        $lastHour    = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = DATE('now','localtime') AND Time >= TIME('now','localtime','-1 hour')")['n'] ?? 0);
-        $week        = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date >= DATE('now','localtime','-7 day')")['n'] ?? 0);
-        $weekSpec    = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date >= DATE('now','localtime','-7 day')")['n'] ?? 0);
-        $first       = one($db, 'SELECT MIN(Date) AS d FROM detections');
+        $ctx = dateContext($db);
+        $bind = [':anchor' => $ctx['anchor']];
+        $total       = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind)['n'] ?? 0);
+        $species     = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind)['n'] ?? 0);
+        $day         = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = :d", [':d' => $ctx['date']])['n'] ?? 0);
+        $daySpec     = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date = :d", [':d' => $ctx['date']])['n'] ?? 0);
+        $lastHour    = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE ".windowClause(1), $bind)['n'] ?? 0);
+        $week        = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE ".windowClause(168), $bind)['n'] ?? 0);
+        $weekSpec    = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE ".windowClause(168), $bind)['n'] ?? 0);
+        $first       = one($db, "SELECT MIN(Date) AS d FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind);
         echo json_encode([
             'totals'    => ['detections' => $total, 'species' => $species],
-            'today'     => ['detections' => $today, 'species' => $todaySpec],
+            'today'     => ['detections' => $day, 'species' => $daySpec],
             'last_hour' => ['detections' => $lastHour],
             'week'      => ['detections' => $week,  'species' => $weekSpec],
             'started'   => $first['d'] ?? null,
+            'date'      => $ctx['date'],
+            'station_date' => $ctx['today'],
+            'is_today'  => $ctx['is_today'],
+            'anchor'    => $ctx['anchor'],
             'as_of'     => date('c'),
         ]);
         break;
@@ -96,15 +136,18 @@ switch ($action) {
         // "ALL" button can turn off the time filter without needing a
         // separate code path.
         $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 24)));
+        $ctx = dateContext($db);
+        $where = windowClause($hours);
+        $bind = [':anchor' => $ctx['anchor']];
         // species-collapsed view: one row per species seen in the window,
         // with the file of its highest-confidence detection inside the window.
         $rs = rows($db,
           "SELECT Sci_Name AS sci, Com_Name AS com, COUNT(*) AS n, MAX(Confidence) AS best_conf, "
         . "       MAX(Date||' '||Time) AS last_seen "
         . "FROM detections "
-        . "WHERE (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs "
+        . "WHERE $where "
         . "GROUP BY Sci_Name ORDER BY last_seen DESC",
-          [':hrs' => $hours]
+          $bind
         );
         // for each row, attach the file of the top-confidence detection in the window
         foreach ($rs as &$r) {
@@ -112,23 +155,30 @@ switch ($action) {
               "SELECT File_Name AS file, Date AS d, Time AS t, Confidence AS conf "
             . "FROM detections "
             . "WHERE Sci_Name = :sn "
-            . "AND (julianday('now','localtime') - julianday(Date||' '||Time)) * 24 <= :hrs "
+            . "AND $where "
             . "ORDER BY Confidence DESC LIMIT 1",
-              [':sn' => $r['sci'], ':hrs' => $hours]
+              [':sn' => $r['sci'], ':anchor' => $ctx['anchor']]
             );
             $r['top_file'] = $best['file'] ?? null;
             $r['top_at']   = isset($best['d']) ? ($best['d'].' '.$best['t']) : null;
         }
-        echo json_encode(['hours' => $hours, 'species' => $rs, 'as_of' => date('c')]);
+        echo json_encode([
+            'hours' => $hours, 'date' => $ctx['date'], 'station_date' => $ctx['today'],
+            'is_today' => $ctx['is_today'], 'anchor' => $ctx['anchor'],
+            'species' => $rs, 'as_of' => date('c')
+        ]);
         break;
     }
 
     case 'species': {
         $sci = $_GET['sci'] ?? '';
         if ($sci === '') { http_response_code(400); echo json_encode(['error' => 'sci= required']); break; }
+        $limit = max(1, min(1000, (int)($_GET['limit'] ?? 500)));
+        $offset = max(0, (int)($_GET['offset'] ?? 0));
         $detections = rows($db,
           "SELECT Date AS d, Time AS t, File_Name AS file, Confidence AS conf "
-        . "FROM detections WHERE Sci_Name = :sn ORDER BY Date DESC, Time DESC LIMIT 500",
+        . "FROM detections WHERE Sci_Name = :sn ORDER BY Date DESC, Time DESC "
+        . "LIMIT ".$limit." OFFSET ".$offset,
           [':sn' => $sci]
         );
         $summary = one($db,
@@ -137,7 +187,12 @@ switch ($action) {
         . "FROM detections WHERE Sci_Name = :sn",
           [':sn' => $sci]
         );
-        echo json_encode(['sci' => $sci, 'summary' => $summary, 'detections' => $detections]);
+        echo json_encode([
+            'sci' => $sci,
+            'summary' => $summary,
+            'detections' => $detections,
+            'page' => ['limit' => $limit, 'offset' => $offset, 'returned' => count($detections)],
+        ]);
         break;
     }
 
@@ -174,13 +229,160 @@ switch ($action) {
         // species, sorted by first_seen DESC. Powers the "First Detections"
         // section on the stats view.
         $limit = max(1, min(50, (int)($_GET['limit'] ?? 10)));
+        $ctx = dateContext($db);
         $rs = rows($db,
           "SELECT Sci_Name AS sci, Com_Name AS com, MIN(Date||' '||Time) AS first_seen, "
         . "       COUNT(*) AS total "
-        . "FROM detections GROUP BY Sci_Name ORDER BY first_seen DESC LIMIT :lim",
-          [':lim' => $limit]
+        . "FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor) "
+        . "GROUP BY Sci_Name ORDER BY first_seen DESC LIMIT :lim",
+          [':anchor' => $ctx['anchor'], ':lim' => $limit]
         );
-        echo json_encode(['species' => $rs, 'as_of' => date('c')]);
+        echo json_encode([
+            'date' => $ctx['date'], 'station_date' => $ctx['today'],
+            'is_today' => $ctx['is_today'], 'species' => $rs, 'as_of' => date('c')
+        ]);
+        break;
+    }
+
+    case 'calendar': {
+        // Small date index for the Stats calendar. Counts let the UI mark
+        // days with detections without guessing from the currently selected
+        // window, while empty days remain selectable and honest.
+        $today = one($db, "SELECT DATE('now','localtime') AS d")['d'] ?? date('Y-m-d');
+        $rs = rows($db,
+          "SELECT Date AS date, COUNT(*) AS detections, "
+        . "COUNT(DISTINCT Sci_Name) AS species FROM detections "
+        . "WHERE Date <= :today GROUP BY Date ORDER BY Date",
+          [':today' => $today]
+        );
+        echo json_encode([
+            'station_date' => $today,
+            'first_date' => $rs[0]['date'] ?? null,
+            'last_date' => $rs ? $rs[count($rs) - 1]['date'] : null,
+            'days' => $rs,
+            'as_of' => date('c'),
+        ]);
+        break;
+    }
+
+    case 'rhythm': {
+        // Minute-of-day pulse for the stats window. Short windows and 24H show
+        // one selected day against the preceding week's average. 7D shows the
+        // average daily shape of that seven-day block against the seven days
+        // immediately before it. ALL intentionally returns the selected day:
+        // the global date pager can then walk the station history day by day.
+        $days = max(1, min(30, (int)($_GET['days'] ?? 7)));
+        $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 24)));
+        $ctx = dateContext($db);
+        // Slot 0..1439 = hour*60 + minute.
+        $slot = "(CAST(strftime('%H', Time) AS INT) * 60 "
+              . "+ CAST(strftime('%M', Time) AS INT))";
+        $day = $ctx['date'];
+        $isToday = $ctx['is_today'];
+        $mode = $hours === 168 ? 'week' : ($hours >= 1000000 ? 'all-day' : 'day');
+        if ($mode === 'week') {
+            $today = rows($db,
+              "SELECT $slot AS slot, ROUND(COUNT(*) * 1.0 / 7, 2) AS detections "
+            . "FROM detections WHERE DATETIME(Date||' '||Time) > DATETIME(:anchor,'-168 hours') "
+            . "AND DATETIME(Date||' '||Time) <= DATETIME(:anchor) GROUP BY slot ORDER BY slot",
+              [':anchor' => $ctx['anchor']]
+            );
+            $avg = rows($db,
+              "SELECT $slot AS slot, ROUND(COUNT(*) * 1.0 / 7, 2) AS avg "
+            . "FROM detections WHERE DATETIME(Date||' '||Time) > DATETIME(:anchor,'-336 hours') "
+            . "AND DATETIME(Date||' '||Time) <= DATETIME(:anchor,'-168 hours') GROUP BY slot ORDER BY slot",
+              [':anchor' => $ctx['anchor']]
+            );
+        } else {
+            $today = rows($db,
+              "SELECT $slot AS slot, COUNT(*) AS detections "
+            . "FROM detections WHERE Date = :d GROUP BY slot ORDER BY slot",
+              [':d' => $day]
+            );
+            $avg = rows($db,
+              "SELECT $slot AS slot, ROUND(COUNT(*) * 1.0 / ".$days.", 2) AS avg "
+            . "FROM detections WHERE Date >= DATE(:d,'-".$days." day') AND Date < :d "
+            . "GROUP BY slot ORDER BY slot",
+              [':d' => $day]
+            );
+        }
+        // The station's own current slot: the frontend draws the live day's
+        // line only up to it. A past day is complete, so its line runs the
+        // whole way.
+        $nb = one($db, "SELECT (CAST(strftime('%H','now','localtime') AS INT) * 60 "
+                     . "+ CAST(strftime('%M','now','localtime') AS INT)) AS s");
+        $nowSlot = ($isToday && $mode !== 'week') ? (int)($nb['s'] ?? 1439) : 1439;
+        $rangeStart = $hours <= 1 ? max(0, $nowSlot - 59)
+                    : ($hours <= 12 ? max(0, $nowSlot - 719) : 0);
+        $rangeEnd = $hours <= 12 ? $nowSlot : 1439;
+        echo json_encode([
+            'days'     => $days,
+            'hours'    => $hours,
+            'mode'     => $mode,
+            'date'     => $day,
+            'station_date' => $ctx['today'],
+            'is_today' => $isToday,
+            'slots'    => 1440,
+            'today'    => $today,
+            'avg'      => $avg,
+            'now_slot' => $nowSlot,
+            'now_hour' => intdiv($nowSlot, 60),
+            'range_start_slot' => $rangeStart,
+            'range_end_slot' => $rangeEnd,
+            'as_of'    => date('c'),
+        ]);
+        break;
+    }
+
+    case 'hourly': {
+        // Species-by-hour ledger for one calendar day (the station's local
+        // date): the day's top species, each with per-hour detection counts.
+        // Hours with no rows are absent - the frontend backfills zeros, same
+        // convention as timeseries. Powers the hourly tab on the stats view.
+        // "Today" comes from SQLite's localtime, the same clock the rows
+        // were written against and the same one the rhythm query uses.
+        // PHP's date() follows date.timezone, which on a stock Pi is UTC:
+        // taking today from there puts a US station a day ahead every
+        // evening and the ledger reads empty.
+        $ctx = dateContext($db);
+        $today = $ctx['today'];
+        $date = $ctx['date'];
+        $limit = max(1, min(30, (int)($_GET['limit'] ?? 15)));
+        $rs = rows($db,
+          "WITH top AS ( "
+        . "  SELECT Sci_Name FROM detections WHERE Date = :d "
+        . "  GROUP BY Sci_Name ORDER BY COUNT(*) DESC, Sci_Name ASC LIMIT :lim "
+        . ") "
+        . "SELECT d.Sci_Name AS sci, d.Com_Name AS com, "
+        . "       CAST(strftime('%H', d.Time) AS INT) AS hour, COUNT(*) AS n "
+        . "FROM detections d JOIN top ON top.Sci_Name = d.Sci_Name "
+        . "WHERE d.Date = :d GROUP BY d.Sci_Name, hour",
+          [':d' => $date, ':lim' => $limit]
+        );
+        // Pivot to one entry per species, ordered by the day's total.
+        $species = [];
+        foreach ($rs as $r) {
+            $sci = $r['sci'];
+            if (!isset($species[$sci])) {
+                $species[$sci] = ['sci' => $sci, 'com' => $r['com'], 'total' => 0, 'hours' => []];
+            }
+            $species[$sci]['hours'][] = ['hour' => (int)$r['hour'], 'n' => (int)$r['n']];
+            $species[$sci]['total'] += (int)$r['n'];
+        }
+        $species = array_values($species);
+        usort($species, function ($a, $b) {
+            return $b['total'] <=> $a['total'] ?: strcmp($a['sci'], $b['sci']);
+        });
+        echo json_encode([
+            'date'    => $date,
+            'station_date' => $today,
+            'is_today' => $date === $today,
+            'anchor_hour' => $date === $today
+                ? (int)(one($db, "SELECT CAST(strftime('%H','now','localtime') AS INT) AS h")['h'] ?? 23)
+                : 23,
+            'species' => $species,
+            'as_of'   => date('c'),
+        ]);
         break;
     }
 

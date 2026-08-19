@@ -67,12 +67,16 @@ function get_service_mount_name() {
 }
 
 function is_authenticated() {
-  $ret = false;
-  if (isset($_SERVER['PHP_AUTH_USER'])) {
-    $config = get_config();
-    $ret = ($_SERVER['PHP_AUTH_PW'] == $config['CADDY_PWD'] && $_SERVER['PHP_AUTH_USER'] == 'birdnet');
+  if (!isset($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'])) {
+    return false;
   }
-  return $ret;
+  $config = get_config();
+  $expected = (string)($config['CADDY_PWD'] ?? '');
+  if ($expected === '') {
+    return false;
+  }
+  return hash_equals('birdnet', (string)$_SERVER['PHP_AUTH_USER'])
+    && hash_equals($expected, (string)$_SERVER['PHP_AUTH_PW']);
 }
 
 function ensure_authenticated($error_message = 'You cannot edit the settings for this installation') {
