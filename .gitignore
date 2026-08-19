@@ -54,10 +54,18 @@ whitelist_species_list.txt
 .DS_Store
 
 # --- AvianVisitors: local-only material, deliberately not shipped ---
+# Generated publication archives and local database snapshots
+/.avian/
+/.backups/
 # Claude Code session data
 .claude/
-# Large source / reference imagery kept on disk for working
-avian/assets/references/
+# Large source imagery stays local. These two reviewed blossom plates are
+# production stamp assets and remain eligible for version control.
+avian/assets/references/*
+!avian/assets/references/sparrow-blossom-single-v2.png
+!avian/assets/references/sparrow-blossom-pair-v2.png
+# Local recordings and spectrograms used while tuning release previews
+avian/frontend/assets/recording-previews/
 # Superseded assets retained locally
 avian/assets/_legacy/
 
