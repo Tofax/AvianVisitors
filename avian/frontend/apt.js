@@ -414,6 +414,12 @@
   function displayNameBySci(sci, fallback) {
     return caCapitalize(CA_NAMES[sci] || fallback || sci || '');
   }
+
+  function displayFamily(family) {
+    if (!family) return '';
+    if (family === 'Other') return T.other || 'Altres';
+    return family;
+  }
   // Species drawn during this session. The atlas re-renders straight after a
   // generate and cutout.php sets a day of cache, so the fresh render needs its
   // own stamp to get past whatever the earlier 404 left behind.
@@ -5211,8 +5217,24 @@
     // native:true they navigate in-page; otherwise they keep the old
     // open-in-new-tab behavior for the legacy BirdNET-Pi screens.
     var linksHtml = menu.map(function (it) {
-      var menuLabelsCa = { Settings: 'Configuració', System: 'Sistema', Logs: 'Registres', Tools: 'Eines', 'Advanced Tools': 'Eines avançades', Overview: 'Resum', Services: 'Serveis', Terminal: 'Terminal', 'Web Terminal': 'Terminal web', Spectrogram: 'Espectrograma', 'Live Spectrogram': 'Espectrograma en directe', Charts: 'Gràfics', 'File Manager': 'Gestor de fitxers' };
-      var label = menuLabelsCa[it.label] || (it.label || '');
+      var menuLabelsCa = {
+        settings: 'Configuració',
+        system: 'Sistema',
+        logs: 'Registres',
+        tools: 'Eines',
+        'advanced tools': 'Eines avançades',
+        overview: 'Resum',
+        services: 'Serveis',
+        terminal: 'Terminal',
+        'web terminal': 'Terminal web',
+        spectrogram: 'Espectrograma',
+        'live spectrogram': 'Espectrograma en directe',
+        charts: 'Gràfics',
+        'file manager': 'Gestor de fitxers'
+      };
+
+      var rawLabel = it.label || '';
+      var label = menuLabelsCa[rawLabel.toLowerCase()] || rawLabel;
       var attrs = it.native ? '' : ' target="_blank" rel="noopener"';
       var cls = it.native ? '' : ' class="ext"';
       // A dot marks a section with something waiting (e.g. instant
@@ -5457,7 +5479,7 @@
   var autoSaveT = null;
   function queueSave(delay) {
     if (!Object.keys(pending).length) return;
-    setSaveState('saving...');
+    setSaveState('desant...');
     clearTimeout(autoSaveT);
     autoSaveT = setTimeout(saveSettings, delay || 700);
   }
@@ -5621,7 +5643,7 @@
   function saveSettings() {
     if (Object.keys(pending).length === 0) return;
     var body = JSON.stringify(pending);
-    setSaveState('saving...');
+    setSaveState('desant...');
     fetch('./avian/api/config.php', {
       method: 'POST', body: body,
       credentials: 'same-origin',
@@ -6329,7 +6351,7 @@
     var sciParts = sci.trim().split(/\s+/);
     var family = window.STAMPS && window.STAMPS.latinOf ? window.STAMPS.latinOf(sci) : '';
     if (!family && window.STAMPS && window.STAMPS.familyOf) family = window.STAMPS.familyOf(sci);
-    document.getElementById('modalFamily').textContent = family || '-';
+    document.getElementById('modalFamily').textContent = displayFamily(family) || '-';
     document.getElementById('modalGenus').textContent = sciParts[0] || '-';
     document.getElementById('modalSpecies').textContent = sciParts.slice(1).join(' ') || '-';
     var lifelistBird = (((DATA || {}).lifelist || {}).species || []).find(function (bird) {
@@ -6374,7 +6396,7 @@
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
       var rar = rarityLabel(+s.total || 0, s.first_seen);
       var rarEl = document.getElementById('modalRarity');
-      var rarCa = { common: 'Comuna', regular: 'Regular', occasional: 'Ocasional', rare: 'Rara' };
+      var rarCa = { common: 'Comuna', regular: 'Habitual', occasional: 'Ocasional', rare: 'Rara' };
       rarEl.textContent = rarCa[rar] || rar;
       if (rar === 'rare') rarEl.classList.add('rare');
       var dets = j.detections || [];
@@ -7194,6 +7216,23 @@
     tick();
     adminPollT = setInterval(tick, 6000);
   }
+  function formatSystemdDate(value) {
+    if (!value) return '-';
+
+    // Exemple rebut:
+    // Fri 2026-08-21 19:59:54 CEST
+
+    var m = String(value).match(
+      /^[A-Za-z]{3}\s+(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})(?:\s+\S+)?$/
+    );
+
+    if (!m) return value;
+
+    return m[3] + '/' + m[2] + '/' + m[1]
+      + ' '
+      + m[4] + ':' + m[5] + ':' + m[6];
+  }
+
   function adminSystemMarkup(j) {
     var sys = j.system || {}, svc = j.services || {}, recLogs = j.recent_logs || {};
     var stream = sys.stream_data || {}, db = sys.birds_db || {};
@@ -7248,7 +7287,7 @@
         + '<td>' + adminEsc(name) + '</td>'
         + '<td><span class="pill ' + pill + '">' + adminEsc(activeCa[s.active] || s.active) + '</span></td>'
         + '<td>' + adminEsc(enabledCa[s.enabled] || s.enabled) + '</td>'
-        + '<td>' + adminEsc(s.since || '-') + '</td>'
+        + '<td>' + adminEsc(formatSystemdDate(s.since)) + '</td>'
         + '<td><button class="restart" data-unit="' + adminEsc(name) + '">reinicia</button></td>'
         + '</tr>';
     });
@@ -7616,7 +7655,7 @@
         : action === 'install' ? "instal·lant..."
           : action === 'enable' ? 'enabling...'
             : action === 'disable' ? 'disabling...'
-              : 'saving...';
+              : 'desant...';
       paintArchive();
       var prepared = action === 'enable' || action === 'run';
       var previousRetention = null;
@@ -7792,10 +7831,10 @@
     function maintenanceMessage(state) {
       if (!state) return '';
       if (state.state === 'running' || state.state === 'queued') {
-        return state.action === 'services' ? 'reinstalling...' : 'updating...';
+        return state.action === 'services' ? 'reinstal·lant...' : 'actualitzant...';
       }
-      if (state.state === 'complete') return state.action === 'services' ? 'reinstalled' : 'updated';
-      if (state.state === 'failed') return state.detail || 'failed';
+      if (state.state === 'complete') return state.action === 'services' ? 'reinstal·lat' : 'actualitzat';
+      if (state.state === 'failed') return state.detail || 'ha fallat';
       return '';
     }
     function paintMaintenance(state) {
@@ -7848,7 +7887,7 @@
         var out = card && card.querySelector('.state');
         button.disabled = true;
         if (card) card.setAttribute('aria-busy', 'true');
-        if (out) out.textContent = action === 'services' ? 'reinstalling...' : 'updating...';
+        if (out) out.textContent = action === 'services' ? 'reinstal·lant...' : 'actualitzant...';
         maintenanceRequest(action).then(function (state) {
           paintMaintenance(state);
         }).catch(function (error) {
