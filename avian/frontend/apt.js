@@ -2083,7 +2083,7 @@
       // the status line beneath it. The frame (shoot.py) overrides the .empty
       // text for the e-ink panel; the nest illustration is shared by both.
       collage.innerHTML = '<div class="empty-nest">' +
-        '<img class="nest-img" src="nest.webp" alt="an empty nest" decoding="async">' +
+        '<img class="nest-img" src="nest.webp" alt="un niu buit" decoding="async">' +
         '<p class="empty window-empty">' + EMPTY_WINDOW_COPY + '</p></div>';
       // Bloom the nest in on the same cues as the collage (first load, window
       // change, view switch); a silent poll/resize renders without animate. The
@@ -2466,7 +2466,7 @@
       if (hit && !labelsOn()) {
         var s = hit.data;
         var n = +s.n || 0;
-        var noun = (n === 1) ? 'call' : 'calls';
+        var noun = (n === 1) ? 'detecció' : 'deteccions';
         tip.innerHTML = '<span class="ct-name">' + escHtml(displayName(s)) + '</span>'
           + '<span class="ct-w"> - </span>'
           + '<span class="ct-n">' + fmtN(n) + '</span>'
@@ -3206,7 +3206,7 @@
       var readable = new Date(year, month, day).toLocaleDateString('ca-ES', {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
       });
-      var aria = readable + (count ? ', ' + count + ' detection' + (count === 1 ? '' : 's') : ', no detections');
+      var aria = readable + (count? ', ' + count + (count === 1 ? ' detecció' : ' deteccions') : ', cap detecció');
       html += '<button type="button" role="gridcell" data-date="' + date + '"'
         + (count ? ' class="has-data' + (date === today ? ' is-today' : '') + '"' : (date === today ? ' class="is-today"' : ''))
         + ' aria-label="' + aria + '" aria-selected="' + (date === selected ? 'true' : 'false') + '"'
@@ -7399,7 +7399,7 @@
     html += '<div class="tool-row">';
     actions.forEach(function (a) {
       html += '<button type="button" class="tool-card" data-unit="' + adminEsc(a[2]) + '">'
-        + '<span class="badge" data-live="?"><i class="now">...</i><i class="act">restart</i></span>'
+        + '<span class="badge" data-live="?"><i class="now">...</i><i class="act">reinicia</i></span>'
         + '<span class="ic">' + toolIcon(a[2]) + '</span>'
         + '<span class="ttl">' + adminEsc(a[0]) + '</span>'
         + '<span class="dsc">' + adminEsc(a[1]) + '</span>'
