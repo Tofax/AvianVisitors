@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="ca">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>your birds</title>
-<meta name="description" content="A live bird collage from your window.">
+<title>els teus ocells</title>
+<meta name="description" content="Un collage en directe dels ocells que s'escolten al teu entorn.">
 <link rel="icon" type="image/png" href="./favicon.png?v=3">
 <link rel="apple-touch-icon" href="./favicon.png?v=3">
 <!-- Resolve the saved preference before first paint. This mirrors the
@@ -25,7 +25,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
      (body.admin-on); CSS in styles.css hides it everywhere else.
      href="/" returns to the collage view via a full reload, which is
      fine for an off-hot-path control. -->
-<a class="return-to-atlas" id="returnToAtlas" href="/" aria-label="back to collage">
+<a class="return-to-atlas" id="returnToAtlas" href="/" aria-label="tornar al collage">
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
     <path d="M10 3 L4 8 L10 13"/>
   </svg>
@@ -38,7 +38,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     <button data-h="12"  type="button">12H</button>
     <button data-h="24"  type="button" aria-current="true">24H</button>
     <button data-h="168" type="button">7D</button>
-    <button data-h="1000000" type="button">ALL</button>
+    <button data-h="1000000" type="button">TOT</button>
   </div>
 </header>
 
@@ -50,22 +50,22 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
      while the surface is still the wrong shape for them. -->
 <div class="menu-shell" id="menuShell">
   <div class="menu-surface">
-  <aside id="menu-dd" aria-hidden="true" role="dialog" aria-label="menu">
+  <aside id="menu-dd" aria-hidden="true" role="dialog" aria-label="menú">
     <div class="menu-sheet">
   <div id="dd-locked">
     <form class="lock-row" id="unlockForm">
-      <input id="lockPass" type="password" placeholder="password" autocomplete="current-password">
-      <button type="submit" aria-label="unlock">→</button>
+      <input id="lockPass" type="password" placeholder="contrasenya" autocomplete="current-password">
+      <button type="submit" aria-label="desbloquejar">→</button>
     </form>
-    <p class="lock-hint" id="lockHint">enter password to unlock tools.</p>
+    <p class="lock-hint" id="lockHint">introdueix la contrasenya per desbloquejar les eines.</p>
   </div>
   <nav class="menu-items" id="dd-items"></nav>
-  <p class="built-by">built by <a href="https://theodore.net" target="_blank" rel="noopener">teddy</a> · <a href="https://github.com/Twarner491/AvianVisitors" target="_blank" rel="noopener">github</a></p>
+  <p class="built-by">creat per <a href="https://theodore.net" target="_blank" rel="noopener">teddy</a> · <a href="https://github.com/Twarner491/AvianVisitors" target="_blank" rel="noopener">github</a></p>
     </div>
   </aside>
   </div>
-  <button class="menu-btn" id="menuBtn" type="button" aria-label="menu" aria-expanded="false" aria-controls="menu-dd">
-    <span class="mb-w" aria-hidden="true">menu</span>
+  <button class="menu-btn" id="menuBtn" type="button" aria-label="menú" aria-expanded="false" aria-controls="menu-dd">
+    <span class="mb-w" aria-hidden="true">menú</span>
     <span class="mb-x" aria-hidden="true">
       <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
         <path d="M3.6 3.6 L10.4 10.4"/><path d="M10.4 3.6 L3.6 10.4"/>
@@ -76,42 +76,42 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 
 <main class="stage">
   <header class="static-head">
-    <button type="button" class="pre" id="aboutLink">your birds</button>
-    <h1 id="staticTitle">Heard Recently</h1>
+    <button type="button" class="pre" id="aboutLink">els teus ocells</button>
+    <h1 id="staticTitle">Escoltats recentment</h1>
   </header>
   <div class="views" id="views">
 
     <!-- ========== View 1 - Collage ========== -->
-    <section class="view" id="v0" aria-label="Bird collage">
+    <section class="view" id="v0" aria-label="Collage d'ocells">
       <div class="gcollage" id="collage"></div>
     </section>
 
     <!-- ========== View 2 - Stats ========== -->
-    <section class="view" id="v1" aria-label="Stats">
+    <section class="view" id="v1" aria-label="Estadístiques">
       <div class="stats-grid" id="statsGrid">
-        <div class="stats-date-nav" id="statsDateNav" aria-label="Stats date" hidden>
-          <button type="button" id="statsDatePrev" aria-label="Previous day">
+        <div class="stats-date-nav" id="statsDateNav" aria-label="Data de les estadístiques" hidden>
+          <button type="button" id="statsDatePrev" aria-label="Dia anterior">
             <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5"/></svg>
           </button>
-          <button type="button" class="stats-date-label" id="statsDateLabel" aria-label="Choose stats date" aria-expanded="false" aria-controls="statsCalendar">today</button>
-          <button type="button" id="statsDateNext" aria-label="Next day" disabled>
+          <button type="button" class="stats-date-label" id="statsDateLabel" aria-label="Tria la data de les estadístiques" aria-expanded="false" aria-controls="statsCalendar">avui</button>
+          <button type="button" id="statsDateNext" aria-label="Dia següent" disabled>
             <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg>
           </button>
-          <div class="stats-calendar" id="statsCalendar" role="dialog" aria-label="Choose stats date" aria-hidden="true">
+          <div class="stats-calendar" id="statsCalendar" role="dialog" aria-label="Tria la data de les estadístiques" aria-hidden="true">
             <div class="stats-calendar-head">
-              <button type="button" id="statsMonthPrev" aria-label="Previous month">
+              <button type="button" id="statsMonthPrev" aria-label="Mes anterior">
                 <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5"/></svg>
               </button>
               <span id="statsMonthTitle"></span>
-              <button type="button" id="statsMonthNext" aria-label="Next month">
+              <button type="button" id="statsMonthNext" aria-label="Mes següent">
                 <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg>
               </button>
             </div>
-            <div class="stats-calendar-week" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+            <div class="stats-calendar-week" aria-hidden="true"><span>Dl</span><span>Dt</span><span>Dc</span><span>Dj</span><span>Dv</span><span>Ds</span><span>Dg</span></div>
             <div class="stats-calendar-days" id="statsCalendarDays" role="grid"></div>
             <div class="stats-calendar-foot">
-              <button type="button" id="statsLatestDate">latest heard</button>
-              <button type="button" id="statsTodayDate">today</button>
+              <button type="button" id="statsLatestDate">última detecció</button>
+              <button type="button" id="statsTodayDate">avui</button>
             </div>
           </div>
         </div>
@@ -119,20 +119,20 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
              icon pick swaps between them while the side panel and the
              rhythm below stay put, so nothing is hidden to see either. -->
         <div class="stats-chart">
-          <div class="chart-pick" id="chartPick" role="tablist" aria-label="chart">
+          <div class="chart-pick" id="chartPick" role="tablist" aria-label="gràfic">
             <i class="seg-pill" aria-hidden="true"></i>
             <!-- Material Symbols Outlined (Apache 2.0), path data verbatim. -->
-            <button data-chart="timeline" type="button" aria-current="true" aria-label="detection timeline">
+            <button data-chart="timeline" type="button" aria-current="true" aria-label="cronologia de deteccions">
               <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
                 <path d="M640-160v-280h160v280H640Zm-240 0v-640h160v640H400Zm-240 0v-440h160v440H160Z"/>
               </svg>
-              <span class="tip">timeline</span>
+              <span class="tip">cronologia</span>
             </button>
-            <button data-chart="hourly" type="button" aria-label="by hour">
+            <button data-chart="hourly" type="button" aria-label="per hora">
               <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
                 <path d="M760-200v-120H200v120h560Zm0-200v-160H200v160h560Zm0-240v-120H200v120h560ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Z"/>
               </svg>
-              <span class="tip">by hour</span>
+              <span class="tip">per hora</span>
             </button>
           </div>
           <div class="stats-timeline" id="statsTimeline">
@@ -150,24 +150,24 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
         </div>
         <aside class="stats-side">
           <div class="grp">
-            <h3>By Period</h3>
-            <small id="statsByPeriodCap">detections, grouped by recency</small>
+            <h3>Per període</h3>
+            <small id="statsByPeriodCap">deteccions, agrupades per recència</small>
             <ol id="statsByPeriod"></ol>
           </div>
           <div class="grp">
-            <h3>Top Species</h3>
-            <small id="statsTopSpecCap">most-heard, current window</small>
+            <h3>Espècies més detectades</h3>
+            <small id="statsTopSpecCap">més detectades, període actual</small>
             <ol id="statsTopSpec"></ol>
           </div>
           <div class="grp">
-            <h3>First Detections</h3>
-            <small id="statsFirstSeenCap">newest additions to the life list</small>
+            <h3>Primeres deteccions</h3>
+            <small id="statsFirstSeenCap">incorporacions més recents a la llista d'espècies</small>
             <ol id="statsFirstSeen"></ol>
           </div>
         </aside>
         <div class="grp stats-rhythm">
-          <h3 id="statsRhythmTitle">Today's Rhythm</h3>
-          <small id="statsRhythmCap">detections through the day, over last week's average</small>
+          <h3 id="statsRhythmTitle">Ritme d'avui</h3>
+          <small id="statsRhythmCap">deteccions al llarg del dia, comparades amb la mitjana de la setmana passada</small>
           <!-- SVG line chart, rendered by renderRhythm(). -->
           <div class="rh-plot" id="statsRhythm"></div>
         </div>
@@ -175,35 +175,35 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     </section>
 
     <!-- ========== View 3 - Atlas ========== -->
-    <section class="view" id="v2" aria-label="Atlas">
+    <section class="view" id="v2" aria-label="Atles">
       <div class="atlas-controls">
-        <div class="atlas-sort" id="atlasSort" role="tablist" aria-label="sort atlas">
+        <div class="atlas-sort" id="atlasSort" role="tablist" aria-label="ordena l'atles">
           <i class="seg-pill" aria-hidden="true"></i>
-          <button data-sort="life" type="button" aria-current="true" aria-label="life list">
+          <button data-sort="life" type="button" aria-current="true" aria-label="llista d'espècies">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="7" cy="7" r="5.2"/><path d="M7 4 V7 L9.2 8.3"/>
             </svg>
-            <span class="tip">life list</span>
+            <span class="tip">llista d'espècies</span>
           </button>
-          <button data-sort="family" type="button" aria-label="by family">
+          <button data-sort="family" type="button" aria-label="per família">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="2" width="4.2" height="4.2" rx="0.8"/><rect x="7.8" y="2" width="4.2" height="4.2" rx="0.8"/>
               <rect x="2" y="7.8" width="4.2" height="4.2" rx="0.8"/><rect x="7.8" y="7.8" width="4.2" height="4.2" rx="0.8"/>
             </svg>
-            <span class="tip">by family</span>
+            <span class="tip">per família</span>
           </button>
-          <button data-sort="alpha" type="button" aria-label="alphabetical">
+          <button data-sort="alpha" type="button" aria-label="alfabètic">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
               <path d="M2.4 11.5 L4 4.5 L5.6 11.5"/><path d="M2.9 9.2 H5.1"/>
               <path d="M8.2 11.5 V4.5 H10.4 a1.3 1.3 0 0 1 0 2.6 H8.2"/><path d="M8.2 7.1 H10.6 a1.5 1.5 0 0 1 0 3 H8.2"/>
             </svg>
             <span class="tip">a &#8594; z</span>
           </button>
-          <button data-sort="count" type="button" aria-label="most heard">
+          <button data-sort="count" type="button" aria-label="més detectats">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
               <path d="M2 12 V8"/><path d="M6 12 V5"/><path d="M10 12 V3"/>
             </svg>
-            <span class="tip">most heard</span>
+            <span class="tip">més detectats</span>
           </button>
         </div>
       </div>
@@ -216,34 +216,34 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <div id="postcard-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modalCommon">
   <div class="postcard-backdrop" data-postcard-close="1"></div>
   <article class="postcard-sheet" role="document">
-    <button class="postcard-drawer-handle" type="button" aria-label="Drag down or press to close postcard">
+    <button class="postcard-drawer-handle" type="button" aria-label="Arrossega avall o prem per tancar la fitxa">
       <span aria-hidden="true"></span>
     </button>
-    <section class="postcard-visual" aria-label="Bird illustration">
+    <section class="postcard-visual" aria-label="Il·lustració de l'ocell">
       <div class="postcard-bird-frame">
         <div class="postcard-artwork" id="modalArtwork" data-art-state="loading">
           <img id="modalImg" src="" alt="" loading="eager">
         </div>
-        <div class="atlas-sort postcard-pose-toggle" id="modalPoseToggle" role="tablist" aria-label="Pose">
+        <div class="atlas-sort postcard-pose-toggle" id="modalPoseToggle" role="tablist" aria-label="Posició">
           <i class="seg-pill" aria-hidden="true"></i>
           <!-- Font Awesome Free 6.7.2 crow and dove glyphs, copied verbatim
                from FortAwesome's free-solid SVG set (icons: CC BY 4.0). -->
-          <button type="button" data-pose="1" aria-label="perched">
+          <button type="button" data-pose="1" aria-label="posat">
             <svg viewBox="0 0 640 512" fill="currentColor" aria-hidden="true">
               <path d="M456 0c-48.6 0-88 39.4-88 88l0 29.2L12.5 390.6c-14 10.8-16.6 30.9-5.9 44.9s30.9 16.6 44.9 5.9L126.1 384l133.1 0 46.6 113.1c5 12.3 19.1 18.1 31.3 13.1s18.1-19.1 13.1-31.3L311.1 384l40.9 0c1.1 0 2.1 0 3.2 0l46.6 113.2c5 12.3 19.1 18.1 31.3 13.1s18.1-19.1 13.1-31.3l-42-102C484.9 354.1 544 280 544 192l0-64 0-8 80.5-20.1c8.6-2.1 13.8-10.8 11.6-19.4C629 52 603.4 32 574 32l-50.1 0C507.7 12.5 483.3 0 456 0zm0 64a24 24 0 1 1 0 48 24 24 0 1 1 0-48z"/>
             </svg>
-            <span class="tip">perched</span>
+            <span class="tip">posat</span>
           </button>
-          <button type="button" data-pose="2" aria-label="in flight">
+          <button type="button" data-pose="2" aria-label="en vol">
             <svg viewBox="0 0 512 512" fill="currentColor" aria-hidden="true">
               <path d="M160.8 96.5c14 17 31 30.9 49.5 42.2c25.9 15.8 53.7 25.9 77.7 31.6l0-31.5C265.8 108.5 250 71.5 248.6 28c-.4-11.3-7.5-21.5-18.4-24.4c-7.6-2-15.8-.2-21 5.8c-13.3 15.4-32.7 44.6-48.4 87.2zM320 144l0 30.6s0 0 0 0l0 1.3s0 0 0 0l0 32.1c-60.8-5.1-185-43.8-219.3-157.2C97.4 40 87.9 32 76.6 32c-7.9 0-15.3 3.9-18.8 11C46.8 65.9 32 112.1 32 176c0 116.9 80.1 180.5 118.4 202.8L11.8 416.6C6.7 418 2.6 421.8 .9 426.8s-.8 10.6 2.3 14.8C21.7 466.2 77.3 512 160 512c3.6 0 7.2-1.2 10-3.5L245.6 448l74.4 0c88.4 0 160-71.6 160-160l0-160 29.9-44.9c1.3-2 2.1-4.4 2.1-6.8c0-6.8-5.5-12.3-12.3-12.3L400 64c-44.2 0-80 35.8-80 80zm80-16a16 16 0 1 1 0 32 16 16 0 1 1 0-32z"/>
             </svg>
-            <span class="tip">in flight</span>
+            <span class="tip">en vol</span>
           </button>
         </div>
-        <button id="modalGenerate" class="postcard-generate" type="button" aria-live="polite" aria-atomic="true" hidden>generate image</button>
-        <nav class="postcard-links" aria-label="External bird references">
-          <a id="modalWiki" target="_blank" rel="noopener">Wikipedia <span aria-hidden="true">↗</span></a>
+        <button id="modalGenerate" class="postcard-generate" type="button" aria-live="polite" aria-atomic="true" hidden>genera la imatge</button>
+        <nav class="postcard-links" aria-label="Referències externes de l'ocell">
+          <a id="modalWiki" target="_blank" rel="noopener">Viquipèdia <span aria-hidden="true">↗</span></a>
           <a id="modalEbird" target="_blank" rel="noopener">eBird <span aria-hidden="true">↗</span></a>
         </nav>
       </div>
@@ -254,40 +254,40 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
         <div class="postcard-heading">
           <h2 id="modalCommon">-</h2>
           <span id="modalSci" hidden></span>
-          <div class="postcard-stats" aria-label="Bird history">
-            <span><b id="modalAllTime">-</b> heard</span>
-            <span><b id="modalFirstSeen">-</b> first heard</span>
+          <div class="postcard-stats" aria-label="Historial de l'ocell">
+            <span><b id="modalAllTime">-</b> deteccions</span>
+            <span><b id="modalFirstSeen">-</b> primer registre</span>
           </div>
         </div>
-        <div class="postcard-stamp-slot" aria-label="selected stamp"></div>
+        <div class="postcard-stamp-slot" aria-label="segell seleccionat"></div>
       </header>
 
       <details class="postcard-section postcard-about" name="postcard-info" open>
         <summary>
-          <span>About</span>
+          <span>Sobre l'espècie</span>
         </summary>
         <div class="postcard-section-body">
-          <div class="desc placeholder" id="modalDesc">Loading description...</div>
+          <div class="desc placeholder" id="modalDesc">Carregant la descripció...</div>
           <div class="modal-meta">
-            <span class="meta-item"><span class="k">Family</span><span class="v" id="modalFamily">-</span></span>
-            <span class="meta-item"><span class="k">Genus</span><span class="v" id="modalGenus">-</span></span>
-            <span class="meta-item"><span class="k">Species</span><span class="v" id="modalSpecies">-</span></span>
-            <span class="meta-item"><span class="k">Rarity</span><span class="v" id="modalRarity">-</span></span>
+            <span class="meta-item"><span class="k">Família</span><span class="v" id="modalFamily">-</span></span>
+            <span class="meta-item"><span class="k">Gènere</span><span class="v" id="modalGenus">-</span></span>
+            <span class="meta-item"><span class="k">Espècie</span><span class="v" id="modalSpecies">-</span></span>
+            <span class="meta-item"><span class="k">Raresa</span><span class="v" id="modalRarity">-</span></span>
           </div>
         </div>
       </details>
 
       <details class="postcard-section postcard-recordings" name="postcard-info">
         <summary>
-          <span>Recordings</span>
+          <span>Enregistraments</span>
           <small id="modalRecCount"></small>
         </summary>
         <div class="postcard-section-body">
           <div class="rec-table-head" aria-hidden="true">
-            <span>Last heard</span><span>Confidence</span><span>Date &amp; time</span>
+            <span>Última detecció</span><span>Confiança</span><span>Data i hora</span>
           </div>
           <ol id="modalRecordings">
-            <li class="rec-empty">Loading recordings...</li>
+            <li class="rec-empty">Carregant els enregistraments...</li>
           </ol>
         </div>
       </details>
@@ -299,19 +299,19 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <div id="about-modal" aria-hidden="true" role="dialog" aria-labelledby="aboutTitle">
   <div class="modal-backdrop" data-close="1"></div>
   <div class="about-card" role="document">
-    <button type="button" class="modal-close" data-close="1" aria-label="close">×</button>
-    <p class="about-eyebrow">your birds</p>
-    <h2 id="aboutTitle">The birds outside your window</h2>
-    <p class="about-body">A tiny microphone identifies every passing bird with Cornell's <a href="https://birdnet.cornell.edu/" target="_blank" rel="noopener">BirdNET</a>. Each species shows up as an illustration in the collage, sized by how often it's been heard.</p>
-    <button type="button" class="about-explore" data-close="1">explore the birds →</button>
+    <button type="button" class="modal-close" data-close="1" aria-label="tancar">×</button>
+    <p class="about-eyebrow">els teus ocells</p>
+    <h2 id="aboutTitle">Els ocells del teu entorn</h2>
+    <p class="about-body">Un petit micròfon identifica cada ocell que passa amb <a href="https://birdnet.cornell.edu/" target="_blank" rel="noopener">BirdNET</a>. Cada espècie apareix com una il·lustració al collage, amb una mida proporcional a la freqüència amb què s'ha detectat.</p>
+    <button type="button" class="about-explore" data-close="1">explora els ocells →</button>
     </div>
 </div>
 
-<nav class="slider" id="slider" aria-label="View">
+<nav class="slider" id="slider" aria-label="Vista">
   <i class="seg-pill" aria-hidden="true"></i>
   <button type="button" data-i="0" aria-current="true">collage</button>
-  <button type="button" data-i="1">stats</button>
-  <button type="button" data-i="2">atlas</button>
+  <button type="button" data-i="1">estadístiques</button>
+  <button type="button" data-i="2">atles</button>
 </nav>
 
 
@@ -385,6 +385,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r234"></script>
-<script src="./apt.js?v=r180"></script>
+<script src="./i18n-ca.js?v=r1"></script>
+<script src="./apt.js?v=r181"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 (function () {
+  var T = window.I18N_CA || {};
   var PLACEHOLDER = [{ "sci": "Calypte anna", "com": "Anna's Hummingbird", "featured": true }, { "sci": "Passer domesticus", "com": "House Sparrow" }, { "sci": "Haemorhous mexicanus", "com": "House Finch" }, { "sci": "Turdus migratorius", "com": "American Robin" }, { "sci": "Zenaida macroura", "com": "Mourning Dove" }, { "sci": "Spinus psaltria", "com": "Lesser Goldfinch" }, { "sci": "Zonotrichia leucophrys", "com": "White-crowned Sparrow" }, { "sci": "Aphelocoma californica", "com": "California Scrub-Jay" }, { "sci": "Mimus polyglottos", "com": "Northern Mockingbird" }, { "sci": "Sayornis nigricans", "com": "Black Phoebe" }, { "sci": "Larus occidentalis", "com": "Western Gull" }, { "sci": "Corvus brachyrhynchos", "com": "American Crow" }];
   // Bumped whenever the offline sketch build changes, so the browser
   // doesn't keep a stale cache after we regenerate the sketches.
@@ -73,8 +74,8 @@
   // Each view's title text. The shared static-head shows one of these
   // based on the current view; identical adjacent values mean the title
   // stays put with no fade (collage and stats both say Heard Recently).
-  var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Avian Atlas'];
-  var EMPTY_WINDOW_COPY = 'no detections heard in this window';
+  var VIEW_TITLES = [T.heardRecently, T.heardRecently, T.avianAtlas];
+  var EMPTY_WINDOW_COPY = T.emptyWindow || "No s'han detectat ocells en aquest període";
   var staticHead = document.querySelector('.static-head');
   var staticTitle = document.getElementById('staticTitle');
   function setTitleForView(i) {
@@ -2242,7 +2243,7 @@
       // detections in a session; "heard" implies distinct individuals.
       var titleN = +s.n || 0;
       btn.title = shownName + ' - ' + fmtN(titleN) + ' ' +
-        (titleN === 1 ? 'call' : 'calls') + ' ' + windowLabel(currentHours);
+        (titleN === 1 ? 'detecció' : 'deteccions') + ' ' + windowLabel(currentHours);
       btn.style.left = r.x + 'px';
       btn.style.top = r.y + 'px';
       btn.style.width = r.fullW + 'px';
@@ -2547,19 +2548,19 @@
   // a bare "window" with the span it actually covers. Thresholds match
   // the winPick buttons (1H / 12H / 24H / 7D / ALL).
   function windowLabel(h) {
-    if (h <= 1) return 'this hour';
-    if (h <= 12) return 'past 12h';
-    if (h <= 24) return 'today';
-    if (h <= 168) return 'this week';
-    return 'all time';
+    if (h <= 1) return "aquesta hora";
+    if (h <= 12) return "últimes 12 h";
+    if (h <= 24) return 'avui';
+    if (h <= 168) return "aquesta setmana";
+    return "total";
   }
   function statsWindowLabel(h) {
     if (!hourlyDate) return windowLabel(h);
-    if (h <= 1) return 'selected hour';
-    if (h <= 12) return 'final 12h';
-    if (h <= 24) return 'selected day';
-    if (h <= 168) return 'selected 7 days';
-    return 'through selected day';
+    if (h <= 1) return "hora seleccionada";
+    if (h <= 12) return "12 h finals";
+    if (h <= 24) return "dia seleccionat";
+    if (h <= 168) return "7 dies seleccionats";
+    return "durant el dia seleccionat";
   }
 
   // ---- Live Pi data layer ----
@@ -2697,7 +2698,7 @@
       var p2 = function (n) { return n < 10 ? '0' + n : '' + n; };
       if (currentHours <= 36) return p2(d.getHours()) + ':' + p2(d.getMinutes());
       if (currentHours <= 75 * 24) return (d.getMonth() + 1) + '/' + d.getDate();
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return d.toLocaleDateString('ca-ES', { month: 'short', day: 'numeric' });
     }
 
     // Faint gridlines at every column boundary. Start at gi=1: the gi=0
@@ -2733,7 +2734,7 @@
     });
 
     var note = trimmed
-      ? '<div class="stats-tl-cap">' + C + ' most-heard of ' + all.length + '</div>'
+      ? '<div class="stats-tl-cap">' + C + ' més detectades de ' + all.length + '</div>'
       : '';
     tl.innerHTML =
       '<div class="stats-tl-yaxis">' + yaxis + '</div>'
@@ -2788,16 +2789,16 @@
     var byPeriodCap = document.getElementById('statsByPeriodCap');
     var firstSeenCap = document.getElementById('statsFirstSeenCap');
     if (byPeriodCap) byPeriodCap.textContent = past
-      ? 'detections through ' + shortStatsDate(stats.date)
-      : 'detections, grouped by recency';
+      ? "deteccions fins al " + shortStatsDate(stats.date)
+      : "deteccions, agrupades per recència";
     if (firstSeenCap) firstSeenCap.textContent = past
-      ? 'life list as of ' + shortStatsDate(stats.date)
-      : 'newest additions to the life list';
+      ? "llista d'espècies a data de " + shortStatsDate(stats.date)
+      : "incorporacions més recents a la llista d'espècies";
     document.getElementById('statsByPeriod').innerHTML =
-      liRow(past ? 'HOUR' : 'NOW', past ? 'final hour' : 'last hour', fmtN(last_hour))
-      + liRow(past ? 'DAY' : 'TODAY', past ? 'selected date' : 'today', fmtN(today_det))
-      + liRow('7D', past ? 'through this date' : 'last 7 days', fmtN(week_det))
-      + liRow('ALL', past ? 'through this date' : 'all time', fmtN(all_det));
+      liRow(past ? 'HORA' : 'ARA', past ? "hora final" : "última hora", fmtN(last_hour))
+      + liRow(past ? 'DIA' : 'AVUI', past ? "data seleccionada" : 'avui', fmtN(today_det))
+      + liRow('7D', past ? "fins a aquesta data" : "últims 7 dies", fmtN(week_det))
+      + liRow('TOT', past ? "fins a aquesta data" : "total", fmtN(all_det));
 
     // Top Species - top 5 species in the current window. ./avian/api/birdnet-api.php?action=recent
     // already returns species sorted by last_seen DESC; re-sort by count.
@@ -2809,7 +2810,7 @@
       ? ranked.map(function (s, i) { return liRow(pad(i + 1), displayName(s), fmtN(+s.n), s.sci); }).join('')
       : '<li class="stats-window-empty"><span class="window-empty">' + EMPTY_WINDOW_COPY + '</span></li>';
     document.getElementById('statsTopSpecCap').textContent =
-      'most-heard, ' + statsWindowLabel(currentHours);
+      "més detectades, " + statsWindowLabel(currentHours);
 
     // First Detections - newest additions to the life list, with a
     // "Xd ago" label computed from first_seen.
@@ -2822,11 +2823,11 @@
         var label = '-';
         if (!isNaN(t)) {
           var daysAgo = Math.floor((now - t) / 86400000);
-          label = daysAgo === 0 ? (past ? 'that day' : 'today') : daysAgo + (past ? 'd prior' : 'd ago');
+          label = daysAgo === 0 ? (past ? "aquell dia" : 'avui') : (past ? (daysAgo + ' d abans') : ('fa ' + daysAgo + ' d'));
         }
         return liRow(label, displayName(s), '', s.sci);
       }).join('')
-      : liRow('-', 'no detections yet', '');
+      : liRow('-', "encara no hi ha deteccions", '');
   }
 
   // ---- Day's Rhythm + hourly ledger ----
@@ -2994,19 +2995,19 @@
     var cap = document.getElementById('statsRhythmCap');
     if (title && cap) {
       if (r && r.mode === 'week') {
-        title.textContent = "Week's Rhythm";
-        cap.textContent = 'average day in this 7-day window, over the previous 7 days';
+        title.textContent = "Ritme de la setmana";
+        cap.textContent = "dia mitjà d'aquest període de 7 dies, comparat amb els 7 dies anteriors";
       } else if (currentHours <= 1) {
-        title.textContent = "Hour's Rhythm";
-        cap.textContent = 'detections through the selected hour, over the prior week\'s average';
+        title.textContent = "Ritme de l'hora";
+        cap.textContent = "deteccions durant l'hora seleccionada, comparades amb la mitjana de la setmana anterior";
       } else if (!hourlyDate && DATA.stats && DATA.stats.is_today && currentHours < 1000000) {
-        title.textContent = "Today's Rhythm";
+        title.textContent = "Ritme d'avui";
         cap.textContent = currentHours <= 12
-          ? 'detections through the current 12-hour window, over last week\'s average'
-          : 'detections through the day, over last week\'s average';
+          ? "deteccions durant les 12 hores actuals, comparades amb la mitjana de la setmana passada"
+          : "deteccions al llarg del dia, comparades amb la mitjana de la setmana passada";
       } else {
-        title.textContent = "Day's Rhythm";
-        cap.textContent = 'detections on the selected date, over the prior week\'s average';
+        title.textContent = "Ritme del dia";
+        cap.textContent = "deteccions de la data seleccionada, comparades amb la mitjana de la setmana anterior";
       }
     }
     if (!r || (!(r.today || []).length && !(r.avg || []).length)) {
@@ -3109,10 +3110,10 @@
   }
   function shortStatsDate(s) {
     var d = parseLocalDate(s);
-    if (!d || isNaN(d.getTime())) return String(s || 'today');
+    if (!d || isNaN(d.getTime())) return String(s || 'avui');
     var opts = { month: 'short', day: 'numeric' };
     if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    return d.toLocaleDateString(undefined, opts);
+    return d.toLocaleDateString('ca-ES', opts);
   }
   function stationToday() {
     return (DATA.stats && DATA.stats.station_date)
@@ -3135,8 +3136,8 @@
     }
     var date = statsDateOnScreen();
     var today = stationToday();
-    label.textContent = date === today && !hourlyDate ? 'today' : shortStatsDate(date);
-    label.setAttribute('aria-label', 'Choose stats date, ' + (date === today ? 'today' : shortStatsDate(date)));
+    label.textContent = date === today && !hourlyDate ? 'avui' : shortStatsDate(date);
+    label.setAttribute('aria-label', 'Tria la data de les estadístiques, ' + (date === today ? 'avui' : shortStatsDate(date)));
     next.disabled = !hourlyDate || date >= today;
   }
   function isoLocalDate(d) {
@@ -3189,14 +3190,14 @@
     var firstHeard = (DATA.calendar || {}).first_date || null;
     var lastHeard = (DATA.calendar || {}).last_date || null;
     var counts = statsDateCounts();
-    title.textContent = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    title.textContent = first.toLocaleDateString('ca-ES', { month: 'long', year: 'numeric' });
     var html = '';
     for (var blank = 0; blank < first.getDay(); blank++) html += '<span aria-hidden="true"></span>';
     for (var day = 1; day <= total; day++) {
       var date = isoLocalDate(new Date(year, month, day));
       var count = counts[date] || 0;
       var disabled = date > today || (firstHeard && date < firstHeard);
-      var readable = new Date(year, month, day).toLocaleDateString(undefined, {
+      var readable = new Date(year, month, day).toLocaleDateString('ca-ES', {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
       });
       var aria = readable + (count ? ', ' + count + ' detection' + (count === 1 ? '' : 's') : ', no detections');
@@ -3313,7 +3314,7 @@
       // bottom edge travels. The nested flex chain resists height:auto, so set
       // the height that fits outright, from the row count.
       note.hidden = false;
-      note.textContent = 'Show less';
+      note.textContent = "Mostra'n menys";
       wrap.removeAttribute('data-more');
       if (chart) {
         chart.classList.add('rh-grow');
@@ -3356,7 +3357,7 @@
       body.deleteRow(body.rows.length - 1);
     }
     note.hidden = false;
-    note.textContent = 'Show more';
+    note.textContent = "Mostra'n més";
     // Fade the last visible row into paper so the cut edge reads as "more
     // below" rather than a hard stop; the styles.css mask keys off this.
     wrap.setAttribute('data-more', '1');
@@ -4396,8 +4397,8 @@
     recent.forEach(function (s) { winBySci[s.sci] = +s.n; });
 
     if (!lifelist.length) {
-      showAtlasEmpty('No birds detected yet.',
-        'The atlas fills up as BirdNET-Pi identifies new species.');
+      showAtlasEmpty("Encara no s'ha detectat cap ocell.",
+        "L'atles s'omple a mesura que BirdNET-Pi identifica espècies noves.");
       return;
     }
 
@@ -4464,9 +4465,9 @@
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
       var statRows = currentHours >= 1000000
-        ? '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">all time</span></div>'
+        ? '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">total</span></div>'
         : '<div><span class="n">' + fmtNK(win) + '</span><span class="lbl-inline">' + windowLabel(currentHours) + '</span></div>'
-        + '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">all time</span></div>';
+        + '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">total</span></div>';
       // Heard but never drawn: issue the bird's real family stamp with the
       // egg nest occupying its artwork plate. Waiting on tablesReady keeps
       // a card from flashing the placeholder before dims.json lands.
@@ -4505,7 +4506,7 @@
         if (!run.length) return;
         out += '<section class="fam-block">'
              + '<h2 class="atlas-fam"><span>' + cur + '</span><i></i>'
-             + '<em>' + run.length + ' species</em></h2>'
+             + '<em>' + run.length + (run.length === 1 ? ' espècie' : ' espècies') + '</em></h2>'
              + '<div class="atlas-fam-grid">' + run.join('') + '</div></section>';
         run = [];
       }
@@ -4558,7 +4559,7 @@
         btn.innerHTML = ICON_PLAY + '<span>...</span>';
       } else if (state === 'missing') {
         btn.setAttribute('data-active', 'false');
-        btn.innerHTML = ICON_PLAY + '<span>no audio</span>';
+        btn.innerHTML = ICON_PLAY + '<span>sense àudio</span>';
         setTimeout(function () {
           if (btn.getAttribute('data-state') === 'missing') {
             btn.innerHTML = ICON_PLAY + '<span>play</span>';
@@ -4771,7 +4772,7 @@
       DATA.rhythm = parts[3];
       DATA.hourly = parts[4];
       renderStatsContext(animate);
-    }).catch(function (e) { console.warn('stats context fetch failed', e); });
+    }).catch(function (e) { console.warn("ha fallat la consulta del context d'estadístiques", e); });
   }
 
   function refreshRecent(animate) {
@@ -4785,7 +4786,7 @@
         if (forHours !== currentHours) return; // window changed mid-flight
         DATA.recent = j; renderWindowDependent(animate);
       })
-      .catch(function (e) { console.warn('recent fetch failed', e); });
+      .catch(function (e) { console.warn("ha fallat la consulta recent", e); });
   }
   function refreshAll(animate) {
     var forHours = currentHours;
@@ -5171,14 +5172,14 @@
       if (r.status === 200) {
         return r.json().then(function (j) { renderMenu(j.items || []); });
       } else if (r.status === 401) {
-        lockHint.textContent = 'wrong password.';
+        lockHint.textContent = "contrasenya incorrecta.";
         lockHint.classList.add('lock-err');
       } else {
-        lockHint.textContent = 'auth unavailable.';
+        lockHint.textContent = "autenticació no disponible.";
         lockHint.classList.add('lock-err');
       }
     }).catch(function () {
-      lockHint.textContent = 'network error.';
+      lockHint.textContent = "error de xarxa.";
       lockHint.classList.add('lock-err');
     });
   });
@@ -5210,7 +5211,8 @@
     // native:true they navigate in-page; otherwise they keep the old
     // open-in-new-tab behavior for the legacy BirdNET-Pi screens.
     var linksHtml = menu.map(function (it) {
-      var label = (it.label || '');
+      var menuLabelsCa = { Settings: 'Configuració', System: 'Sistema', Logs: 'Registres', Tools: 'Eines', 'Advanced Tools': 'Eines avançades', Overview: 'Resum', Services: 'Serveis', Terminal: 'Terminal', 'Web Terminal': 'Terminal web', Spectrogram: 'Espectrograma', 'Live Spectrogram': 'Espectrograma en directe', Charts: 'Gràfics', 'File Manager': 'Gestor de fitxers' };
+      var label = menuLabelsCa[it.label] || (it.label || '');
       var attrs = it.native ? '' : ' target="_blank" rel="noopener"';
       var cls = it.native ? '' : ' class="ext"';
       // A dot marks a section with something waiting (e.g. instant
@@ -5221,15 +5223,15 @@
     var liveAudioHtml = localAudio ?
       '<div class="live-audio" id="liveAudio" data-on="false" data-state="idle">'
       + '  <div class="pulse"></div>'
-      + '  <div class="label">Live audio<span class="hint">stream from the mic</span></div>'
-      + '  <button type="button" id="liveAudioBtn" aria-live="polite" aria-atomic="true" aria-label="listen to live audio">'
-      + liveAudioIcon + '<span>listen</span>'
+      + '  <div class="label">Àudio en directe<span class="hint">flux del micròfon</span></div>'
+      + '  <button type="button" id="liveAudioBtn" aria-live="polite" aria-atomic="true" aria-label="escolta l\'àudio en directe">'
+      + liveAudioIcon + '<span>escolta</span>'
       + '  </button>'
       + '</div>'
       // Spectrogram canvas is always present; it stays a dark inert
       // strip until the stream is on, then the FFT loop paints it in
       // real time. No separate toggle.
-      + '<canvas class="live-spectro" id="liveSpectro" width="600" height="120" aria-label="live spectrogram"></canvas>'
+      + '<canvas class="live-spectro" id="liveSpectro" width="600" height="120" aria-label="espectrograma en directe"></canvas>'
       + '<div class="live-status" id="liveStatus" role="status" aria-live="polite" aria-atomic="true"></div>'
       : '';
     items.innerHTML = liveAudioHtml + '<div class="menu-links">' + linksHtml + '</div>';
@@ -5284,7 +5286,7 @@
         liveEl.addEventListener('error', function () {
           if (settled) return;
           settled = true;
-          reject(new Error('stream error - check /#admin=system'));
+          reject(new Error("error del flux; comprova /#admin=system"));
         });
         audioClaim(stopAudio);   // stop any card / modal-recording audio
         liveEl.play().catch(function (e) {
@@ -5311,8 +5313,8 @@
       liveBox.setAttribute('data-state', 'idle');
       liveBtn.removeAttribute('aria-disabled');
       liveBtn.removeAttribute('aria-busy');
-      liveBtn.setAttribute('aria-label', 'listen to live audio');
-      liveBtn.innerHTML = liveAudioIcon + '<span>listen</span>';
+      liveBtn.setAttribute('aria-label', "escolta l'àudio en directe");
+      liveBtn.innerHTML = liveAudioIcon + '<span>escolta</span>';
       setStatus('');
       // Clear the spectrogram canvas so it returns to its quiet state.
       paintQuietSpectrogram();
@@ -5322,8 +5324,8 @@
       liveState = 'error';
       liveBox.setAttribute('data-state', 'error');
       liveBtn.setAttribute('aria-disabled', 'true');
-      liveBtn.setAttribute('aria-label', 'Live audio unavailable. Close and reopen the menu to retry.');
-      liveBtn.innerHTML = '<span>unavailable</span>';
+      liveBtn.setAttribute('aria-label', "L'àudio en directe no està disponible. Tanca i torna a obrir el menú per reintentar-ho.");
+      liveBtn.innerHTML = '<span>no disponible</span>';
       setStatus('');
     }
     resetLiveAudioTransientState = function () {
@@ -5423,16 +5425,16 @@
       liveBox.setAttribute('data-on', 'true');
       liveBox.setAttribute('data-state', 'connecting');
       liveBtn.setAttribute('aria-busy', 'true');
-      liveBtn.setAttribute('aria-label', 'stop live audio');
-      liveBtn.innerHTML = stopIcon + '<span>stop</span>';
-      setStatus('connecting...');
+      liveBtn.setAttribute('aria-label', "atura l'àudio en directe");
+      liveBtn.innerHTML = stopIcon + '<span>atura</span>';
+      setStatus('connectant...');
       startAudio()
         .then(function () {
           if (attempt !== liveAttempt) return;
           liveState = 'playing';
           liveBox.setAttribute('data-state', 'streaming');
           liveBtn.removeAttribute('aria-busy');
-          setStatus('live now');
+          setStatus('en directe');
           attachSpectrogram();
         })
         .catch(function () {
@@ -5467,10 +5469,10 @@
   function stationRow(v) {
     var lat = v.LATITUDE, lon = v.LONGITUDE;
     var unset = (!lat && !lon);
-    var where = unset ? 'not set' : (+lat).toFixed(4) + ', ' + (+lon).toFixed(4);
+    var where = unset ? "no configurada" : (+lat).toFixed(4) + ', ' + (+lon).toFixed(4);
     return ''
       + '<div class="menu-row">'
-      + '  <div><span class="label">Station location</span></div>'
+      + '  <div><span class="label">Ubicació de l’estació</span></div>'
       + '  <div class="station-pick">'
       + '    <span class="station-coords' + (unset ? ' warn' : '') + '" id="stationCoords">' + where + '</span>'
       + '    <button type="button" class="pin-btn" id="stationEdit" aria-label="set location on a map">'
@@ -5492,7 +5494,7 @@
       + (hint ? '<span class="hint">' + hint + '</span>' : '')
       + '  </div>'
       + '  <input type="password" class="secret" data-key="' + key + '" autocomplete="off" '
-      + 'placeholder="' + (isSet ? 'saved, paste to replace' : 'paste key') + '">'
+      + 'placeholder="' + (isSet ? "desada; enganxa'n una altra per substituir-la" : "enganxa la clau") + '">'
       + '</div>';
   }
   function settingsToggle(key, label, hint, on) {
@@ -5552,8 +5554,8 @@
     };
     return ''
       + '<div class="menu-row">'
-      + '  <div><span class="label">Theme</span><span class="hint">auto follows your system</span></div>'
-      + '  <div class="seg" data-theme-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('auto', 'auto') + btn('light', 'light') + btn('dark', 'dark') + '</div>'
+      + '  <div><span class="label">Tema</span><span class="hint">automàtic segueix el sistema</span></div>'
+      + '  <div class="seg" data-theme-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('auto', 'automàtic') + btn('light', 'clar') + btn('dark', 'fosc') + '</div>'
       + '</div>';
   }
   // Client-side collage-labels switcher; same instant-apply pattern as
@@ -5567,8 +5569,8 @@
     };
     return ''
       + '<div class="menu-row">'
-      + '  <div><span class="label">Bird names</span><span class="hint">show names alongside birds in the collage</span></div>'
-      + '  <div class="seg" data-labels-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('off', 'off') + btn('on', 'on') + '</div>'
+      + '  <div><span class="label">Noms dels ocells</span><span class="hint">mostra els noms al costat dels ocells al collage</span></div>'
+      + '  <div class="seg" data-labels-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('off', 'desactivats') + btn('on', 'activats') + '</div>'
       + '</div>';
   }
   function wireSettingsControls(scope) {
@@ -5629,13 +5631,13 @@
       .then(function (res) {
         if (res.ok && res.j.ok) {
           pending = {};
-          setSaveState('saved ✓', 'ok');
+          setSaveState("desat ✓", 'ok');
           setTimeout(function () { setSaveState(''); }, 1800);
         } else {
-          setSaveState('save failed', 'err');
+          setSaveState("no s'ha pogut desar", 'err');
         }
       })
-      .catch(function () { setSaveState('network error', 'err'); });
+      .catch(function () { setSaveState("error de xarxa", 'err'); });
   }
 
   // ---- Hash routing + atlas detail modal ----
@@ -5685,16 +5687,16 @@
     if (isNaN(date.getTime())) return d + ' ' + (t || '');
     var now = Date.now();
     var ago = Math.floor((now - date.getTime()) / 1000);
-    if (ago < 60) return ago + 's ago';
-    if (ago < 3600) return Math.floor(ago / 60) + 'm ago';
-    if (ago < 86400) return Math.floor(ago / 3600) + 'h ago';
-    return Math.floor(ago / 86400) + 'd ago';
+    if (ago < 60) return 'fa ' + ago + ' s';
+    if (ago < 3600) return 'fa ' + Math.floor(ago / 60) + ' min';
+    if (ago < 86400) return 'fa ' + Math.floor(ago / 3600) + ' h';
+    return 'fa ' + Math.floor(ago / 86400) + ' d';
   }
   function fmtDateLine(d, t) {
     if (!d) return '';
     try {
       var date = new Date(d + 'T' + (t || '00:00:00'));
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+      return date.toLocaleDateString('ca-ES', { month: 'short', day: 'numeric' }) +
         ' - ' + (t ? t.slice(0, 5) : '');
     } catch (e) { return d + ' ' + (t || ''); }
   }
@@ -5727,7 +5729,7 @@
     if (!button) return;
     if (playing) button.setAttribute('data-active', 'true');
     else button.removeAttribute('data-active');
-    button.setAttribute('aria-label', playing ? 'Pause recording' : 'Play recording');
+    button.setAttribute('aria-label', playing ? "Posa en pausa l'enregistrament" : "Reprodueix l'enregistrament");
     button.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
   }
   function setRecordingPosition(row, pct, arm) {
@@ -5792,7 +5794,7 @@
     });
     if (button) {
       button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-      button.setAttribute('aria-label', enabled ? 'Stop repeating selected section' : 'Repeat a selected section');
+      button.setAttribute('aria-label', enabled ? "Atura la repetició de la secció seleccionada" : "Repeteix una secció seleccionada");
     }
   }
   function setLoopEnabled(row, enabled) {
@@ -5917,7 +5919,7 @@
     fetchJson('./avian/api/generate.php?action=status').then(function (s) {
       if (!stillThere()) return;
       if (s.running) {
-        genBtnState(btn, s.step === 'masks' ? 'finishing...' : 'generating...', true);
+        genBtnState(btn, s.step === 'masks' ? "finalitzant..." : "generant...", true);
         genPollT = setTimeout(function () { watchGenerate(btn, sci, stillThere, onDone); }, 4000);
         return;
       }
@@ -5926,10 +5928,10 @@
         justGenerated[sci] = Date.now();
         onDone();
       } else {
-        genBtnState(btn, 'failed, try again', false);
+        genBtnState(btn, "ha fallat; torna-ho a provar", false);
       }
     }).catch(function () {
-      if (stillThere()) genBtnState(btn, 'failed, try again', false);
+      if (stillThere()) genBtnState(btn, "ha fallat; torna-ho a provar", false);
     });
   }
   // Kick a postcard generation off and follow it. Only one job runs on the Pi
@@ -5952,12 +5954,12 @@
         if (!stillThere()) return;
         if (!res.ok) {
           var why = (res.j && res.j.error) || 'failed';
-          genBtnState(btn, why === 'no gemini key' ? 'add a gemini key in settings' : why, false);
+          genBtnState(btn, why === "sense clau de Gemini" ? "afegeix una clau de Gemini a la configuració" : why, false);
           return;
         }
         watchGenerate(btn, sci, stillThere, onDone);
       })
-      .catch(function () { if (stillThere()) genBtnState(btn, 'failed, try again', false); });
+      .catch(function () { if (stillThere()) genBtnState(btn, "ha fallat; torna-ho a provar", false); });
   }
   (function wireGenerate() {
     var btn = document.getElementById('modalGenerate');
@@ -5983,7 +5985,7 @@
             if (artwork) artwork.setAttribute('data-art-state', 'fallback');
             img.src = './nest-eggs.webp';
             img.dataset.sci = sci;
-            img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
+            img.alt = "Niu amb ous; la il·lustració de l'ocell no està disponible temporalment per a " + sci;
             img.classList.remove('is-loading');
             return;
           }
@@ -6239,14 +6241,14 @@
     });
     if (genBtn) {
       genBtn.hidden = !needsArt;
-      if (needsArt) genBtnState(genBtn, 'generate image', false);
+      if (needsArt) genBtnState(genBtn, "genera la imatge", false);
     }
 
     var imageReady;
     if (needsArt) {
       img.src = './nest-eggs.webp';
       img.dataset.sci = sci;
-      img.alt = 'Nest with eggs, bird image not generated yet for ' + sci;
+      img.alt = "Niu amb ous; encara no s'ha generat la imatge de l'ocell per a " + sci;
       img.classList.remove('is-loading');
       imageReady = Promise.resolve();
     } else {
@@ -6280,7 +6282,7 @@
           if (artwork) artwork.setAttribute('data-art-state', 'fallback');
           img.src = './nest-eggs.webp';
           img.dataset.sci = sci;
-          img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
+          img.alt = "Niu amb ous; la il·lustració de l'ocell no està disponible temporalment per a " + sci;
           img.classList.remove('is-loading');
           return;
         }
@@ -6310,7 +6312,7 @@
             if (artwork) artwork.setAttribute('data-art-state', 'fallback');
             img.src = './nest-eggs.webp';
             img.dataset.sci = sci;
-            img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
+            img.alt = "Niu amb ous; la il·lustració de l'ocell no està disponible temporalment per a " + sci;
             img.classList.remove('is-loading');
             return;
           }
@@ -6342,11 +6344,11 @@
     document.getElementById('modalFirstSeen').textContent = '-';
     document.getElementById('modalRarity').textContent = '-';
     document.getElementById('modalRarity').classList.remove('rare');
-    document.getElementById('modalDesc').textContent = 'Loading description...';
+    document.getElementById('modalDesc').textContent = "Carregant la descripció...";
     document.getElementById('modalDesc').classList.add('placeholder');
     var previousDistinctive = document.querySelector('.postcard-about .about-distinctive');
     if (previousDistinctive) previousDistinctive.remove();
-    document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Loading recordings...</li>';
+    document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Carregant els enregistraments...</li>';
     document.getElementById('modalRecCount').textContent = '';
     document.getElementById('modalWiki').href = wikiUrl(sci);
     var ebirdLink = document.getElementById('modalEbird');
@@ -6372,10 +6374,11 @@
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
       var rar = rarityLabel(+s.total || 0, s.first_seen);
       var rarEl = document.getElementById('modalRarity');
-      rarEl.textContent = rar;
+      var rarCa = { common: 'Comuna', regular: 'Regular', occasional: 'Ocasional', rare: 'Rara' };
+      rarEl.textContent = rarCa[rar] || rar;
       if (rar === 'rare') rarEl.classList.add('rare');
       var dets = j.detections || [];
-      document.getElementById('modalRecCount').textContent = dets.length + (dets.length === 1 ? ' recording' : ' recordings');
+      document.getElementById('modalRecCount').textContent = dets.length + (dets.length === 1 ? ' enregistrament' : ' enregistraments');
       document.getElementById('modalRecordings').innerHTML = dets.length
         ? dets.map(function (d) {
           return '<li class="rec-row" data-file="' + escHtml(d.file || '') + '" data-date="' + escHtml(d.d || '') + '">'
@@ -6385,13 +6388,13 @@
             + '<span class="date-time"><b>' + fmtDateLine(d.d, d.t) + '</b></span>'
             + '</button>'
             + '<div class="rec-spectro" aria-hidden="true">'
-            + '<div class="rec-spectro-loading">loading spectrogram...</div>'
+            + '<div class="rec-spectro-loading">carregant l\'espectrograma...</div>'
             + '<div class="rec-spectro-played"></div>'
             + '<div class="rec-loop-region" aria-hidden="true"></div>'
             + '<div class="rec-spectro-cursor"></div>'
-            + '<div class="rec-spectro-scrub" role="slider" aria-label="Scrub recording spectrogram" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div>'
-            + '<button class="rec-loop-handle" data-edge="start" type="button" role="slider" aria-label="Repeat section start" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="-1"></button>'
-            + '<button class="rec-loop-handle" data-edge="end" type="button" role="slider" aria-label="Repeat section end" aria-valuemin="0" aria-valuemax="100" aria-valuenow="25" tabindex="-1"></button>'
+            + '<div class="rec-spectro-scrub" role="slider" aria-label="Desplaça’t per l’espectrograma de l’enregistrament" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div>'
+            + '<button class="rec-loop-handle" data-edge="start" type="button" role="slider" aria-label="Inici de la secció que es repeteix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="-1"></button>'
+            + '<button class="rec-loop-handle" data-edge="end" type="button" role="slider" aria-label="Final de la secció que es repeteix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="25" tabindex="-1"></button>'
             + '<div class="rec-player-controls">'
             + '<button class="rec-player-toggle" type="button" aria-label="Play recording">' + ICON_PLAY + '</button>'
             + '<span class="rec-player-time" aria-hidden="true">0:00 / --:--</span>'
@@ -6400,11 +6403,11 @@
             + '</div>'
             + '</li>';
         }).join('')
-        : '<li class="rec-empty">No recordings yet.</li>';
+        : '<li class="rec-empty">Encara no hi ha enregistraments.</li>';
       document.getElementById('modalRecordings').scrollTop = 0;
     }).catch(function () {
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
-      document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Failed to load recordings.</li>';
+      document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">No s\'han pogut carregar els enregistraments.</li>';
     });
 
     // Wikipedia lead (description + genus / family). `format=6` deliberately
@@ -6424,7 +6427,7 @@
     }).catch(function () {
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var desc = document.getElementById('modalDesc');
-      desc.textContent = 'No description available.';
+      desc.textContent = "No hi ha cap descripció disponible.";
       desc.classList.add('placeholder');
     });
     return imageReady;
@@ -6570,7 +6573,7 @@
     var existingDistinctive = aboutBody && aboutBody.querySelector('.about-distinctive');
     if (existingDistinctive) existingDistinctive.remove();
     if (!paragraphs.length) {
-      desc.textContent = 'No description available.';
+      desc.textContent = "No hi ha cap descripció disponible.";
       desc.classList.add('placeholder');
       return;
     }
@@ -6745,10 +6748,10 @@
   var adminPollT = null;
   var adminSect = null;
   var ADMIN_TITLES = {
-    settings: 'Settings',
-    system: 'System',
-    logs: 'Logs',
-    tools: 'Tools',
+    settings: 'Configuració',
+    system: 'Sistema',
+    logs: 'Registres',
+    tools: 'Eines',
   };
   function adminEsc(s) {
     return String(s == null ? '' : s)
@@ -6777,7 +6780,7 @@
         input.remove();
         if (active && active.focus) active.focus();
         if (copied) resolve();
-        else reject(new Error('copy unavailable'));
+        else reject(new Error("còpia no disponible"));
       });
     }
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
@@ -6852,12 +6855,12 @@
   }
   // sudo -n fails fast if the narrow admin policy is missing. Point at the
   // surgical repair helper instead of rerunning the full first installer.
-  var SUDO_HINT = 'admin setup incomplete. run sudo /usr/local/sbin/avian-service-refresh on the pi.';
+  var SUDO_HINT = "configuració d'administració incompleta. Executa sudo /usr/local/sbin/avian-service-refresh a la Pi.";
   function sudoBlocked(text) {
     return typeof text === 'string' && /sudo:.*password is required|sudo:.*no tty/i.test(text);
   }
   function adminUnreachableHtml(reason) {
-    return '<div class="admin-unreachable">Pi unreachable - ' + adminEsc(reason || 'no data') + '</div>';
+    return '<div class="admin-unreachable">No es pot accedir a la Pi - ' + adminEsc(reason || 'sense dades') + '</div>';
   }
 
   // ---- Station location picker ----
@@ -6887,7 +6890,7 @@
       '<div class="map-backdrop" data-close="1"></div>'
       + '<div class="map-card">'
       + '  <div class="map-head">'
-      + '    <input id="mapSearch" type="text" placeholder="search for a place" autocomplete="off">'
+      + '    <input id="mapSearch" type="text" placeholder="cerca un lloc" autocomplete="off">'
       + '    <button type="button" class="pin-btn" id="mapClose" aria-label="close">' + ICON_CLOSE + '</button>'
       + '  </div>'
       + '  <div class="map-view" id="mapView"><div class="map-tiles" id="mapTiles"></div>'
@@ -6897,7 +6900,7 @@
       + '  </div>'
       + '  <div class="map-foot"><span class="map-coords" id="mapCoords"></span>'
       + '    <span class="map-attr">&copy; OpenStreetMap contributors</span>'
-      + '    <button type="button" class="map-use" id="mapUse">use this location</button></div>'
+      + '    <button type="button" class="map-use" id="mapUse">utilitza aquesta ubicació</button></div>'
       + '</div>';
     document.body.appendChild(host);
     var view = host.querySelector('#mapView');
@@ -6963,7 +6966,7 @@
     // A place name is rarely unique, so the head of the name is what
     // distinguishes one hit from another and the tail is context.
     function showHits(list) {
-      if (!list.length) { note('nothing found'); return; }
+      if (!list.length) { note("no s'ha trobat res"); return; }
       hits.innerHTML = list.map(function (h, i) {
         var parts = h.display_name.split(', ');
         return '<li><button type="button" data-hit="' + i + '">'
@@ -6988,7 +6991,7 @@
     var found = [], searchT, seq = 0;
     function run(q) {
       var mine = ++seq;
-      note('searching...');
+      note("cercant...");
       fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&q=' + encodeURIComponent(q))
         .then(function (r) { return r.json(); })
         .then(function (j) {
@@ -6996,7 +6999,7 @@
           found = j || [];
           showHits(found);
         })
-        .catch(function () { if (mine === seq) note('search unavailable'); });
+        .catch(function () { if (mine === seq) note("cerca no disponible"); });
     }
     field.addEventListener('input', function () {
       var q = field.value.trim();
@@ -7051,7 +7054,7 @@
   }
 
   function renderAdminSettings() {
-    adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading settings...</p>';
+    adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">carregant la configuració...</p>';
     Promise.all([
       fetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }),
@@ -7074,10 +7077,10 @@
           cutoutsNote = ''
             + '<div class="cutouts-note" id="cutoutsNote">'
             + '  <div><span class="label">Instant cutouts <i class="notif-dot"></i></span>'
-            + '  <span class="hint">' + gen.chroma + ' bird' + (gen.chroma === 1 ? '' : 's') + ' cut on the Pi with the quick method. '
-            + 'For full-quality edges, run this on your computer (swap in your ssh user):</span></div>'
+            + '  <span class="hint">' + gen.chroma + (gen.chroma === 1 ? ' ocell retallat' : ' ocells retallats') + ' a la Pi amb el mètode ràpid. '
+            + "Per obtenir vores de màxima qualitat, executa-ho al teu ordinador (substitueix-hi el teu usuari SSH):</span></div>"
             + '  <code class="cutcmd" id="cutCmd">' + cmd + '</code>'
-            + '  <button type="button" class="chip" id="cutCopy">copy command</button>'
+            + '  <button type="button" class="chip" id="cutCopy">copia l\'ordre</button>'
             + '</div>';
         }
         adminBody.innerHTML =
@@ -7086,19 +7089,19 @@
           + themeRow()
           + labelsRow()
           + '</section><section>'
-          + settingsSlider('CONFIDENCE', 'Confidence threshold', 'min score to log a detection', v.CONFIDENCE, 0.1, 0.95, 0.05, 2, 0.7)
-          + settingsSlider('SF_THRESH', 'Range filter', 'min likelihood a species is here this week', v.SF_THRESH, 0.001, 0.5, 0.001, 3, 0.03)
-          + settingsSlider('SENSITIVITY', 'Sensitivity', 'sigmoid slope on the classifier output', v.SENSITIVITY, 0.5, 1.5, 0.05, 2, 1.25)
-          + settingsSlider('OVERLAP', 'Chunk overlap', 'seconds re-analyzed per pass', v.OVERLAP, 0, 2.5, 0.1, 1, 0.0)
+          + settingsSlider('CONFIDENCE', "Llindar de confiança", "puntuació mínima per registrar una detecció", v.CONFIDENCE, 0.1, 0.95, 0.05, 2, 0.7)
+          + settingsSlider('SF_THRESH', "Filtre de distribució", "probabilitat mínima que una espècie sigui aquí aquesta setmana", v.SF_THRESH, 0.001, 0.5, 0.001, 3, 0.03)
+          + settingsSlider('SENSITIVITY', "Sensibilitat", "pendent sigmoïdal de la sortida del classificador", v.SENSITIVITY, 0.5, 1.5, 0.05, 2, 1.25)
+          + settingsSlider('OVERLAP', "Solapament de fragments", "segons que es tornen a analitzar a cada passada", v.OVERLAP, 0, 2.5, 0.1, 1, 0.0)
           + '</section><section>'
           + stationRow(v)
-          + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)
-          + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'for regional species filters', sec.EBIRD_API_KEY)
+          + settingsSecret('GEMINI_API_KEY', "Clau API de Gemini", "per generar ocells sota demanda", sec.GEMINI_API_KEY)
+          + settingsSecret('EBIRD_API_KEY', "Clau API d'eBird", "per als filtres regionals d'espècies", sec.EBIRD_API_KEY)
           + '</section><section>'
-          + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
-          + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
-            { v: 'keep', label: 'keep' },
-            { v: 'purge', label: 'purge' },
+          + settingsToggle('preserve', "Conserva tots els enregistraments", "no els eliminis automàticament", preserve)
+          + settingsSegmented('FULL_DISK', "Quan el disc s'ompli", '', v.FULL_DISK, [
+            { v: 'keep', label: 'conserva' },
+            { v: 'purge', label: 'elimina' },
           ])
           + '</section>'
           + cutoutsNote
@@ -7110,9 +7113,9 @@
         if (cutCopy) cutCopy.addEventListener('click', function () {
           var t = document.getElementById('cutCmd').textContent;
           adminCopyText(t).then(function () {
-            cutCopy.textContent = 'copied';
-            setTimeout(function () { cutCopy.textContent = 'copy command'; }, 1600);
-          }).catch(function () { cutCopy.textContent = 'copy failed'; });
+            cutCopy.textContent = "copiat";
+            setTimeout(function () { cutCopy.textContent = "copia l'ordre"; }, 1600);
+          }).catch(function () { cutCopy.textContent = "no s'ha pogut copiar"; });
         });
         var pin = document.getElementById('stationEdit');
         if (pin) pin.addEventListener('click', function () {
@@ -7165,12 +7168,12 @@
         });
       })
       .catch(function (err) {
-        adminBody.innerHTML = adminUnreachableHtml('settings load failed (' + err + ')');
+        adminBody.innerHTML = adminUnreachableHtml("no s'ha pogut carregar la configuració (" + err + ')');
       });
   }
 
   function renderAdminSystem() {
-    adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading...</p>';
+    adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">carregant...</p>';
     function tick() {
       adminApi('./avian/api/birdnet-status.php?action=diag')
         .then(function (r) { return r.text().then(function (raw) { return { status: r.status, raw: raw }; }); })
@@ -7179,7 +7182,7 @@
           try { j = JSON.parse(res.raw); } catch (e) { }
           if (res.status !== 200 || !j) {
             adminBody.innerHTML = adminUnreachableHtml(
-              !j ? 'birdnet-status.php not installed on the pi' : (j.error || 'HTTP ' + res.status)
+              !j ? "birdnet-status.php no està instal·lat a la Pi" : (j.error || 'HTTP ' + res.status)
             );
             return;
           }
@@ -7199,28 +7202,28 @@
     var keySvcs = ['birdnet_recording', 'birdnet_analysis', 'birdnet_log'];
     var dead = keySvcs.filter(function (n) { return svc[n] && svc[n].active !== 'active'; });
     var html = '<div class="admin-grid">';
-    html += adminCard('recording pipeline', dead.length === 0 ? 'live' : (dead.length + ' down'),
-      dead.length === 0 ? 'all services active' : dead.join(', '),
+    html += adminCard("canalització d'enregistrament", dead.length === 0 ? 'actiu' : (dead.length + ' inactius'),
+      dead.length === 0 ? "tots els serveis estan actius" : dead.join(', '),
       dead.length === 0 ? '' : 'alert', 'pipeline');
-    html += adminCard('newest live audio',
-      stream.newest_age_s == null ? 'no chunks' : adminFmtAge(stream.newest_age_s) + ' ago',
+    html += adminCard("àudio en directe més recent",
+      stream.newest_age_s == null ? "sense fragments" : 'fa ' + adminFmtAge(stream.newest_age_s),
       stream.newest_name || '',
       streamAlert ? 'alert' : '', 'audio');
-    html += adminCard('birds.db updated',
-      db.exists ? adminFmtAge(db.modified_s) + ' ago' : 'missing',
+    html += adminCard("birds.db actualitzat",
+      db.exists ? 'fa ' + adminFmtAge(db.modified_s) : 'absent',
       db.mtime || '',
       dbAlert ? 'warn' : '', 'db');
-    html += adminCard('uptime', (sys.uptime || {}).pretty || '-',
-      'load ' + ((sys.uptime || {}).load || []).map(function (n) { return n.toFixed(2); }).join(' / '),
+    html += adminCard("temps d'activitat", (sys.uptime || {}).pretty || '-',
+      'càrrega ' + ((sys.uptime || {}).load || []).map(function (n) { return n.toFixed(2); }).join(' / '),
       '', 'clock');
-    html += adminCard('cpu temp',
+    html += adminCard("temperatura de la CPU",
       sys.temp_c != null ? sys.temp_c.toFixed(1) + '°C' : '-',
       sys.hostname + ' - ' + sys.kernel,
       sys.temp_c != null && sys.temp_c > 75 ? 'warn' : '', 'temp');
-    html += adminCard('memory used', sys.mem ? sys.mem.used_pct + '%' : '-',
+    html += adminCard("memòria utilitzada", sys.mem ? sys.mem.used_pct + '%' : '-',
       sys.mem ? adminFmtBytes(sys.mem.used_bytes) + ' / ' + adminFmtBytes(sys.mem.total_bytes) : '',
       sys.mem && sys.mem.used_pct > 92 ? 'warn' : '', 'mem');
-    html += adminCard('disk (birdsongs)', sys.disk_birds ? sys.disk_birds.used_pct + '%' : '-',
+    html += adminCard("disc (BirdSongs)", sys.disk_birds ? sys.disk_birds.used_pct + '%' : '-',
       sys.disk_birds ? adminFmtBytes(sys.disk_birds.total_bytes - sys.disk_birds.free_bytes) + ' / ' + adminFmtBytes(sys.disk_birds.total_bytes) : '',
       sys.disk_birds && sys.disk_birds.used_pct > 92 ? 'warn' : '', 'disk');
     var audio = sys.audio || {}, cards = audio.arecord_l || [];
@@ -7228,23 +7231,25 @@
     // Without a USB mic, /proc/asound/cards only lists the Pi's HDMI
     // audio outputs - which aren't an input source. Flag that clearly
     // rather than showing "audio device: vc4hdmi0" as if it were a mic.
-    html += adminCard('audio device',
-      mic || (cards.length ? 'no microphone attached' : 'no audio devices'),
+    html += adminCard("dispositiu d'àudio",
+      mic || (cards.length ? "cap micròfon connectat" : "cap dispositiu d'àudio"),
       mic ? '' : (cards[0] || ''),
       mic ? '' : 'warn', 'mic');
     html += '</div>';
 
-    html += '<h2 class="admin-section-head">services</h2>';
-    html += '<table class="admin-tbl"><thead><tr><th>unit</th><th>state</th><th>enabled</th><th>since</th><th></th></tr></thead><tbody>';
+    html += '<h2 class="admin-section-head">serveis</h2>';
+    html += '<table class="admin-tbl"><thead><tr><th>unitat</th><th>estat</th><th>activat</th><th>des de</th><th></th></tr></thead><tbody>';
+    var activeCa = { active: 'actiu', failed: 'fallit', inactive: 'inactiu', activating: 'activant', deactivating: 'desactivant' };
+    var enabledCa = { enabled: 'activat', disabled: 'desactivat', static: 'estàtic', masked: 'emmascarat', indirect: 'indirecte' };
     Object.keys(svc).forEach(function (name) {
       var s = svc[name];
       var pill = (s.active === 'active') ? 'active' : (s.active === 'failed' ? 'failed' : 'inactive');
       html += '<tr>'
         + '<td>' + adminEsc(name) + '</td>'
-        + '<td><span class="pill ' + pill + '">' + adminEsc(s.active) + '</span></td>'
-        + '<td>' + adminEsc(s.enabled) + '</td>'
+        + '<td><span class="pill ' + pill + '">' + adminEsc(activeCa[s.active] || s.active) + '</span></td>'
+        + '<td>' + adminEsc(enabledCa[s.enabled] || s.enabled) + '</td>'
         + '<td>' + adminEsc(s.since || '-') + '</td>'
-        + '<td><button class="restart" data-unit="' + adminEsc(name) + '">restart</button></td>'
+        + '<td><button class="restart" data-unit="' + adminEsc(name) + '">reinicia</button></td>'
         + '</tr>';
     });
     html += '</tbody></table>';
@@ -7258,10 +7263,10 @@
       html += '<table class="admin-tbl"><tbody>' + rows + '</tbody></table>';
     }
     if (Object.keys(recLogs).length) {
-      html += '<h2 class="admin-section-head">recent journal</h2>';
+      html += '<h2 class="admin-section-head">registre recent</h2>';
       Object.keys(recLogs).forEach(function (u) {
         html += '<h3 style="font:9.5px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin:12px 0 6px">' + adminEsc(u) + '</h3>';
-        html += '<div class="admin-logs-pane">' + adminEsc(recLogs[u] || '(empty)') + '</div>';
+        html += '<div class="admin-logs-pane">' + adminEsc(recLogs[u] || '(buit)') + '</div>';
       });
     }
     return html;
@@ -7270,7 +7275,7 @@
     adminBody.querySelectorAll('button.restart').forEach(function (b) {
       b.addEventListener('click', function () {
         var unit = b.dataset.unit;
-        if (!confirm('Restart ' + unit + '?')) return;
+        if (!confirm('Vols reiniciar ' + unit + '?')) return;
         b.disabled = true; var old = b.textContent; b.textContent = '...';
         fetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
           method: 'POST', credentials: 'same-origin',
@@ -7291,7 +7296,7 @@
     var unit = 'birdnet_recording', lines = 120, autoScroll = true;
     adminBody.innerHTML =
       '<div class="admin-logs-toolbar">'
-      + '  <label>unit</label><select id="adminLogsUnit">'
+      + '  <label>unitat</label><select id="adminLogsUnit">'
       // php-fpm unit name differs per Debian version (8.2 on Bookworm,
       // 8.4 on Trixie). List all three so the dropdown has the right one
       // regardless of host - birdnet-status.php's ALLOWED_UNITS already
@@ -7299,9 +7304,9 @@
       + ['birdnet_recording', 'birdnet_analysis', 'birdnet_log', 'birdnet_stats', 'spectrogram_viewer', 'livestream', 'icecast2', 'caddy', 'php8.4-fpm', 'php8.3-fpm', 'php8.2-fpm']
         .map(function (u) { return '<option value="' + u + '">' + u + '</option>'; }).join('')
       + '  </select>'
-      + '  <label>lines</label><input id="adminLogsLines" type="number" value="120" min="20" max="500" step="20">'
+      + '  <label>línies</label><input id="adminLogsLines" type="number" value="120" min="20" max="500" step="20">'
       + '</div>'
-      + '<div class="admin-logs-pane" id="adminLogsOut">loading...</div>';
+      + '<div class="admin-logs-pane" id="adminLogsOut">carregant...</div>';
     var pane = document.getElementById('adminLogsOut');
     var sel = document.getElementById('adminLogsUnit');
     var linesIn = document.getElementById('adminLogsLines');
@@ -7317,7 +7322,7 @@
           var j = null;
           try { j = JSON.parse(res.raw); } catch (e) { }
           if (res.status !== 200 || !j) {
-            pane.textContent = 'pi unreachable - ' + (j && j.error ? j.error : 'no data');
+            pane.textContent = "no es pot accedir a la Pi - " + (j && j.error ? j.error : 'sense dades');
             return;
           }
           pane.textContent = sudoBlocked(j.text) ? SUDO_HINT : (j.text || '(empty)');
@@ -7344,14 +7349,14 @@
   }
   function renderAdminTools() {
     var actions = [
-      ['recording', 'captures audio from the mic', 'birdnet_recording'],
-      ['analysis', 'runs the model on each chunk', 'birdnet_analysis'],
-      ['log', 'writes detections to the database', 'birdnet_log'],
-      ['spectrogram', 'legacy live fft view', 'spectrogram_viewer'],
-      ['livestream', 'feed behind the live-audio button', 'livestream'],
-      ['icecast', 'serves that stream to the browser', 'icecast2'],
+      ['recording', "captura l'àudio del micròfon", 'birdnet_recording'],
+      ['analysis', "executa el model a cada fragment", 'birdnet_analysis'],
+      ['log', "desa les deteccions a la base de dades", 'birdnet_log'],
+      ['spectrogram', "vista FFT en directe antiga", 'spectrogram_viewer'],
+      ['livestream', "flux del botó d'àudio en directe", 'livestream'],
+      ['icecast', "serveix aquest flux al navegador", 'icecast2'],
     ];
-    var html = '<h2 class="admin-section-head">services</h2>';
+    var html = '<h2 class="admin-section-head">serveis</h2>';
     html += '<div class="tool-row">';
     actions.forEach(function (a) {
       html += '<button type="button" class="tool-card" data-unit="' + adminEsc(a[2]) + '">'
@@ -7364,7 +7369,7 @@
     });
     html += '</div>';
 
-    html += '<h2 class="admin-section-head">update</h2>';
+    html += '<h2 class="admin-section-head">actualització</h2>';
     html += '<div class="admin-actions-grid">';
     // The block is the button. A separate control below it was a second thing
     // to aim at for an action the block itself obviously affords.
@@ -7373,36 +7378,36 @@
         + '<button type="button" class="run" data-maintenance-action="' + action + '">' + adminEsc(buttonLabel) + '</button>'
         + '<h4>' + adminEsc(title) + '</h4>'
         + '<p>' + adminEsc(desc) + '</p>'
-        + '<div class="code" role="button" tabindex="0" title="click to copy" aria-label="copy command">'
+        + '<div class="code" role="button" tabindex="0" title="fes clic per copiar" aria-label="copia l’ordre">'
         + '<span class="copy" aria-hidden="true">' + ICON_COPY + '</span>'
         + '<pre>' + adminEsc(lines.join('\n')) + '</pre>'
         + '</div>'
         + '<span class="state" aria-live="polite"></span>'
         + '</div>';
     }
-    html += deployCard('pull latest', 'newest code from github', [
+    html += deployCard("baixa l'última versió", "codi més recent de GitHub", [
       'cd ~/BirdNET-Pi && ./scripts/update_birdnet.sh',
-    ], 'update', 'pull');
-    html += deployCard('reinstall services', 'refreshes symlinks and unit files', [
+    ], 'update', 'actualitza');
+    html += deployCard("reinstal·la els serveis", "actualitza els enllaços simbòlics i els fitxers d'unitat", [
       'cd ~/BirdNET-Pi && ./scripts/reinstall_services.sh',
-    ], 'services', 'reinstall');
+    ], 'services', 'reinstal·la');
     html += '</div>';
 
-    html += '<h2 class="admin-section-head">your data</h2>';
+    html += '<h2 class="admin-section-head">les teves dades</h2>';
     html += '<div class="admin-actions-grid">';
     function dataCard(title, desc, what) {
       return '<a class="admin-action" href="./avian/api/export.php?what=' + what + '" download>'
-        + '<span class="run">download</span>'
+        + '<span class="run">descarrega</span>'
         + '<h4>' + adminEsc(title) + '</h4>'
         + '<p>' + adminEsc(desc) + '</p>'
         + '</a>';
     }
-    html += dataCard('detections', 'every detection as csv: date, species, confidence, file', 'detections');
-    html += dataCard('recordings', 'every clip as tar, by date and species. can run to many gb', 'recordings');
+    html += dataCard('Deteccions', "totes les deteccions en CSV: data, espècie, confiança i fitxer", 'detections');
+    html += dataCard('Enregistraments', "tots els clips en TAR, per data i espècie; pot ocupar molts GB", 'recordings');
     html += '<div class="admin-action archive-card" id="archiveCard" aria-busy="true">'
-      + '<button type="button" class="run" disabled>checking</button>'
-      + '<h4>Nightly Drive archive</h4>'
-      + '<p>verified nightly copies and daily stats</p>'
+      + '<button type="button" class="run" disabled>comprovant</button>'
+      + '<h4>Arxiu nocturn a Drive</h4>'
+      + '<p>còpies nocturnes verificades i estadístiques diàries</p>'
       + '</div>';
     html += '</div>';
     adminBody.innerHTML = html;
@@ -7429,7 +7434,7 @@
         body: JSON.stringify(body),
       }).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok || !j.ok) throw new Error(j.error || (r.ok ? 'archive controls unavailable' : ('HTTP ' + r.status)));
+          if (!r.ok || !j.ok) throw new Error(j.error || (r.ok ? "controls de l'arxiu no disponibles" : ('HTTP ' + r.status)));
           return j;
         });
       });
@@ -7441,7 +7446,7 @@
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' }, body: JSON.stringify(values),
       }).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok || !j.ok) throw new Error(j.error || 'could not save recording retention');
+          if (!r.ok || !j.ok) throw new Error(j.error || "no s'ha pogut desar la política de conservació dels enregistraments");
           return j;
         });
       });
@@ -7451,7 +7456,7 @@
       return fetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) {
           return r.json().catch(function () { return {}; }).then(function (j) {
-            if (!r.ok) throw new Error(j.error || 'could not read recording retention');
+            if (!r.ok) throw new Error(j.error || "no s'ha pogut llegir la política de conservació dels enregistraments");
             var previous = {
               MAX_FILES_SPECIES: (j.values && Number.isFinite(+j.values.MAX_FILES_SPECIES))
                 ? +j.values.MAX_FILES_SPECIES : 0,
@@ -7464,7 +7469,7 @@
     }
 
     function archiveCode(command) {
-      return '<div class="code" role="button" tabindex="0" title="click to copy" aria-label="copy command">'
+      return '<div class="code" role="button" tabindex="0" title="fes clic per copiar" aria-label="copia l’ordre">'
         + '<span class="copy" aria-hidden="true">' + ICON_COPY + '</span>'
         + '<pre>' + adminEsc(command) + '</pre>'
         + '</div>';
@@ -7498,42 +7503,42 @@
       var inner = '<div class="archive-detail' + (configured ? ' is-controls' : '') + '">';
       if (!s) {
         if (archiveFailureKind === 'helper') {
-          inner += '<p>Refresh the archive helper after updating.</p>'
+          inner += '<p>Actualitza l\'assistent de l\'arxiu després d\'actualitzar.</p>'
             + archiveCode('cd ~/BirdNET-Pi && ./scripts/install_services.sh')
             + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
         } else {
-          inner += '<p>Could not reach this station.</p>'
-            + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh">try again</button>', 'network-retry')
+          inner += '<p>No s\'ha pogut accedir a aquesta estació.</p>'
+            + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh">torna-ho a provar</button>', 'network-retry')
             + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
         }
       } else if (!s.installed) {
-        inner += '<p>Install the archive service. It stays off until you enable it.</p>'
+        inner += '<p>Instal·la el servei d\'arxiu. Es manté desactivat fins que l\'activis.</p>'
           + archiveActionRow('<button type="button" class="archive-button" data-archive-action="install"'
             + (archiveBusy ? ' disabled' : '') + '>'
-            + (archiveBusyAction === 'install' ? 'installing...' : 'install archive') + '</button>', 'install');
+            + (archiveBusyAction === 'install' ? "instal·lant..." : "instal·la l'arxiu") + '</button>', 'install');
       } else if (!s.dependencies || !s.dependencies.rclone || !s.dependencies.sqlite3) {
-        inner += '<p>Install rclone and sqlite3.</p>'
+        inner += '<p>Instal·la rclone i sqlite3.</p>'
           + archiveCode('sudo apt install rclone sqlite3')
           + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh"'
-            + (archiveBusy ? ' disabled' : '') + '>check again</button>', 'refresh');
+            + (archiveBusy ? ' disabled' : '') + '>torna-ho a comprovar</button>', 'refresh');
       } else if (!s.remote || !s.remote.configured) {
-        inner += '<p>Connect Google Drive. Name the remote <code>' + adminEsc(s.remote.name || 'gdrive')
-          + '</code> and choose the <code>drive.file</code> scope.</p>'
+        inner += '<p>Connecta Google Drive. Anomena el remot <code>' + adminEsc(s.remote.name || 'gdrive')
+          + '</code> i tria l\'abast <code>drive.file</code>.</p>'
           + archiveCode('rclone config')
           + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh"'
-            + (archiveBusy ? ' disabled' : '') + '>check again</button>', 'refresh');
+            + (archiveBusy ? ' disabled' : '') + '>torna-ho a comprovar</button>', 'refresh');
       } else {
         var enabled = s.timer && s.timer.enabled === 'enabled';
         var running = s.service && (s.service.active === 'active' || s.service.active === 'activating');
         inner += '<div class="archive-run-row">'
           + '<button type="button" class="run archive-run-button" data-archive-action="run"'
-          + (running || archiveBusy ? ' disabled' : '') + '>' + (running ? 'running...' : 'run now') + '</button>'
+          + (running || archiveBusy ? ' disabled' : '') + '>' + (running ? 'running...' : "executa ara") + '</button>'
           + '</div>';
         var canPurge = s.last && s.last.state === 'OK' && s.last.verified_files > 0;
         if (enabled) {
-          inner += archiveToggle('Clear verified local files', !!s.purge,
+          inner += archiveToggle("Elimina els fitxers locals verificats", !!s.purge,
             s.purge ? 'purge-off' : 'purge-on', archiveBusy || running || !canPurge,
-            'Run the archive once before enabling local cleanup.');
+            "Executa l'arxiu una vegada abans d'activar la neteja local.");
         }
         if (archiveNoticeError) inner += '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>';
       }
@@ -7552,7 +7557,7 @@
         archiveCard.setAttribute('role', 'button');
         archiveCard.setAttribute('tabindex', '0');
         archiveCard.setAttribute('aria-expanded', 'false');
-        archiveCard.setAttribute('aria-label', 'Set up Nightly Drive archive');
+        archiveCard.setAttribute('aria-label', "Configura l'arxiu nocturn a Drive");
       } else {
         archiveCard.removeAttribute('role');
         archiveCard.removeAttribute('tabindex');
@@ -7565,8 +7570,8 @@
           + ' aria-checked="' + (enabled ? 'true' : 'false') + '" data-archive-action="'
           + (enabled ? 'disable' : 'enable') + '"' + (archiveBusy ? ' disabled' : '') + '></button>'
         : '<span class="run" aria-hidden="true">set up</span>')
-        + '<h4>Nightly Drive archive</h4>'
-        + '<p>verified nightly copies and daily stats</p>'
+        + '<h4>Arxiu nocturn a Drive</h4>'
+        + '<p>còpies nocturnes verificades i estadístiques diàries</p>'
         + archiveDetail(archiveState);
     }
 
@@ -7575,7 +7580,7 @@
         .then(function (r) {
           return r.json().catch(function () { return {}; }).then(function (j) {
             if (!r.ok || !j.ok) {
-              var error = new Error(j.error || (r.ok ? 'archive controls unavailable' : ('HTTP ' + r.status)));
+              var error = new Error(j.error || (r.ok ? "controls de l'arxiu no disponibles" : ('HTTP ' + r.status)));
               error.archiveKind = r.status === 503 && j.hint ? 'helper' : 'request';
               throw error;
             }
@@ -7594,7 +7599,7 @@
           archiveState = null;
           archiveFailureKind = e.archiveKind || 'network';
           archiveNoticeAction = 'refresh';
-          archiveNotice = e.message || 'archive controls unavailable';
+          archiveNotice = e.message || "controls de l'arxiu no disponibles";
           archiveNoticeError = true;
           paintArchive();
         });
@@ -7602,13 +7607,13 @@
 
     function performArchiveAction(action) {
       if (archiveBusy) return;
-      if (action === 'purge-on' && !confirm('Clear local recordings only after each file is copied and checksum-verified? Today always stays on this Pi.')) return;
+      if (action === 'purge-on' && !confirm("Vols eliminar els enregistraments locals només després que cada fitxer s'hagi copiat i verificat amb checksum? Els d'avui sempre es conserven en aquesta Pi.")) return;
       archiveBusy = true;
       archiveBusyAction = action;
       archiveNoticeAction = action;
       archiveNoticeError = false;
       archiveNotice = action === 'run' ? 'starting...'
-        : action === 'install' ? 'installing...'
+        : action === 'install' ? "instal·lant..."
           : action === 'enable' ? 'enabling...'
             : action === 'disable' ? 'disabling...'
               : 'saving...';
@@ -7632,7 +7637,7 @@
               : action === 'disable' ? 'disabled' : 'saved';
         archiveNoticeError = false;
       }).catch(function (e) {
-        archiveNotice = e.message || 'archive action failed';
+        archiveNotice = e.message || "l'acció de l'arxiu ha fallat";
         archiveNoticeError = true;
       }).then(function () {
         archiveBusy = false;
@@ -7749,7 +7754,7 @@
           })
           .catch(function (e) {
             card.setAttribute('data-state', 'err');
-            out.textContent = e.message || 'request failed';
+            out.textContent = e.message || "la sol·licitud ha fallat";
             setTimeout(function () {
               delete card.dataset.busy;
               card.removeAttribute('data-state');
@@ -7818,7 +7823,7 @@
         }),
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
-          if (!response.ok || !body.ok) throw new Error(body.error || 'maintenance unavailable');
+          if (!response.ok || !body.ok) throw new Error(body.error || "manteniment no disponible");
           return body;
         });
       });
@@ -7827,7 +7832,7 @@
       return fetch('./avian/api/maintenance.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (response) {
           return response.json().catch(function () { return {}; }).then(function (body) {
-            if (!response.ok || !body.ok) throw new Error(body.error || 'maintenance unavailable');
+            if (!response.ok || !body.ok) throw new Error(body.error || "manteniment no disponible");
             paintMaintenance(body);
           });
         }).catch(function () { });
@@ -7836,8 +7841,8 @@
       button.addEventListener('click', function () {
         var action = button.dataset.maintenanceAction;
         var prompt = action === 'services'
-          ? 'Reinstall service files and web links?'
-          : 'Pull the latest Avian Visitors release? The update stops if tracked local code has changed.';
+          ? "Vols reinstal·lar els fitxers de servei i els enllaços web?"
+          : "Vols baixar l'última versió d'Avian Visitors? L'actualització s'atura si hi ha canvis locals versionats.";
         if (!confirm(prompt)) return;
         var card = button.closest('[data-maintenance-card]');
         var out = card && card.querySelector('.state');
@@ -7849,7 +7854,7 @@
         }).catch(function (error) {
           button.disabled = false;
           if (card) card.setAttribute('aria-busy', 'false');
-          if (out) out.textContent = error.message || 'maintenance unavailable';
+          if (out) out.textContent = error.message || "manteniment no disponible";
         });
       });
     });
@@ -8181,7 +8186,7 @@
     }
     if (loadingEl) {
       loadingEl.style.display = '';
-      loadingEl.textContent = 'rendering spectrogram...';
+      loadingEl.textContent = "generant l'espectrograma...";
     }
 
     function done() {
@@ -8190,13 +8195,13 @@
     function fail(reason) {
       if (loadingEl) {
         loadingEl.style.display = '';
-        loadingEl.textContent = reason || 'spectrogram unavailable';
+        loadingEl.textContent = reason || "espectrograma no disponible";
       }
     }
 
     function decodeRecording(url, cacheKey) {
       if (_decodedCache[cacheKey]) return Promise.resolve(_decodedCache[cacheKey]);
-      if (!ctx) return Promise.reject(new Error('WebAudio not available'));
+      if (!ctx) return Promise.reject(new Error("WebAudio no està disponible"));
       return fetch(url)
         .then(function (response) {
           if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -8275,7 +8280,7 @@
       .catch(function () {
         return paintStoredSpectrogram('./avian/api/spectrogram.php?file=' + encodeURIComponent(file))
           .then(done)
-          .catch(function () { fail('recording unavailable'); });
+          .catch(function () { fail("enregistrament no disponible"); });
       });
   }
 
@@ -8349,10 +8354,10 @@
       stopCursorLoop();
       setModalPlayState(button, false);
       button.setAttribute('data-error', 'true');
-      button.setAttribute('aria-label', 'Recording unavailable');
+      button.setAttribute('aria-label', "Enregistrament no disponible");
       button.disabled = true;
       var time = row.querySelector('.rec-player-time');
-      if (time) time.textContent = 'unavailable';
+      if (time) time.textContent = 'no disponible';
     }
     function trySource(index) {
       if (token !== modalAudioToken || audio !== modalAudio) return;
