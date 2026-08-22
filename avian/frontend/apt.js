@@ -2,7 +2,7 @@
   var PLACEHOLDER = [{ "sci": "Calypte anna", "com": "Anna's Hummingbird", "featured": true }, { "sci": "Passer domesticus", "com": "House Sparrow" }, { "sci": "Haemorhous mexicanus", "com": "House Finch" }, { "sci": "Turdus migratorius", "com": "American Robin" }, { "sci": "Zenaida macroura", "com": "Mourning Dove" }, { "sci": "Spinus psaltria", "com": "Lesser Goldfinch" }, { "sci": "Zonotrichia leucophrys", "com": "White-crowned Sparrow" }, { "sci": "Aphelocoma californica", "com": "California Scrub-Jay" }, { "sci": "Mimus polyglottos", "com": "Northern Mockingbird" }, { "sci": "Sayornis nigricans", "com": "Black Phoebe" }, { "sci": "Larus occidentalis", "com": "Western Gull" }, { "sci": "Corvus brachyrhynchos", "com": "American Crow" }];
   // Bumped whenever the offline sketch build changes, so the browser
   // doesn't keep a stale cache after we regenerate the sketches.
-  var SKETCH_VERSION = 'r12'; // r12: 84 eastern NA birds (PR #23) refined + re-cut. r11: full library restyle: every species
+  var SKETCH_VERSION = 'r15'; // r12: 84 eastern NA birds (PR #23) refined + re-cut. r11: full library restyle: every species
   // re-rendered (perched + flight) with clean cutouts.
   // Cache-bust for /api/img - bump whenever a bird gets re-rendered via
   // /api/regen or whenever you need every CF DC to drop its cached copy.
@@ -10,7 +10,7 @@
   // equivalent to a global cache purge for /api/img. (caches.default
   // .delete() in the worker only affects ONE colo at a time, so a
   // versioned URL is the only reliable way to invalidate everywhere.)
-  var IMG_VERSION = 'r12'; // r12: 84 eastern NA birds (PR #23) refined + re-cut. r11: full library restyle: every species re-rendered
+  var IMG_VERSION = 'r14'; // r12: 84 eastern NA birds (PR #23) refined + re-cut. r11: full library restyle: every species re-rendered
   // with clean cutouts, so drop every cached copy.
 
   // ---- Sliding pill helper ----
@@ -198,33 +198,6 @@
   function readLS(k, fallback) { try { return localStorage.getItem(k) || fallback; } catch (e) { return fallback; } }
   function writeLS(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
 
-  // Atlas can either follow the shared collage/stats window or stay on the
-  // complete life list. This is a browser preference, like theme and bird
-  // names: it must never enter the Pi config save flow or restart services.
-  var ATLAS_ALWAYS_ALL_KEY = 'bird:atlasAlwaysAll:v1';
-  var sessionAtlasAlwaysAll = null;
-  function atlasAlwaysAll() {
-    if (sessionAtlasAlwaysAll !== null) return sessionAtlasAlwaysAll;
-    return readLS(ATLAS_ALWAYS_ALL_KEY, 'off') === 'on';
-  }
-  function atlasWindowHours() {
-    return atlasAlwaysAll() ? 1000000 : currentHours;
-  }
-  function syncAtlasAlwaysAll() {
-    var on = atlasAlwaysAll();
-    document.querySelectorAll('[data-atlas-always-all]').forEach(function (sw) {
-      sw.setAttribute('aria-checked', on ? 'true' : 'false');
-    });
-    // The all-time life list is already loaded for accession numbers and
-    // totals, so changing this preference needs no second API request.
-    if (DATA && DATA.lifelist) renderAtlas(false);
-  }
-  function applyAtlasAlwaysAll(on) {
-    sessionAtlasAlwaysAll = !!on;
-    writeLS(ATLAS_ALWAYS_ALL_KEY, on ? 'on' : 'off');
-    syncAtlasAlwaysAll();
-  }
-
   // Remember the last confirmed illustration pose independently for each
   // species. Keep a validated in-memory copy so the preference still works
   // for this visit when storage is unavailable (private mode / quota errors).
@@ -349,10 +322,6 @@
       sessionThemePreference = null;
       syncTheme();
     }
-    if (ev.key === ATLAS_ALWAYS_ALL_KEY || ev.key === null) {
-      sessionAtlasAlwaysAll = null;
-      syncAtlasAlwaysAll();
-    }
   });
   var winBtns = [].slice.call(winPick.querySelectorAll('button'));
   var currentHours = +readLS('bird:window', '24') || 24;
@@ -429,7 +398,21 @@
   // masks.json at load. They live in their own files (one key per line) so a
   // species-add is a clean diff and two contributors' additions don't collide,
   // instead of rewriting one ~800KB line and conflicting on every merge.
-  var DIMS = {}, MASKS = {}, tablesReady = false;
+  var DIMS = {}, MASKS = {}, CA_NAMES = {}, tablesReady = false;
+
+  function caCapitalize(name) {
+    if (!name) return '';
+    return name.charAt(0).toLocaleUpperCase('ca') + name.slice(1);
+  }
+
+  function displayName(s) {
+    if (!s) return '';
+    return caCapitalize(CA_NAMES[s.sci] || s.com || s.sci || '');
+  }
+
+  function displayNameBySci(sci, fallback) {
+    return caCapitalize(CA_NAMES[sci] || fallback || sci || '');
+  }
   // Species drawn during this session. The atlas re-renders straight after a
   // generate and cutout.php sets a day of cache, so the fresh render needs its
   // own stamp to get past whatever the earlier 404 left behind.
@@ -440,10 +423,16 @@
     var q = '?v=' + SKETCH_VERSION + (bust ? '&t=' + Date.now() : '');
     return Promise.all([
       fetch('./dims.json' + q).then(function (r) { return r.json(); }),
-      fetch('./masks.json' + q).then(function (r) { return r.json(); })
+      fetch('./masks.json' + q).then(function (r) { return r.json(); }),
+      fetch('./names-ca.json' + q).then(function (r) {
+        return r.ok ? r.json() : {};
+      }).catch(function () {
+        return {};
+      })
     ]).then(function (loaded) {
       DIMS = loaded[0];
       MASKS = loaded[1];
+      CA_NAMES = loaded[2] || {};
       maskCache = {};
       tablesReady = true;
       // renderCollage defers its first pack until the silhouettes exist (see
@@ -1885,7 +1874,7 @@
     tiles.forEach(function (t) {
       t.labelBox = null; t.labelRows = null; t.labelPx = 0; t.labelCells = null;
       if (!on) return;
-      var name = t.data.com || t.data.sci;
+      var name = displayName(t.data);
       if (!name) return;
       var out = outline(t.slug, t.mask);
       if (!out) return;
@@ -2237,6 +2226,7 @@
 
     placed.forEach(function (r) {
       var s = r.data;
+      var shownName = displayName(s);
       // com flows through so the worker's JIT Gemini job uses the right
       // common name in its prompt for a freshly-detected species.
       // &v=IMG_VERSION busts CF edge cache when we re-render any species.
@@ -2245,19 +2235,19 @@
       btn.className = 'gtile';
       btn.type = 'button';
       btn.setAttribute('data-sci', s.sci);
-      btn.setAttribute('aria-label', s.com);
+      btn.setAttribute('aria-label', shownName);
       // Fallback for keyboard / screen-reader users - the visible hover
       // pill below is the primary affordance for sighted mouse users.
       // "calls" (not "heard") because one bird can rack up dozens of
       // detections in a session; "heard" implies distinct individuals.
       var titleN = +s.n || 0;
-      btn.title = (s.com || s.sci) + ' - ' + fmtN(titleN) + ' ' +
+      btn.title = shownName + ' - ' + fmtN(titleN) + ' ' +
         (titleN === 1 ? 'call' : 'calls') + ' ' + windowLabel(currentHours);
       btn.style.left = r.x + 'px';
       btn.style.top = r.y + 'px';
       btn.style.width = r.fullW + 'px';
       btn.style.height = r.fullH + 'px';
-      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">';
+      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + escHtml(shownName) + '">';
       if (r.labelRows) {
         addLabelInk();
         // One baseline per line of the name, each riding the line the planner
@@ -2470,7 +2460,7 @@
         var s = hit.data;
         var n = +s.n || 0;
         var noun = (n === 1) ? 'call' : 'calls';
-        tip.innerHTML = '<span class="ct-name">' + (s.com || s.sci) + '</span>'
+        tip.innerHTML = '<span class="ct-name">' + escHtml(displayName(s)) + '</span>'
           + '<span class="ct-w"> - </span>'
           + '<span class="ct-n">' + fmtN(n) + '</span>'
           + '<span class="ct-w"> ' + noun + ' ' + windowLabel(currentHours) + '</span>';
@@ -2735,7 +2725,7 @@
       cols += ''
         + '<div class="stats-tl-col" data-sci="' + s.sci + '" style="left:' + centerPct.toFixed(3) + '%;width:' + colW.toFixed(2) + 'px">'
         + '<div class="stats-tl-square" style="bottom:' + bottomPct.toFixed(1) + '%;width:' + sq.toFixed(1) + 'px;height:' + sq.toFixed(1) + 'px"></div>'
-        + '<div class="stats-tl-label" style="bottom:calc(' + bottomPct.toFixed(1) + '% + ' + (sq + LABEL_GAP) + 'px)"><span class="com">' + (s.com || s.sci) + '</span><span class="sci">' + s.sci + '</span></div>'
+        + '<div class="stats-tl-label" style="bottom:calc(' + bottomPct.toFixed(1) + '% + ' + (sq + LABEL_GAP) + 'px)"><span class="com">' + escHtml(displayName(s)) + '</span><span class="sci">' + s.sci + '</span></div>'
         + '</div>';
       var showStamp = (i % stride === 0) || (i === C - 1);
       var lab = showStamp ? fmtTs(parseTs(s.last_seen)) : '';
@@ -2816,7 +2806,7 @@
       .sort(function (a, b) { return (+b.n) - (+a.n); })
       .slice(0, 5);
     document.getElementById('statsTopSpec').innerHTML = ranked.length
-      ? ranked.map(function (s, i) { return liRow(pad(i + 1), s.com, fmtN(+s.n), s.sci); }).join('')
+      ? ranked.map(function (s, i) { return liRow(pad(i + 1), displayName(s), fmtN(+s.n), s.sci); }).join('')
       : '<li class="stats-window-empty"><span class="window-empty">' + EMPTY_WINDOW_COPY + '</span></li>';
     document.getElementById('statsTopSpecCap').textContent =
       'most-heard, ' + statsWindowLabel(currentHours);
@@ -2834,7 +2824,7 @@
           var daysAgo = Math.floor((now - t) / 86400000);
           label = daysAgo === 0 ? (past ? 'that day' : 'today') : daysAgo + (past ? 'd prior' : 'd ago');
         }
-        return liRow(label, s.com, '', s.sci);
+        return liRow(label, displayName(s), '', s.sci);
       }).join('')
       : liRow('-', 'no detections yet', '');
   }
@@ -3278,7 +3268,7 @@
       (s.hours || []).forEach(function (x) { hours[x.hour] = x.n; });
       var shown = 0;
       for (h = rng.from; h <= rng.to; h++) { shown += hours[h]; if (hours[h] > maxN) maxN = hours[h]; }
-      return { sci: s.sci, com: s.com, total: shown, hours: hours };
+      return { sci: s.sci, com: displayName(s), total: shown, hours: hours };
     }).filter(function (s) { return s.total > 0; })
       .sort(function (a, b) { return b.total - a.total; });
     if (!rowsArr.length) {
@@ -3295,7 +3285,7 @@
     html += '<th class="heatmap-total">total</th></tr></thead><tbody>';
     rowsArr.forEach(function (s) {
       html += '<tr class="heatmap-row" data-sci="' + escHtml(s.sci) + '">'
-        + '<td class="heatmap-name"><span class="com">' + escHtml(s.com) + '</span>'
+        + '<td class="heatmap-name"><span class="com">' + escHtml(displayName(s)) + '</span>'
         + '<span class="sci">' + escHtml(s.sci) + '</span></td>';
       for (var h = rng.from; h <= rng.to; h++) {
         var c = s.hours[h];
@@ -3552,7 +3542,7 @@
   };
 
   function wikiUrl(sci) {
-    return 'https://en.wikipedia.org/wiki/' + encodeURIComponent(sci.replace(/ /g, '_'));
+    return 'https://ca.wikipedia.org/wiki/' + encodeURIComponent(sci.replace(/ /g, '_'));
   }
   function ebirdUrl(sci) {
     var code = EBIRD_CODES[sci];
@@ -4401,7 +4391,6 @@
 
     var lifelist = (DATA.lifelist && DATA.lifelist.species) || [];
     var recent = (DATA.recent && DATA.recent.species) || [];
-    var atlasHours = atlasWindowHours();
     // Window count lookup: sci -> count in current window.
     var winBySci = {};
     recent.forEach(function (s) { winBySci[s.sci] = +s.n; });
@@ -4414,7 +4403,7 @@
 
     // Time-window filter: when a windowed view is selected, only show
     // species heard in that window. ALL preserves the full lifelist.
-    var isAllWindow = atlasHours >= 1000000;
+    var isAllWindow = currentHours >= 1000000;
     var filtered = isAllWindow
       ? lifelist
       : lifelist.filter(function (s) { return (winBySci[s.sci] || 0) > 0; });
@@ -4439,7 +4428,7 @@
       species.sort(function (a, b) { return (+b.n) - (+a.n); });
     } else if (sortMode === 'alpha') {
       species.sort(function (a, b) {
-        return (a.com || a.sci || '').localeCompare(b.com || b.sci || '');
+        return displayName(a).localeCompare(displayName(b), 'ca');
       });
     } else if (sortMode === 'family') {
       // grouped by family, and within a family the most-heard leads
@@ -4460,7 +4449,7 @@
     // to the life list this 1h / 12h / 24h / 7d. Never shown for the ALL
     // window (every species would qualify against an open-ended span).
     var now = Date.now();
-    var windowStartMs = now - atlasHours * 3600000;
+    var windowStartMs = now - currentHours * 3600000;
 
     var cardHtml = species.map(function (s) {
       var total = +s.n || 0;
@@ -4474,9 +4463,9 @@
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
-      var statRows = isAllWindow
+      var statRows = currentHours >= 1000000
         ? '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">all time</span></div>'
-        : '<div><span class="n">' + fmtNK(win) + '</span><span class="lbl-inline">' + windowLabel(atlasHours) + '</span></div>'
+        : '<div><span class="n">' + fmtNK(win) + '</span><span class="lbl-inline">' + windowLabel(currentHours) + '</span></div>'
         + '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">all time</span></div>';
       // Heard but never drawn: issue the bird's real family stamp with the
       // egg nest occupying its artwork plate. Waiting on tablesReady keeps
@@ -4487,10 +4476,10 @@
       // The card stays the click target so the detail modal, highlighting
       // and deep links keep working untouched.
       var bird = {
-        sci: s.sci, com: s.com, index: accession[s.sci] || 0, count: total,
+        sci: s.sci, com: displayName(s), index: accession[s.sci] || 0, count: total,
         placeholder: needsArt
       };
-      var renderKey = [s.sci, s.com || '', accession[s.sci] || 0, total,
+      var renderKey = [s.sci, displayName(s), accession[s.sci] || 0, total,
         needsArt ? 'todo' : 'stamp', fresh, SKETCH_VERSION].join('|');
       // Keep the Atlas issue itself as one clean click target. Generation lives
       // in the postcard's pose-control slot, where its cost and resulting state
@@ -5582,18 +5571,9 @@
       + '  <div class="seg" data-labels-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('off', 'off') + btn('on', 'on') + '</div>'
       + '</div>';
   }
-  function atlasAlwaysAllRow() {
-    var on = atlasAlwaysAll();
-    return ''
-      + '<div class="menu-row">'
-      + '  <div><span class="label">Always show full atlas</span><span class="hint">show every unlocked stamp</span></div>'
-      + '  <button type="button" class="switch" role="switch" aria-label="Always show full atlas"'
-      + '    aria-checked="' + (on ? 'true' : 'false') + '" data-atlas-always-all></button>'
-      + '</div>';
-  }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-atlas-always-all])').forEach(function (sw) {
+    scope.querySelectorAll('.switch').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -6356,7 +6336,8 @@
     // The common name is already present on every Atlas card/lifelist row.
     // Paint it synchronously so a long title never arrives a frame late and
     // reflows the identity panel while the stamp is landing.
-    document.getElementById('modalCommon').textContent = (lifelistBird && lifelistBird.com) || sci;
+    document.getElementById('modalCommon').textContent = 
+      lifelistBird ? displayName(lifelistBird) : displayNameBySci(sci, sci);
     document.getElementById('modalAllTime').textContent = '-';
     document.getElementById('modalFirstSeen').textContent = '-';
     document.getElementById('modalRarity').textContent = '-';
@@ -6386,7 +6367,7 @@
     loadSpecies.then(function (j) {
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var s = j.summary || {};
-      document.getElementById('modalCommon').textContent = s.com || sci;
+      document.getElementById('modalCommon').textContent = displayNameBySci(sci, s.com);
       document.getElementById('modalAllTime').textContent = (+s.total || 0).toLocaleString();
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
       var rar = rarityLabel(+s.total || 0, s.first_seen);
@@ -6437,7 +6418,7 @@
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var desc = document.getElementById('modalDesc');
       renderAboutDescription(desc, j);
-      if (j.source && /^https:\/\/en\.wikipedia\.org\/wiki\//.test(j.source.url || '')) {
+      if (j.source && /^https:\/\/ca\.wikipedia\.org\/wiki\//.test(j.source.url || '')) {
         document.getElementById('modalWiki').href = j.source.url;
       }
     }).catch(function () {
@@ -7104,7 +7085,6 @@
           + '<section>'
           + themeRow()
           + labelsRow()
-          + atlasAlwaysAllRow()
           + '</section><section>'
           + settingsSlider('CONFIDENCE', 'Confidence threshold', 'min score to log a detection', v.CONFIDENCE, 0.1, 0.95, 0.05, 2, 0.7)
           + settingsSlider('SF_THRESH', 'Range filter', 'min likelihood a species is here this week', v.SF_THRESH, 0.001, 0.5, 0.001, 3, 0.03)
@@ -7182,12 +7162,6 @@
           } else {
             labelFontReady = true; renderCollageFromData();
           }
-        });
-        // Atlas-only preference: apply immediately without touching the
-        // shared time picker or sending a station settings request.
-        var atlasAllSwitch = adminBody.querySelector('[data-atlas-always-all]');
-        if (atlasAllSwitch) atlasAllSwitch.addEventListener('click', function () {
-          applyAtlasAlwaysAll(atlasAllSwitch.getAttribute('aria-checked') !== 'true');
         });
       })
       .catch(function (err) {

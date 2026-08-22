@@ -126,7 +126,7 @@ function wikiSupplement(string $expanded, string $lead): string
  */
 function wikiDescriptionSection(string $title, $ctx): string
 {
-    $sectionsUrl = 'https://en.wikipedia.org/w/api.php?' . http_build_query([
+    $sectionsUrl = 'https://ca.wikipedia.org/w/api.php?' . http_build_query([
         'action'        => 'parse',
         'format'        => 'json',
         'formatversion' => '2',
@@ -141,7 +141,16 @@ function wikiDescriptionSection(string $title, $ctx): string
         return '';
     }
 
-    $wanted = ['description', 'identification', 'appearance'];
+    $wanted = [
+      'descripció',
+      'descripcio',
+      'identificació',
+      'identificacio',
+      'aspecte',
+      'morfologia',
+      'característiques',
+      'caracteristiques'
+    ];
     $sectionIndex = null;
     foreach ($wanted as $heading) {
         foreach ($sections as $section) {
@@ -158,7 +167,7 @@ function wikiDescriptionSection(string $title, $ctx): string
         return '';
     }
 
-    $sectionUrl = 'https://en.wikipedia.org/w/api.php?' . http_build_query([
+    $sectionUrl = 'https://ca.wikipedia.org/w/api.php?' . http_build_query([
         'action'             => 'parse',
         'format'             => 'json',
         'formatversion'      => '2',
@@ -515,7 +524,7 @@ $ua = getenv('AV_USER_AGENT') ?: 'AvianVisitors/1.0 (+https://github.com/Twarner
 $ctx = stream_context_create([
     'http' => ['header' => "User-Agent: $ua\r\n", 'timeout' => 8],
 ]);
-$url = 'https://en.wikipedia.org/w/api.php?' . http_build_query([
+$url = 'https://ca.wikipedia.org/w/api.php?' . http_build_query([
     'action'        => 'query',
     'format'        => 'json',
     'formatversion' => '2',
@@ -564,7 +573,7 @@ $initialLength = textLength(implode(' ', $initialParagraphs));
 // lead. Pull the beginning of the article in those cases so the second About
 // paragraph can carry actual field marks or behavior rather than filler.
 if ($pageTitle && $extract && $initialLength < 360) {
-    $expandedUrl = 'https://en.wikipedia.org/w/api.php?' . http_build_query([
+    $expandedUrl = 'https://ca.wikipedia.org/w/api.php?' . http_build_query([
         'action'          => 'query',
         'format'          => 'json',
         'formatversion'   => '2',
@@ -613,7 +622,7 @@ $paragraphs = $fitted['paragraphs'];
 $distinctiveSentences = $fitted['distinctive'];
 $distinctive = $distinctiveSentences ? implode(' ', $distinctiveSentences) : null;
 $sourceUrl = $pageTitle
-    ? 'https://en.wikipedia.org/wiki/' . str_replace('%2F', '/', rawurlencode(str_replace(' ', '_', $pageTitle)))
+    ? 'https://ca.wikipedia.org/wiki/' . str_replace('%2F', '/', rawurlencode(str_replace(' ', '_', $pageTitle)))
     : null;
 
 echo json_encode([

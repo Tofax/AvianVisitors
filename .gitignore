@@ -76,3 +76,8 @@ avian/assets/_legacy/
 # to whatever hardware happened to produce them.
 tflite_runtime-*.whl
 requirements_custom.txt
+
+# Local Avian Visitors backups
+avian/api/*.before-ca
+avian/frontend/*.before-ca
+avian/assets/illustrations.backup-*/
