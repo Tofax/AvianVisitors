@@ -81,3 +81,10 @@ requirements_custom.txt
 avian/api/*.before-ca
 avian/frontend/*.before-ca
 avian/assets/illustrations.backup-*/
+
+# Avian Visitors on-demand generation state
+avian/assets/illustrations/.generate.log
+avian/assets/illustrations/.generate.starts
+avian/assets/illustrations/.generate.state.json
+avian/assets/illustrations/cuts.json
+avian/assets/illustrations/raw/
