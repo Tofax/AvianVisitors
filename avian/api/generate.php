@@ -215,15 +215,16 @@ if ($action === 'start') {
 
     $python = "$BIRDNETPI_DIR/birdnet/bin/python3";
     if (!is_executable($python)) $python = find_executable('python3') ?? '';
-    $nohup = find_executable('nohup') ?? '';
+    $nohup = is_executable('/usr/bin/nohup')
+      ? '/usr/bin/nohup'
+      : (find_executable('nohup') ?? '');
     $workerScript = "$BIRDNETPI_DIR/avian/scripts/generate_one.py";
     if ($python === '' || $nohup === '' || !is_readable($workerScript)
-        || !is_executable('/bin/sh') || !function_exists('proc_open')) {
-        http_response_code(500);
-        echo json_encode(['error' => 'generator unavailable']);
-        exit;
+      || !is_executable('/bin/sh') || !function_exists('proc_open')) {
+      http_response_code(500);
+      echo json_encode(['error' => 'generator unavailable']);
+      exit;
     }
-
     if (!is_dir($ILLUS) && !@mkdir($ILLUS, 0775, true) && !is_dir($ILLUS)) {
         http_response_code(500);
         echo json_encode(['error' => 'illustration directory unavailable']);
