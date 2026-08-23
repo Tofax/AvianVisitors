@@ -66,6 +66,32 @@ EOF
   fi
 }
 
+install_avian_generation_lock() {
+  echo "Installing AvianVisitors image-generation lock"
+
+  local source="${my_dir}/scripts/avian-generation.conf"
+  local target="/etc/tmpfiles.d/avian-generation.conf"
+
+  if [ ! -f "$source" ]; then
+    echo "AvianVisitors generation tmpfiles configuration was not found: $source" >&2
+    return 1
+  fi
+
+  install -o root -g root -m 0644 "$source" "$target"
+
+  systemd-tmpfiles --create "$target"
+
+  if [ ! -f /run/lock/avian-generation.lock ]; then
+    echo "Could not create /run/lock/avian-generation.lock" >&2
+    return 1
+  fi
+
+  if [ "$(stat -c '%U:%G:%a' /run/lock/avian-generation.lock)" != "root:caddy:660" ]; then
+    echo "Invalid permissions on /run/lock/avian-generation.lock" >&2
+    return 1
+  fi
+}
+
 install_birdnet_analysis() {
   cat << EOF > $HOME/BirdNET-Pi/templates/birdnet_analysis.service
 [Unit]
@@ -380,6 +406,7 @@ install_services() {
   install_depends
   install_scripts
   install_avian_controls
+  install_avian_generation_lock
   install_Caddyfile
   install_avahi_aliases
   install_birdnet_analysis
