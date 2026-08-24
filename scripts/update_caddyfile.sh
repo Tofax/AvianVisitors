@@ -157,7 +157,7 @@ $legacy_handles
   # existing checkout during an update, including their source text.
   @unknownAvianApi {
     path /avian/api/*
-    not path /avian/api/archive.php /avian/api/birdnet-api.php /avian/api/birdnet-status.php /avian/api/config.php /avian/api/cutout.php /avian/api/export.php /avian/api/generate.php /avian/api/maintenance.php /avian/api/menu.php /avian/api/recording.php /avian/api/spectrogram.php /avian/api/wiki.php
+    not path /avian/api/archive.php /avian/api/birdnet-api.php /avian/api/birdnet-status.php /avian/api/config.php /avian/api/cutout.php /avian/api/cutout-review.php /avian/api/export.php /avian/api/generate.php /avian/api/maintenance.php /avian/api/menu.php /avian/api/recording.php /avian/api/spectrogram.php /avian/api/wiki.php
   }
   handle @unknownAvianApi {
     respond 404
