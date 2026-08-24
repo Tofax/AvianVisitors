@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -60,8 +61,9 @@ def chroma_cut(src: Path, dst: Path) -> None:
     prevents the flood from leaking through pale or weakly inked parts of
     white birds.
 
-    The final alpha is binary in the interior and feathered only along the
-    outer silhouette.
+    Small disconnected foreground islands caused by paper grain are removed
+    after the flood. The final alpha is fully opaque in the bird interior and
+    feathered only along the outer silhouette.
     """
     im = Image.open(src).convert("RGB")
     arr = np.asarray(im)
@@ -90,26 +92,21 @@ def chroma_cut(src: Path, dst: Path) -> None:
         dist[:, -40:].ravel(),
     ])
 
-    # IMPORTANT:
-    # The previous 2.5 * percentile(99) could reach 40 and classify white
-    # plumage as paper. We only add a modest safety margin to the measured
-    # variation and cap it considerably lower.
+    # Keep the tolerance conservative so pale/white plumage is not
+    # accidentally classified as paper.
     paper_p99 = float(np.percentile(border, 99))
     tol = float(min(28.0, max(12.0, paper_p99 + 6.0)))
 
     passable = dist < tol
 
-    # Shrink the passable-paper mask slightly before flooding.
-    #
-    # This closes tiny gaps in the bird outline so pale internal plumage
-    # cannot accidentally become connected to the external background.
-    #
-    # This mask is only used for connectivity; it does not modify RGB.
+    # Shrink the passable-paper region very slightly before flooding.
+    # This closes one-pixel leaks through pale or weak outlines without
+    # excessively converting paper grain into foreground.
     pass_img = Image.fromarray(
         passable.astype(np.uint8) * 255
     )
 
-    pass_img = pass_img.filter(ImageFilter.MinFilter(5))
+    pass_img = pass_img.filter(ImageFilter.MinFilter(3))
     passable_for_flood = np.asarray(pass_img) > 127
 
     # 128 = candidate paper
@@ -119,8 +116,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
         np.where(passable_for_flood, 128, 0).astype(np.uint8)
     ).copy()
 
-    # Seed many positions along all four edges instead of only eight points.
-    # This is more robust when the bird or a branch touches one side.
+    # Seed many positions along all four edges.
     seeds = []
 
     step_x = max(1, w // 32)
@@ -156,20 +152,54 @@ def chroma_cut(src: Path, dst: Path) -> None:
             f"raw kept for the upgrade pass"
         )
 
-    # Everything not connected to the external paper is foreground.
-    # This automatically fills enclosed pale regions such as white bellies.
+    # Everything not connected to external paper is foreground.
     solid = ~exterior
 
-    # Remove isolated grain/specks without opening holes in the bird.
-    sm = Image.fromarray(solid.astype(np.uint8) * 255)
-    sm = sm.filter(ImageFilter.MinFilter(3))
-    sm = sm.filter(ImageFilter.MaxFilter(3))
-    solid = np.asarray(sm) > 127
+    # Remove small disconnected foreground islands caused by paper grain.
+    clean = solid.copy()
+    seen = np.zeros((h, w), dtype=bool)
+
+    min_component = max(48, int(h * w * 0.00010))
+
+    for y in range(h):
+        for x in range(w):
+            if not clean[y, x] or seen[y, x]:
+                continue
+
+            q = deque([(x, y)])
+            seen[y, x] = True
+            component = []
+
+            while q:
+                cx, cy = q.popleft()
+                component.append((cx, cy))
+
+                if cx > 0 and clean[cy, cx - 1] and not seen[cy, cx - 1]:
+                    seen[cy, cx - 1] = True
+                    q.append((cx - 1, cy))
+
+                if cx + 1 < w and clean[cy, cx + 1] and not seen[cy, cx + 1]:
+                    seen[cy, cx + 1] = True
+                    q.append((cx + 1, cy))
+
+                if cy > 0 and clean[cy - 1, cx] and not seen[cy - 1, cx]:
+                    seen[cy - 1, cx] = True
+                    q.append((cx, cy - 1))
+
+                if cy + 1 < h and clean[cy + 1, cx] and not seen[cy + 1, cx]:
+                    seen[cy + 1, cx] = True
+                    q.append((cx, cy + 1))
+
+            if len(component) < min_component:
+                for cx, cy in component:
+                    clean[cy, cx] = False
+
+    solid = clean
 
     # Fully opaque interior.
     binary = solid.astype(np.uint8) * 255
 
-    # Feather ONLY the silhouette boundary.
+    # Feather only the outer silhouette.
     feather = np.asarray(
         Image.fromarray(binary).filter(
             ImageFilter.GaussianBlur(0.65)
@@ -178,9 +208,8 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     feather[~solid] = 0
 
-    # Avoid large semi-transparent regions. Anything sufficiently inside the
-    # foreground is forced fully opaque.
-    feather[(solid) & (feather >= 220)] = 255
+    # Make the interior fully opaque.
+    feather[solid & (feather >= 220)] = 255
 
     rgba = np.dstack([arr, feather]).astype(np.uint8)
 
