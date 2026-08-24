@@ -9,7 +9,7 @@
 //   GET  ?action=status -> {running, sci, com, step, ok, error, at,
 //                           chroma}  (chroma = instant cutouts awaiting
 //                           the workstation upgrade pass)
-//   POST ?action=start  -> JSON body {sci, force?}. Species must exist
+//   POST ?action=start  -> JSON body {sci, force?, pose?}. Species must exist
 //                          in birds.db (the station actually heard it) -
 //                          both cost control and input control, since
 //                          sci/com reach a shell command line.
@@ -140,6 +140,7 @@ if ($action === 'status') {
         'step'    => $s['step'] ?? null,
         'ok'      => $s['ok'] ?? null,
         'error'   => $s['error'] ?? null,
+        'pose'    => $s['pose'] ?? null,
         'at'      => $s['at'] ?? null,
         'chroma'  => chroma_count($ILLUS),
     ]);
@@ -161,7 +162,7 @@ if ($action === 'start') {
         exit;
     }
     $fields = get_object_vars($body);
-    if (array_diff(array_keys($fields), ['sci', 'force'])) {
+    if (array_diff(array_keys($fields), ['sci', 'force', 'pose'])) {
         http_response_code(400);
         echo json_encode(['error' => 'unexpected field']);
         exit;
@@ -176,8 +177,15 @@ if ($action === 'start') {
         echo json_encode(['error' => 'force must be boolean']);
         exit;
     }
+    if (array_key_exists('pose', $fields) && (!is_int($fields['pose']) || !in_array($fields['pose'], [1, 2], true))) {
+        http_response_code(400);
+        echo json_encode(['error' => 'pose must be 1 or 2']);
+        exit;
+    }
+
     $sci = trim($fields['sci']);
     $force = $fields['force'] ?? false;
+    $pose = $fields['pose'] ?? null;
     // Strict binomial, same shape cutout.php enforces. This string (and
     // the DB-resolved common name) is all that ever reaches the shell,
     // and both still go through escapeshellarg.
@@ -313,7 +321,7 @@ if ($action === 'start') {
     // Mark running before the spawn so the UI flips immediately; the
     // worker takes over this file once it boots.
     $stateJson = json_encode([
-        'running' => true, 'sci' => $sci, 'com' => $com,
+        'running' => true, 'sci' => $sci, 'com' => $com, 'pose' => $pose,
         'step' => 'starting', 'at' => $now,
     ], JSON_INVALID_UTF8_SUBSTITUTE);
     if (!is_string($stateJson) || !atomic_write($STATE, $stateJson . "\n")) {
@@ -333,6 +341,7 @@ if ($action === 'start') {
          . ' --sci ' . escapeshellarg($sci)
          . ' --com ' . escapeshellarg($com)
          . ($force ? ' --force' : '')
+         . ($pose !== null ? ' --pose ' . escapeshellarg((string)$pose) : '')
          . ' >> ' . escapeshellarg($LOG) . ' 2>&1 < /dev/null & '
          . 'worker_pid=$!; sleep 0.05; kill -0 "$worker_pid" 2>/dev/null';
     $environment = getenv();
@@ -364,7 +373,7 @@ if ($action === 'start') {
     flock($generationLock, LOCK_UN);
     fclose($generationLock);
 
-    echo json_encode(['ok' => true, 'sci' => $sci, 'com' => $com]);
+    echo json_encode(['ok' => true, 'sci' => $sci, 'com' => $com, 'pose' => $pose]);
     exit;
 }
 

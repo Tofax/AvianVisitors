@@ -258,6 +258,8 @@ def main() -> int:
     ap.add_argument("--sci", required=True)
     ap.add_argument("--com", required=True)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--pose", type=int, choices=(1, 2),
+                    help="render only one pose (default: both)")
     ap.add_argument("--sleep", type=float, default=6.0,
                     help="seconds between the two Gemini calls")
     args = ap.parse_args()
@@ -283,7 +285,7 @@ def main() -> int:
     slug = pregen.slugify(sci)
     ILLUS.mkdir(parents=True, exist_ok=True)
     RAW.mkdir(parents=True, exist_ok=True)
-    write_state(running=True, sci=sci, com=com, step="render")
+    write_state(running=True, sci=sci, com=com, pose=args.pose, step="render")
 
     try:
         prompt = pregen.load_prompt(HERE / "prompt.template.md")
@@ -295,7 +297,8 @@ def main() -> int:
 
         made = []
         have = []   # poses already on disk - may still need mask registration
-        for pose in (1, 2):
+        poses = (args.pose,) if args.pose else (1, 2)
+        for pose in poses:
             fname = f"{slug}.png" if pose == 1 else f"{slug}-{pose}.png"
             out = ILLUS / fname
             if out.exists() and not args.force:
@@ -323,8 +326,9 @@ def main() -> int:
             made.append(fname)
             print(f"[ok] {fname} ({len(png) // 1024}KB raw, chroma cut)")
             if pose == 1:
-                write_state(running=True, sci=sci, com=com, step="render flight")
-                time.sleep(args.sleep)
+                if 2 in poses:
+                    write_state(running=True, sci=sci, com=com, pose=args.pose, step="render flight")
+                    time.sleep(args.sleep)
 
         if made or have:
             # Register skipped-but-present poses too: a run that rendered
@@ -332,17 +336,17 @@ def main() -> int:
             # perched mask unregistered forever (the retry skips the file).
             # Re-merging a registered slug is idempotent, so this also
             # self-heals installs already stuck that way.
-            write_state(running=True, sci=sci, com=com, step="masks")
+            write_state(running=True, sci=sci, com=com, pose=args.pose, step="masks")
             slugs = [f[:-4] for f in made + have]
             r = subprocess.run([sys.executable, str(HERE / "build_masks.py"), "--add", *slugs])
             if r.returncode != 0:
                 raise RuntimeError("build_masks --add failed")
     except Exception as e:
-        write_state(running=False, sci=sci, com=com, ok=False, error=str(e))
+        write_state(running=False, sci=sci, com=com, pose=args.pose, ok=False, error=str(e))
         print(f"error: {e}", file=sys.stderr)
         return 1
 
-    write_state(running=False, sci=sci, com=com, ok=True, made=made)
+    write_state(running=False, sci=sci, com=com, pose=args.pose, ok=True, made=made)
     print(f"done: {len(made)} rendered for {sci}")
     return 0
 

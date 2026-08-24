@@ -94,3 +94,6 @@ avian/assets/illustrations/.cutout-audit.json
 avian/assets/illustrations/.cutout-audit.state.json
 avian/assets/illustrations/.cutout-audit.log
 avian/assets/illustrations/.cutout-review.json
+
+# Cutout audit coordination lock (local runtime data)
+avian/assets/illustrations/.cutout-audit.lock

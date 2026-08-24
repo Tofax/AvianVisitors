@@ -7397,6 +7397,8 @@
     var data = null;
     var busyAudit = false;
     var auditPoll = null;
+    var repairBusyFile = null;
+    var generationPoll = null;
 
     function css() {
       return '<style id="cutoutReviewStyle">'
@@ -7410,6 +7412,7 @@
         + '.cutrev-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper);min-width:0}.cutrev-card[data-review="good"]{opacity:.72}.cutrev-card[data-review="bad"]{box-shadow:inset 0 0 0 2px rgba(190,45,35,.28)}'
         + '.cutrev-img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#14cdbe}.cutrev-body{padding:11px 12px 12px}.cutrev-name{font:650 13px/1.25 system-ui,sans-serif;margin:0 0 3px}.cutrev-sci{font:10px/1.25 ui-monospace,monospace;color:var(--ink-soft);margin:0 0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
         + '.cutrev-metrics{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.cutrev-chip{font:9px/1 ui-monospace,monospace;border:1px solid var(--line);border-radius:999px;padding:5px 7px}.cutrev-chip.hot{border-color:#b9362c;color:#a52f27}.cutrev-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cutrev-mark.good[data-active="1"]{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-mark.bad[data-active="1"]{background:#9f332b;color:#fff;border-color:#9f332b}'
+        + '.cutrev-repairs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.cutrev-repair{font:600 11px/1 system-ui,sans-serif;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:9px 8px;cursor:pointer}.cutrev-repair.primary{background:var(--ink);color:var(--paper)}.cutrev-repair:disabled{opacity:.45;cursor:default}.cutrev-repair-note{margin:8px 0 0;font:10px/1.35 system-ui,sans-serif;color:var(--ink-soft)}'
         + '.cutrev-empty{padding:40px 12px;text-align:center;color:var(--ink-soft)}.cutrev-pager{display:flex;justify-content:center;gap:10px;align-items:center;margin:18px 0 4px}.cutrev-pager button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 12px;cursor:pointer}.cutrev-pager button:disabled{opacity:.35;cursor:default}.cutrev-note{font:11px/1.45 system-ui,sans-serif;color:var(--ink-soft);margin:-8px 0 16px}'
         + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}}'
         + '</style>';
@@ -7496,7 +7499,7 @@
         + '<div class="cutrev-stat"><b>' + (+s.good || 0) + '</b><span>correctes</span></div>'
         + '<div class="cutrev-stat"><b>' + (+s.bad || 0) + '</b><span>incorrectes</span></div>'
         + '</div>';
-      html += '<p class="cutrev-note">La cua pendent només inclou candidats amb score ≥ 40. Marcar una imatge no modifica el PNG.</p>';
+      html += '<p class="cutrev-note">La cua pendent només inclou candidats amb score ≥ 40. Marca una imatge com a incorrecta per poder-la tornar a retallar o regenerar.</p>';
 
       html += '<div class="cutrev-filters" data-cutrev-filter>'
         + [['pending','Pendents'],['bad','Incorrectes'],['good','Correctes'],['all','Totes']].map(function (x) {
@@ -7531,7 +7534,17 @@
             + '<div class="cutrev-actions">'
             + '<button class="cutrev-mark good" data-status="good" data-active="' + (item.review === 'good' ? '1' : '0') + '">✓ Correcta</button>'
             + '<button class="cutrev-mark bad" data-status="bad" data-active="' + (item.review === 'bad' ? '1' : '0') + '">✕ Incorrecta</button>'
-            + '</div></div></article>';
+            + '</div>'
+            + (item.review === 'bad'
+              ? '<div class="cutrev-repairs">'
+                + (item.has_raw ? '<button class="cutrev-repair primary" data-repair="recut">↻ Torna a retallar</button>' : '')
+                + (item.can_regenerate ? '<button class="cutrev-repair" data-repair="regenerate">✦ Regenera</button>' : '')
+                + '</div>'
+                + ((!item.has_raw && !item.can_regenerate)
+                  ? '<p class="cutrev-repair-note">No hi ha RAW i aquesta espècie no consta entre les deteccions; no es pot regenerar des de la Pi.</p>'
+                  : (repairBusyFile === item.file ? '<p class="cutrev-repair-note">reparant...</p>' : ''))
+              : '')
+            + '</div></article>';
         });
         html += '</div>';
       }
@@ -7549,6 +7562,7 @@
       var back = document.getElementById('cutrevBack');
       if (back) back.addEventListener('click', function () {
         if (auditPoll) { clearTimeout(auditPoll); auditPoll = null; }
+        if (generationPoll) { clearTimeout(generationPoll); generationPoll = null; }
         adminTitle.textContent = ADMIN_TITLES.tools;
         renderAdminTools();
       });
@@ -7585,6 +7599,91 @@
       });
     }
 
+    function itemByFile(file) {
+      return data && (data.items || []).find(function (item) { return item.file === file; });
+    }
+
+    function setRepairBusy(file, busy) {
+      repairBusyFile = busy ? file : null;
+      render();
+    }
+
+    function recut(item) {
+      if (!item || !item.has_raw) return;
+      setRepairBusy(item.file, true);
+      api('recut', { action: 'recut', file: item.file }).then(function (j) {
+        data = j;
+        repairBusyFile = null;
+        loadTables(true);
+        render();
+      }).catch(function (e) {
+        repairBusyFile = null;
+        render();
+        alert("No s’ha pogut tornar a retallar la imatge: " + (e.message || e));
+      });
+    }
+
+    function finishRegeneration(item) {
+      api('refresh', { action: 'refresh', file: item.file }).then(function (j) {
+        data = j;
+        repairBusyFile = null;
+        loadTables(true);
+        render();
+      }).catch(function (e) {
+        repairBusyFile = null;
+        render();
+        alert("La imatge s’ha regenerat, però no s’ha pogut actualitzar l’auditoria: " + (e.message || e));
+      });
+    }
+
+    function pollRegeneration(item) {
+      clearTimeout(generationPoll);
+      fetch('./avian/api/generate.php?action=status', {
+        credentials: 'same-origin', cache: 'no-store'
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      }).then(function (res) {
+        if (!res.ok) throw new Error((res.j && res.j.error) || ('HTTP ' + res.status));
+        var st = res.j || {};
+        if (st.running) {
+          generationPoll = setTimeout(function () { pollRegeneration(item); }, 1800);
+          return;
+        }
+        if (st.ok && st.sci === item.sci && (+st.pose || 0) === (+item.pose || 0)) {
+          finishRegeneration(item);
+          return;
+        }
+        repairBusyFile = null;
+        render();
+        alert("No s’ha pogut regenerar la imatge: " + (st.error || 'ha fallat'));
+      }).catch(function (e) {
+        repairBusyFile = null;
+        render();
+        alert("No s’ha pogut consultar la regeneració: " + (e.message || e));
+      });
+    }
+
+    function regenerate(item) {
+      if (!item || !item.can_regenerate || !item.sci) return;
+      if (!confirm('Regenerar només la pose ' + item.pose + ' de ' + displayNameBySci(item.sci, item.com || item.sci)
+        + '?\n\nAquesta acció consumeix una petició de Gemini.')) return;
+      setRepairBusy(item.file, true);
+      fetch('./avian/api/generate.php?action=start', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+        body: JSON.stringify({ sci: item.sci, force: true, pose: +item.pose || 1 })
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      }).then(function (res) {
+        if (!res.ok) throw new Error((res.j && res.j.error) || 'no s’ha pogut iniciar');
+        generationPoll = setTimeout(function () { pollRegeneration(item); }, 1200);
+      }).catch(function (e) {
+        repairBusyFile = null;
+        render();
+        alert("No s’ha pogut iniciar la regeneració: " + (e.message || e));
+      });
+    }
+
     function wire() {
       wireBase();
       var audit = document.getElementById('cutrevAudit');
@@ -7612,6 +7711,15 @@
             var status = b.dataset.status;
             var current = card.dataset.review || 'pending';
             mark(card.dataset.file, current === status ? 'pending' : status, b);
+          });
+        });
+        card.querySelectorAll('.cutrev-repair').forEach(function (b) {
+          b.disabled = repairBusyFile !== null;
+          b.addEventListener('click', function () {
+            var item = itemByFile(card.dataset.file);
+            if (!item) return;
+            if (b.dataset.repair === 'recut') recut(item);
+            else if (b.dataset.repair === 'regenerate') regenerate(item);
           });
         });
       });
