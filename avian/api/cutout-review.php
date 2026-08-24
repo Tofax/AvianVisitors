@@ -23,6 +23,7 @@ $AUDIT = "$ILLUS/.cutout-audit.json";
 $STATE = "$ILLUS/.cutout-audit.state.json";
 $REVIEW = "$ILLUS/.cutout-review.json";
 $LOG = "$ILLUS/.cutout-audit.log";
+$PREVIEW_CACHE = "$ILLUS/.cutout-preview-cache";
 $SCRIPT = "$ROOT/avian/scripts/audit_cutouts.py";
 $DB_PATH = "$ROOT/scripts/birds.db";
 $STALE_S = 20 * 60;
@@ -209,23 +210,66 @@ if ($method === 'GET' && $action === 'list') {
 if ($method === 'GET' && $action === 'preview') {
     $file = (string)($_GET['file'] ?? '');
     if (!valid_cutout_file($file)) json_response(400, ['ok'=>false,'error'=>'invalid illustration filename']);
-    if (!is_file("$ILLUS/$file")) json_response(404, ['ok'=>false,'error'=>'illustration not found']);
-    $python = audit_python($ROOT);
-    if ($python === '' || !is_readable($SCRIPT) || !function_exists('proc_open'))
-        json_response(503, ['ok'=>false,'error'=>'cutout preview unavailable']);
-    $tmp = @tempnam(sys_get_temp_dir(), 'avian-cutout-preview-');
-    if ($tmp === false) json_response(500, ['ok'=>false,'error'=>'cannot create preview']);
-    $command = [$python,$SCRIPT,'--dir',$ILLUS,'--preview',$file,'--preview-output',$tmp];
-    $descriptors = [0=>['file','/dev/null','r'],1=>['file','/dev/null','a'],2=>['file','/dev/null','a']];
-    $process = @proc_open($command,$descriptors,$pipes,$ROOT,null,['bypass_shell'=>true]);
-    $rc = is_resource($process) ? proc_close($process) : -1;
-    if ($rc !== 0 || !is_file($tmp) || filesize($tmp) === 0) {
-        @unlink($tmp); json_response(500, ['ok'=>false,'error'=>'could not build preview']);
+    $source = "$ILLUS/$file";
+    if (!is_file($source)) json_response(404, ['ok'=>false,'error'=>'illustration not found']);
+
+    // Persistent derived-preview cache. The key follows the source PNG and
+    // preview worker mtimes, so a recut/regeneration or algorithm update gets
+    // a new object automatically. The frontend also versions the URL by the
+    // artwork mtime, allowing a long browser cache without stale repairs.
+    $sourceMtime = (int)(@filemtime($source) ?: 0);
+    $sourceSize = (int)(@filesize($source) ?: 0);
+    $scriptMtime = (int)(@filemtime($SCRIPT) ?: 0);
+    $previewSize = 760;
+    $cacheToken = substr(hash('sha256', $file.'|'.$sourceMtime.'|'.$sourceSize.'|'.$scriptMtime.'|'.$previewSize.'|v1'), 0, 20);
+    $cacheName = $file.'.'.$cacheToken.'.png';
+    $cachePath = "$PREVIEW_CACHE/$cacheName";
+    $etag = '"'.$cacheToken.'"';
+
+    header_remove('Content-Type');
+    header('Cache-Control: private, max-age=604800, immutable');
+    header('ETag: '.$etag);
+    if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+        http_response_code(304);
+        exit;
     }
-    header_remove('Content-Type'); header('Content-Type: image/png');
-    header('Content-Length: '.(string)filesize($tmp));
+
+    $cacheHit = is_file($cachePath) && filesize($cachePath) > 0;
+    if (!$cacheHit) {
+        $python = audit_python($ROOT);
+        if ($python === '' || !is_readable($SCRIPT) || !function_exists('proc_open'))
+            json_response(503, ['ok'=>false,'error'=>'cutout preview unavailable']);
+        if (!is_dir($PREVIEW_CACHE) && !@mkdir($PREVIEW_CACHE, 0775, true) && !is_dir($PREVIEW_CACHE))
+            json_response(500, ['ok'=>false,'error'=>'preview cache unavailable']);
+
+        $tmp = @tempnam($PREVIEW_CACHE, '.build-');
+        if ($tmp === false) json_response(500, ['ok'=>false,'error'=>'cannot create preview']);
+        $command = [$python,$SCRIPT,'--dir',$ILLUS,'--preview',$file,'--preview-output',$tmp,'--preview-size',(string)$previewSize];
+        $descriptors = [0=>['file','/dev/null','r'],1=>['file','/dev/null','a'],2=>['file','/dev/null','a']];
+        $process = @proc_open($command,$descriptors,$pipes,$ROOT,null,['bypass_shell'=>true]);
+        $rc = is_resource($process) ? proc_close($process) : -1;
+        if ($rc !== 0 || !is_file($tmp) || filesize($tmp) === 0) {
+            @unlink($tmp);
+            json_response(500, ['ok'=>false,'error'=>'could not build preview']);
+        }
+        @chmod($tmp, 0664);
+        if (!@rename($tmp, $cachePath)) {
+            @unlink($tmp);
+            json_response(500, ['ok'=>false,'error'=>'could not cache preview']);
+        }
+
+        // Keep only the current derived preview for this source image.
+        foreach (glob($PREVIEW_CACHE.'/'.$file.'.*.png') ?: [] as $old) {
+            if ($old !== $cachePath) @unlink($old);
+        }
+    }
+
+    header('Content-Type: image/png');
+    header('Content-Length: '.(string)filesize($cachePath));
     header('Content-Disposition: inline; filename="review-'.$file.'"');
-    readfile($tmp); @unlink($tmp); exit;
+    header('X-Avian-Preview-Cache: '.($cacheHit ? 'hit' : 'miss'));
+    readfile($cachePath);
+    exit;
 }
 
 if ($method !== 'POST') json_response(405, ['ok'=>false,'error'=>'method not allowed']);

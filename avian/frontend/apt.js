@@ -7520,7 +7520,7 @@
           var preview = './avian/api/cutout-review.php?action=preview&file=' + encodeURIComponent(item.file)
             + '&v=' + encodeURIComponent(item.mtime || data.generated_at || '1');
           html += '<article class="cutrev-card" data-file="' + adminEsc(item.file) + '" data-review="' + adminEsc(item.review || 'pending') + '">'
-            + '<img class="cutrev-img" loading="lazy" decoding="async" src="' + preview + '" alt="Previsualització de ' + adminEsc(name) + '">'
+            + '<img class="cutrev-img" loading="lazy" decoding="async" fetchpriority="low" src="' + preview + '" alt="Previsualització de ' + adminEsc(name) + '">'
             + '<div class="cutrev-body">'
             + '<h3 class="cutrev-name">' + adminEsc(name) + '</h3>'
             + '<p class="cutrev-sci">' + adminEsc(sci) + ' · pose ' + (+item.pose || 1) + '</p>'

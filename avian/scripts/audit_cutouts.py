@@ -363,13 +363,15 @@ def main() -> int:
     modes.add_argument("--refresh", metavar="FILE")
     modes.add_argument("--recut", metavar="FILE")
     ap.add_argument("--preview-output", type=Path)
+    ap.add_argument("--preview-size", type=int, default=1100,
+                    help="diagnostic preview width in pixels (default: 1100)")
     args = ap.parse_args()
     root = args.dir.resolve()
     try:
         if args.preview is not None:
             if args.preview_output is None:
                 ap.error("--preview requires --preview-output")
-            return render_preview(root, args.preview, args.preview_output)
+            return render_preview(root, args.preview, args.preview_output, preview_size=max(320, min(1600, args.preview_size)))
         if args.refresh is not None:
             item = inspect_and_update(root, args.output, args.refresh)
             print(json.dumps({"ok": True, "item": item}, ensure_ascii=False))
