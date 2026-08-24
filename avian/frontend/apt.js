@@ -7384,6 +7384,247 @@
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" '
       + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + TOOL_ICONS[unit] + '</svg>';
   }
+  // Illustration cutout review: high-confidence audit queue (score >= 40).
+  // Manual decisions are local station state; this screen never modifies artwork.
+  function renderCutoutReview() {
+    adminSect = 'cutouts';
+    adminTitle.textContent = "Revisió d’il·lustracions";
+
+    var filter = 'pending';
+    var levelFilter = 'candidate';
+    var page = 0;
+    var pageSize = 24;
+    var data = null;
+    var busyAudit = false;
+    var auditPoll = null;
+
+    function css() {
+      return '<style id="cutoutReviewStyle">'
+        + '.cutrev-top{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 18px}'
+        + '.cutrev-back,.cutrev-audit,.cutrev-mark{font:600 12px/1 system-ui,sans-serif;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:9px 13px;cursor:pointer}'
+        + '.cutrev-audit{background:var(--ink);color:var(--paper)}.cutrev-audit:disabled,.cutrev-mark:disabled{opacity:.45;cursor:default}'
+        + '.cutrev-summary{display:grid;grid-template-columns:repeat(5,minmax(90px,1fr));gap:8px;margin:0 0 18px}'
+        + '.cutrev-stat{border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0}.cutrev-stat b{display:block;font:700 20px/1.1 ui-monospace,monospace}.cutrev-stat span{display:block;margin-top:5px;font:10px/1.2 system-ui,sans-serif;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em}'
+        + '.cutrev-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 16px}.cutrev-filters button{font:600 11px/1 system-ui,sans-serif;border:1px solid var(--line);background:transparent;color:var(--ink-soft);border-radius:999px;padding:8px 11px;cursor:pointer}.cutrev-filters button[aria-current="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}'
+        + '.cutrev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}'
+        + '.cutrev-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper);min-width:0}.cutrev-card[data-review="good"]{opacity:.72}.cutrev-card[data-review="bad"]{box-shadow:inset 0 0 0 2px rgba(190,45,35,.28)}'
+        + '.cutrev-img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#14cdbe}.cutrev-body{padding:11px 12px 12px}.cutrev-name{font:650 13px/1.25 system-ui,sans-serif;margin:0 0 3px}.cutrev-sci{font:10px/1.25 ui-monospace,monospace;color:var(--ink-soft);margin:0 0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+        + '.cutrev-metrics{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.cutrev-chip{font:9px/1 ui-monospace,monospace;border:1px solid var(--line);border-radius:999px;padding:5px 7px}.cutrev-chip.hot{border-color:#b9362c;color:#a52f27}.cutrev-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cutrev-mark.good[data-active="1"]{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-mark.bad[data-active="1"]{background:#9f332b;color:#fff;border-color:#9f332b}'
+        + '.cutrev-empty{padding:40px 12px;text-align:center;color:var(--ink-soft)}.cutrev-pager{display:flex;justify-content:center;gap:10px;align-items:center;margin:18px 0 4px}.cutrev-pager button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 12px;cursor:pointer}.cutrev-pager button:disabled{opacity:.35;cursor:default}.cutrev-note{font:11px/1.45 system-ui,sans-serif;color:var(--ink-soft);margin:-8px 0 16px}'
+        + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}}'
+        + '</style>';
+    }
+
+    function api(action, body) {
+      var url = './avian/api/cutout-review.php?action=' + encodeURIComponent(action);
+      var opts = { credentials: 'same-origin', cache: 'no-store' };
+      if (body) {
+        opts.method = 'POST';
+        opts.headers = { 'Content-Type': 'application/json', 'X-Avian-Action': '1' };
+        opts.body = JSON.stringify(body);
+      }
+      return fetch(url, opts).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+          return j;
+        });
+      });
+    }
+
+    function sciFor(item) {
+      var found = '';
+      Object.keys(CA_NAMES || {}).some(function (sci) {
+        if (slugify(sci) === item.slug) { found = sci; return true; }
+        return false;
+      });
+      if (found) return found;
+      var species = ((DATA.lifelist && DATA.lifelist.species) || []).find(function (sp) {
+        return slugify(sp.sci) === item.slug;
+      });
+      return species ? species.sci : item.slug.replace(/-/g, ' ');
+    }
+
+    function levelCa(level) {
+      return { very_high: 'molt alta', high: 'alta', medium: 'mitjana', low: 'baixa', very_low: 'molt baixa' }[level] || level;
+    }
+
+    function candidates() {
+      if (!data) return [];
+      return (data.items || []).filter(function (item) {
+        if (filter === 'pending' && !(item.review === 'pending' && item.review_candidate)) return false;
+        if (filter === 'bad' && item.review !== 'bad') return false;
+        if (filter === 'good' && item.review !== 'good') return false;
+        if (filter === 'all' && false) return false;
+        if (levelFilter === 'candidate' && +item.score < 40) return false;
+        if (levelFilter === 'very_high' && item.level !== 'very_high') return false;
+        if (levelFilter === 'high' && item.level !== 'high') return false;
+        if (levelFilter === 'medium' && item.level !== 'medium') return false;
+        if (levelFilter === 'all') return true;
+        return true;
+      });
+    }
+
+    function render() {
+      if (!data) {
+        adminBody.innerHTML = css()
+          + '<div class="cutrev-top"><button class="cutrev-back" id="cutrevBack">← Eines</button></div>'
+          + '<div class="cutrev-empty">Carregant l’auditoria...</div>';
+        wireBase();
+        return;
+      }
+
+      var s = data.summary || {};
+      var audit = data.audit || {};
+      var running = !!audit.running;
+      var progress = running && audit.total ? (' · ' + (audit.done || 0) + '/' + audit.total) : '';
+      var list = candidates();
+      var pages = Math.max(1, Math.ceil(list.length / pageSize));
+      if (page >= pages) page = pages - 1;
+      var start = page * pageSize;
+      var shown = list.slice(start, start + pageSize);
+
+      var html = css();
+      html += '<div class="cutrev-top">'
+        + '<button class="cutrev-back" id="cutrevBack">← Eines</button>'
+        + '<button class="cutrev-audit" id="cutrevAudit"' + (running || busyAudit ? ' disabled' : '') + '>'
+        + (running ? 'Analitzant' + progress : (busyAudit ? 'Iniciant...' : 'Analitza de nou')) + '</button>'
+        + '</div>';
+      html += '<div class="cutrev-summary">'
+        + '<div class="cutrev-stat"><b>' + (+s.total || 0) + '</b><span>imatges</span></div>'
+        + '<div class="cutrev-stat"><b>' + (+s.pending || 0) + '</b><span>pendents</span></div>'
+        + '<div class="cutrev-stat"><b>' + (+s.very_likely_bad || 0) + '</b><span>molt probables</span></div>'
+        + '<div class="cutrev-stat"><b>' + (+s.good || 0) + '</b><span>correctes</span></div>'
+        + '<div class="cutrev-stat"><b>' + (+s.bad || 0) + '</b><span>incorrectes</span></div>'
+        + '</div>';
+      html += '<p class="cutrev-note">La cua pendent només inclou candidats amb score ≥ 40. Marcar una imatge no modifica el PNG.</p>';
+
+      html += '<div class="cutrev-filters" data-cutrev-filter>'
+        + [['pending','Pendents'],['bad','Incorrectes'],['good','Correctes'],['all','Totes']].map(function (x) {
+          return '<button data-filter="' + x[0] + '" aria-current="' + (filter === x[0] ? 'true' : 'false') + '">' + x[1] + '</button>';
+        }).join('') + '</div>';
+      html += '<div class="cutrev-filters" data-cutrev-level>'
+        + [['candidate','Alta + molt alta'],['very_high','Molt alta'],['high','Alta'],['medium','Mitjana'],['all','Tots els nivells']].map(function (x) {
+          return '<button data-level="' + x[0] + '" aria-current="' + (levelFilter === x[0] ? 'true' : 'false') + '">' + x[1] + '</button>';
+        }).join('') + '</div>';
+
+      if (!shown.length) {
+        html += '<div class="cutrev-empty">No hi ha il·lustracions en aquest filtre.</div>';
+      } else {
+        html += '<div class="cutrev-grid">';
+        shown.forEach(function (item) {
+          var sci = sciFor(item);
+          var name = displayNameBySci(sci, sci);
+          var preview = './avian/api/cutout-review.php?action=preview&file=' + encodeURIComponent(item.file)
+            + '&v=' + encodeURIComponent(item.mtime || data.generated_at || '1');
+          html += '<article class="cutrev-card" data-file="' + adminEsc(item.file) + '" data-review="' + adminEsc(item.review || 'pending') + '">'
+            + '<img class="cutrev-img" loading="lazy" decoding="async" src="' + preview + '" alt="Previsualització de ' + adminEsc(name) + '">'
+            + '<div class="cutrev-body">'
+            + '<h3 class="cutrev-name">' + adminEsc(name) + '</h3>'
+            + '<p class="cutrev-sci">' + adminEsc(sci) + ' · pose ' + (+item.pose || 1) + '</p>'
+            + '<div class="cutrev-metrics">'
+            + '<span class="cutrev-chip' + (+item.score >= 70 ? ' hot' : '') + '">score ' + (+item.score).toFixed(1) + '</span>'
+            + '<span class="cutrev-chip">' + adminEsc(levelCa(item.level)) + '</span>'
+            + '<span class="cutrev-chip">forat ' + (+item.hole_pct).toFixed(2) + '%</span>'
+            + '<span class="cutrev-chip">alpha ' + (+item.partial_pct).toFixed(2) + '%</span>'
+            + (item.has_raw ? '<span class="cutrev-chip">raw disponible</span>' : '')
+            + '</div>'
+            + '<div class="cutrev-actions">'
+            + '<button class="cutrev-mark good" data-status="good" data-active="' + (item.review === 'good' ? '1' : '0') + '">✓ Correcta</button>'
+            + '<button class="cutrev-mark bad" data-status="bad" data-active="' + (item.review === 'bad' ? '1' : '0') + '">✕ Incorrecta</button>'
+            + '</div></div></article>';
+        });
+        html += '</div>';
+      }
+
+      html += '<div class="cutrev-pager">'
+        + '<button id="cutrevPrev"' + (page <= 0 ? ' disabled' : '') + '>←</button>'
+        + '<span>' + (list.length ? (start + 1) : 0) + '–' + Math.min(start + pageSize, list.length) + ' de ' + list.length + '</span>'
+        + '<button id="cutrevNext"' + (page >= pages - 1 ? ' disabled' : '') + '>→</button>'
+        + '</div>';
+      adminBody.innerHTML = html;
+      wire();
+    }
+
+    function wireBase() {
+      var back = document.getElementById('cutrevBack');
+      if (back) back.addEventListener('click', function () {
+        if (auditPoll) { clearTimeout(auditPoll); auditPoll = null; }
+        adminTitle.textContent = ADMIN_TITLES.tools;
+        renderAdminTools();
+      });
+    }
+
+    function load() {
+      return api('list').then(function (j) {
+        data = j;
+        busyAudit = false;
+        render();
+        if (j.audit && j.audit.running) {
+          clearTimeout(auditPoll);
+          auditPoll = setTimeout(load, 1200);
+        }
+      }).catch(function (e) {
+        adminBody.innerHTML = css()
+          + '<div class="cutrev-top"><button class="cutrev-back" id="cutrevBack">← Eines</button></div>'
+          + '<div class="cutrev-empty">No s’ha pogut carregar la revisió: ' + adminEsc(e.message || e) + '</div>';
+        wireBase();
+      });
+    }
+
+    function mark(file, status, button) {
+      var card = button.closest('.cutrev-card');
+      var buttons = card ? card.querySelectorAll('.cutrev-mark') : [];
+      buttons.forEach(function (b) { b.disabled = true; });
+      api('mark', { action: 'mark', file: file, status: status }).then(function (j) {
+        data = j;
+        // On the pending queue a reviewed card disappears immediately.
+        render();
+      }).catch(function (e) {
+        buttons.forEach(function (b) { b.disabled = false; });
+        alert("No s’ha pogut desar la revisió: " + (e.message || e));
+      });
+    }
+
+    function wire() {
+      wireBase();
+      var audit = document.getElementById('cutrevAudit');
+      if (audit) audit.addEventListener('click', function () {
+        busyAudit = true;
+        render();
+        api('audit', { action: 'audit' }).then(function () {
+          clearTimeout(auditPoll);
+          auditPoll = setTimeout(load, 500);
+        }).catch(function (e) {
+          busyAudit = false;
+          render();
+          alert("No s’ha pogut iniciar l’auditoria: " + (e.message || e));
+        });
+      });
+      adminBody.querySelectorAll('[data-cutrev-filter] button').forEach(function (b) {
+        b.addEventListener('click', function () { filter = b.dataset.filter; page = 0; render(); });
+      });
+      adminBody.querySelectorAll('[data-cutrev-level] button').forEach(function (b) {
+        b.addEventListener('click', function () { levelFilter = b.dataset.level; page = 0; render(); });
+      });
+      adminBody.querySelectorAll('.cutrev-card').forEach(function (card) {
+        card.querySelectorAll('.cutrev-mark').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var status = b.dataset.status;
+            var current = card.dataset.review || 'pending';
+            mark(card.dataset.file, current === status ? 'pending' : status, b);
+          });
+        });
+      });
+      var prev = document.getElementById('cutrevPrev');
+      var next = document.getElementById('cutrevNext');
+      if (prev) prev.addEventListener('click', function () { if (page > 0) { page--; render(); adminBody.scrollTop = 0; } });
+      if (next) next.addEventListener('click', function () { page++; render(); adminBody.scrollTop = 0; });
+    }
+
+    render();
+    load();
+  }
+
   function renderAdminTools() {
     var actions = [
       ['recording', "captura l'àudio del micròfon", 'birdnet_recording'],
@@ -7405,6 +7646,16 @@
         + '</button>';
     });
     html += '</div>';
+
+    html += '<h2 class="admin-section-head">il·lustracions</h2>';
+    html += '<div class="admin-actions-grid">'
+      + '<button type="button" class="admin-action" id="cutoutReviewOpen">'
+      + '<span class="run">revisa</span>'
+      + '<h4>Revisió d’il·lustracions</h4>'
+      + '<p>detecta transparències incorrectes i valida els retalls sospitosos</p>'
+      + '<span class="state" id="cutoutReviewSummary">carregant...</span>'
+      + '</button>'
+      + '</div>';
 
     html += '<h2 class="admin-section-head">actualització</h2>';
     html += '<div class="admin-actions-grid">';
@@ -7448,6 +7699,26 @@
       + '</div>';
     html += '</div>';
     adminBody.innerHTML = html;
+
+    var cutoutReviewOpen = document.getElementById('cutoutReviewOpen');
+    var cutoutReviewSummary = document.getElementById('cutoutReviewSummary');
+    if (cutoutReviewOpen) {
+      cutoutReviewOpen.addEventListener('click', renderCutoutReview);
+      adminApi('./avian/api/cutout-review.php?action=list').then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+          if (!cutoutReviewSummary || !document.body.contains(cutoutReviewSummary)) return;
+          var sum = j.summary || {};
+          cutoutReviewSummary.textContent = j.needs_audit
+            ? 'cal fer una auditoria'
+            : ((+sum.pending || 0) + ' pendents · ' + (+sum.very_likely_bad || 0) + ' molt probables');
+        });
+      }).catch(function () {
+        if (cutoutReviewSummary && document.body.contains(cutoutReviewSummary)) {
+          cutoutReviewSummary.textContent = 'revisió no disponible';
+        }
+      });
+    }
 
     // The archive stays an optional extra, but Tools owns its setup and
     // day-to-day controls. Google authorization is the only terminal step;

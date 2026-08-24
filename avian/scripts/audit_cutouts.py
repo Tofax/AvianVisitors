@@ -184,6 +184,8 @@ def analyze_image(
         "score": round(score, 3),
         "level": score_level(score),
         "suspicious": suspicious,
+        "review_candidate": score >= 40.0,
+        "very_likely_bad": score >= 70.0,
         "hole_pixels": hole_pixels,
         "hole_pct": round(hole_pct_foreground, 4),
         "partial_pixels": partial_pixels,
@@ -247,10 +249,16 @@ def run_audit(root: Path, output: Path, state: Path) -> int:
 
     level_counts = {key: 0 for key in ("very_high", "high", "medium", "low", "very_low")}
     suspicious_count = 0
+    review_candidates = 0
+    very_likely_bad = 0
     for item in items:
         level_counts[item["level"]] += 1
         if item["suspicious"]:
             suspicious_count += 1
+        if item["review_candidate"]:
+            review_candidates += 1
+        if item["very_likely_bad"]:
+            very_likely_bad += 1
 
     document = {
         "schema": SCHEMA_VERSION,
@@ -261,6 +269,8 @@ def run_audit(root: Path, output: Path, state: Path) -> int:
         "errors": errors,
         "summary": {
             "suspicious": suspicious_count,
+            "review_candidates": review_candidates,
+            "very_likely_bad": very_likely_bad,
             "levels": level_counts,
         },
         "items": items,

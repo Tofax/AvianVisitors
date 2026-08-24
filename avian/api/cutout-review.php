@@ -127,6 +127,8 @@ function merged_list(string $auditPath, string $reviewPath, string $statePath, i
         'good' => 0,
         'bad' => 0,
         'suspicious' => 0,
+        'review_candidates' => 0,
+        'very_likely_bad' => 0,
         'very_high' => 0,
         'high' => 0,
         'medium' => 0,
@@ -141,11 +143,27 @@ function merged_list(string $auditPath, string $reviewPath, string $statePath, i
         $status = is_array($review) ? (string)($review['status'] ?? 'pending') : 'pending';
         if (!in_array($status, ['pending', 'good', 'bad'], true)) $status = 'pending';
 
+        $score = (float)($item['score'] ?? 0);
+        $candidate = array_key_exists('review_candidate', $item)
+            ? !empty($item['review_candidate'])
+            : $score >= 40.0;
+        $veryLikely = array_key_exists('very_likely_bad', $item)
+            ? !empty($item['very_likely_bad'])
+            : $score >= 70.0;
+        $item['review_candidate'] = $candidate;
+        $item['very_likely_bad'] = $veryLikely;
         $item['review'] = $status;
         $item['reviewed_at'] = is_array($review) ? ($review['reviewed_at'] ?? null) : null;
         $items[] = $item;
 
-        $counts[$status]++;
+        // "Pending" is the actionable queue, not every unreviewed image.
+        if ($status === 'pending') {
+            if ($candidate) $counts['pending']++;
+        } else {
+            $counts[$status]++;
+        }
+        if ($candidate) $counts['review_candidates']++;
+        if ($veryLikely) $counts['very_likely_bad']++;
         if (!empty($item['suspicious'])) $counts['suspicious']++;
         $level = (string)($item['level'] ?? '');
         if (array_key_exists($level, $counts)) $counts[$level]++;
@@ -162,6 +180,8 @@ function merged_list(string $auditPath, string $reviewPath, string $statePath, i
             'good' => $counts['good'],
             'bad' => $counts['bad'],
             'suspicious' => $counts['suspicious'],
+            'review_candidates' => $counts['review_candidates'],
+            'very_likely_bad' => $counts['very_likely_bad'],
             'levels' => [
                 'very_high' => $counts['very_high'],
                 'high' => $counts['high'],
