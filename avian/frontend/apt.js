@@ -2487,7 +2487,6 @@
     var hit = maskHitTest(ev.clientX, ev.clientY);
     if (!hit) return;
     location.hash = '#sci=' + encodeURIComponent(hit.data.sci);
-    go(2);
   });
 
   // Debug hook - call __layout({ slugs, weights, n }) from devtools to
@@ -7920,8 +7919,13 @@
     if (location.hash === '#about') openAbout(); else closeAbout();
     if (adm) { openAdmin(adm); return; }
     closeAdmin();
-    if (sci) { go(2); highlightAtlas(sci); openDetailModal(sci); }
-    else { highlightAtlas(null); closeDetailModal(); }
+    if (sci) {
+      if (currentView === 2) highlightAtlas(sci);
+      openDetailModal(sci);
+    } else {
+      highlightAtlas(null);
+      closeDetailModal();
+    }
   }
   if (readAdminHash()) openAdmin(readAdminHash());
   if (location.hash === '#about') openAbout();
@@ -8592,11 +8596,15 @@
   // propagation themselves.
   function jumpToSci(sci) {
     if (!sci) return;
-    if (location.hash !== '#sci=' + encodeURIComponent(sci)) {
-      location.hash = '#sci=' + encodeURIComponent(sci);
+
+    var hash = '#sci=' + encodeURIComponent(sci);
+
+    if (location.hash !== hash) {
+      location.hash = hash;
     } else {
-      // Same hash -> still re-highlight (the user clicked it again).
-      go(2); highlightAtlas(sci);
+      // Same hash: reopen the detail without changing the current view.
+      if (currentView === 2) highlightAtlas(sci);
+      openDetailModal(sci);
     }
   }
 
