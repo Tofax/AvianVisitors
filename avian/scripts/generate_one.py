@@ -53,67 +53,163 @@ def write_state(**kw) -> None:
 
 
 def chroma_cut(src: Path, dst: Path) -> None:
-    """Instant cutout for a cream-ground render: everything reachable from
-    the border through near-paper pixels is background; everything else is
-    bird. Enclosed pale patches (a white belly) are unreachable, so they
-    stay opaque - the same property the BiRefNet pipeline's fill step has
-    to reconstruct. Edges get a light feather instead of a learned matte.
+    """Instant cutout for a cream-ground render.
 
-    The paper tolerance adapts per image: the model renders real grain
-    and a slight vignette, so the ground's distance-from-corner-paper
-    varies render to render (a fixed tolerance either strands ground or
-    eats pale plumage). The border strips are guaranteed paper - their
-    99th percentile, widened, clears grain and vignette while staying
-    far below the inked outline."""
+    Only paper connected to the image border becomes transparent.
+    A conservative adaptive threshold plus a small connectivity barrier
+    prevents the flood from leaking through pale or weakly inked parts of
+    white birds.
+
+    The final alpha is binary in the interior and feathered only along the
+    outer silhouette.
+    """
     im = Image.open(src).convert("RGB")
     arr = np.asarray(im)
+
     h, w, _ = arr.shape
-    corners = np.concatenate([arr[:15, :15].reshape(-1, 3), arr[:15, -15:].reshape(-1, 3),
-                              arr[-15:, :15].reshape(-1, 3), arr[-15:, -15:].reshape(-1, 3)])
+
+    # Estimate the paper colour from the four corners.
+    corners = np.concatenate([
+        arr[:15, :15].reshape(-1, 3),
+        arr[:15, -15:].reshape(-1, 3),
+        arr[-15:, :15].reshape(-1, 3),
+        arr[-15:, -15:].reshape(-1, 3),
+    ])
+
     paper = np.median(corners, axis=0)
-    dist = np.sqrt(((arr.astype(np.int32) - paper) ** 2).sum(2))
-    border = np.concatenate([dist[:40, :].ravel(), dist[-40:, :].ravel(),
-                             dist[:, :40].ravel(), dist[:, -40:].ravel()])
-    tol = float(min(40.0, max(15.0, 2.5 * np.percentile(border, 99))))
+
+    dist = np.sqrt(
+        ((arr.astype(np.int32) - paper) ** 2).sum(2)
+    )
+
+    # Measure genuine paper variation on the outer strips.
+    border = np.concatenate([
+        dist[:40, :].ravel(),
+        dist[-40:, :].ravel(),
+        dist[:, :40].ravel(),
+        dist[:, -40:].ravel(),
+    ])
+
+    # IMPORTANT:
+    # The previous 2.5 * percentile(99) could reach 40 and classify white
+    # plumage as paper. We only add a modest safety margin to the measured
+    # variation and cap it considerably lower.
+    paper_p99 = float(np.percentile(border, 99))
+    tol = float(min(28.0, max(12.0, paper_p99 + 6.0)))
+
     passable = dist < tol
 
-    # Flood the passable region from the border (ImageDraw.floodfill runs
-    # at C speed; seeds cover each edge in case a wing splits the margin).
-    # The .copy() is load-bearing: floodfill's writes are lost on a
-    # numpy-buffer-backed image (observed on Pillow 12.3).
-    m = Image.fromarray(np.where(passable, 128, 0).astype(np.uint8)).copy()
-    seeds = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1),
-             (w // 2, 0), (w // 2, h - 1), (0, h // 2), (w - 1, h // 2)]
+    # Shrink the passable-paper mask slightly before flooding.
+    #
+    # This closes tiny gaps in the bird outline so pale internal plumage
+    # cannot accidentally become connected to the external background.
+    #
+    # This mask is only used for connectivity; it does not modify RGB.
+    pass_img = Image.fromarray(
+        passable.astype(np.uint8) * 255
+    )
+
+    pass_img = pass_img.filter(ImageFilter.MinFilter(5))
+    passable_for_flood = np.asarray(pass_img) > 127
+
+    # 128 = candidate paper
+    #   0 = barrier / foreground
+    # 255 = confirmed exterior paper
+    m = Image.fromarray(
+        np.where(passable_for_flood, 128, 0).astype(np.uint8)
+    ).copy()
+
+    # Seed many positions along all four edges instead of only eight points.
+    # This is more robust when the bird or a branch touches one side.
+    seeds = []
+
+    step_x = max(1, w // 32)
+    step_y = max(1, h // 32)
+
+    for x in range(0, w, step_x):
+        seeds.append((x, 0))
+        seeds.append((x, h - 1))
+
+    for y in range(0, h, step_y):
+        seeds.append((0, y))
+        seeds.append((w - 1, y))
+
+    seeds.extend([
+        (0, 0),
+        (w - 1, 0),
+        (0, h - 1),
+        (w - 1, h - 1),
+    ])
+
     for s in seeds:
         if m.getpixel(s) == 128:
             ImageDraw.floodfill(m, s, 255)
+
     exterior = np.asarray(m) == 255
-    if exterior.mean() < 0.5:
-        raise RuntimeError(f"cutout flood failed (tol {tol:.0f}, "
-                           f"exterior {100 * exterior.mean():.0f}%) - raw kept for the upgrade pass")
+    exterior_frac = float(exterior.mean())
 
+    if exterior_frac < 0.40:
+        raise RuntimeError(
+            f"cutout flood failed "
+            f"(tol {tol:.1f}, paper99 {paper_p99:.1f}, "
+            f"exterior {100 * exterior_frac:.0f}%) - "
+            f"raw kept for the upgrade pass"
+        )
+
+    # Everything not connected to the external paper is foreground.
+    # This automatically fills enclosed pale regions such as white bellies.
     solid = ~exterior
-    # Opening (erode then dilate) drops stray grain specks the flood
-    # couldn't reach without nibbling the bird.
-    sm = Image.fromarray(solid.astype(np.uint8) * 255)
-    sm = sm.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
-    solid = np.asarray(sm) > 127
-    binary = solid.astype(np.uint8) * 255
-    # Feather: soften the silhouette edge, keep the interior fully opaque,
-    # never bleed outside the silhouette.
-    af = np.asarray(Image.fromarray(binary).filter(ImageFilter.GaussianBlur(0.8))).copy()
-    af[~solid] = 0
 
-    rgba = np.dstack([arr, af]).astype(np.uint8)
-    fg = af > 40
+    # Remove isolated grain/specks without opening holes in the bird.
+    sm = Image.fromarray(solid.astype(np.uint8) * 255)
+    sm = sm.filter(ImageFilter.MinFilter(3))
+    sm = sm.filter(ImageFilter.MaxFilter(3))
+    solid = np.asarray(sm) > 127
+
+    # Fully opaque interior.
+    binary = solid.astype(np.uint8) * 255
+
+    # Feather ONLY the silhouette boundary.
+    feather = np.asarray(
+        Image.fromarray(binary).filter(
+            ImageFilter.GaussianBlur(0.65)
+        )
+    ).copy()
+
+    feather[~solid] = 0
+
+    # Avoid large semi-transparent regions. Anything sufficiently inside the
+    # foreground is forced fully opaque.
+    feather[(solid) & (feather >= 220)] = 255
+
+    rgba = np.dstack([arr, feather]).astype(np.uint8)
+
+    fg = feather > 40
     ys, xs = np.where(fg)
+
     if not len(ys):
-        raise RuntimeError("cutout produced an empty image (bad ground?)")
-    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    pad = round(0.03 * max(y1 - y0, x1 - x0))
-    y0 = max(0, y0 - pad); x0 = max(0, x0 - pad)
-    y1 = min(h, y1 + pad); x1 = min(w, x1 + pad)
-    Image.fromarray(rgba[y0:y1, x0:x1], "RGBA").save(dst)
+        raise RuntimeError(
+            "cutout produced an empty image (bad ground?)"
+        )
+
+    y0 = ys.min()
+    y1 = ys.max() + 1
+    x0 = xs.min()
+    x1 = xs.max() + 1
+
+    pad = round(
+        0.03 * max(y1 - y0, x1 - x0)
+    )
+
+    y0 = max(0, y0 - pad)
+    x0 = max(0, x0 - pad)
+    y1 = min(h, y1 + pad)
+    x1 = min(w, x1 + pad)
+
+    Image.fromarray(
+        rgba[y0:y1, x0:x1],
+        "RGBA"
+    ).save(dst)
 
 
 def record_cut(slug: str, kind: str) -> None:

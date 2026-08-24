@@ -4365,7 +4365,6 @@
       placeNext();
     }
 
-    if (forced && currentView !== 2) go(2);
     if (currentView === 2) { setTimeout(play, 850); return; }
     // wait until the atlas is brought forward
     var t = setInterval(function () {
