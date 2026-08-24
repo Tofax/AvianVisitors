@@ -88,3 +88,9 @@ avian/assets/illustrations/.generate.starts
 avian/assets/illustrations/.generate.state.json
 avian/assets/illustrations/cuts.json
 avian/assets/illustrations/raw/
+
+# AvianVisitors cutout audit/review state (local runtime data)
+avian/assets/illustrations/.cutout-audit.json
+avian/assets/illustrations/.cutout-audit.state.json
+avian/assets/illustrations/.cutout-audit.log
+avian/assets/illustrations/.cutout-review.json
