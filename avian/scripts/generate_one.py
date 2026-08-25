@@ -192,20 +192,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
 
-        # Paper clar/crema. Aquesta via NO pot ser només "clar + poc saturat":
-        # plomatge beix/blanc (gaig, gal·línula, etc.) també compleix això i,
-        # si té una connexió estreta amb l'exterior, el flood se'l menja.
-        #
-        # Exigim també proximitat cromàtica real al paper mostrejat. Això
-        # manté transitables gradients i gra del fons, però talla la propagació
-        # quan entra en plomatge clar encara que la luminància sigui semblant.
-        light_paper_tol = float(
-            min(46.0, max(26.0, paper_p99 + 8.0))
-        )
+        # Paper crema: molt clar i amb poca saturació.
+        # És deliberadament permissiu perquè després encara exigim
+        # connectivitat amb l'exterior.
         light_paper = (
-            (value > 0.70)
-            & (saturation < 0.26)
-            & (dist < light_paper_tol)
+            (value > 0.68)
+            & (saturation < 0.32)
         )
 
         # El matching cromàtic normal utilitza una protecció ampla.
@@ -527,57 +519,64 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # ------------------------------------------------------------------
     # PAPER TANCAT ENTRE POTES / DITS
     # ------------------------------------------------------------------
-    # Algunes zones de paper són realment fons però queden completament
-    # tancades per les potes o els peus, de manera que el flood exterior
-    # no hi pot arribar.
+    # El flood exterior no pot arribar a alguns buits completament tancats
+    # entre potes, dits o plomes. En aquesta fase hem de ser MOLT més
+    # conservadors que en el flood exterior: només eliminem píxels que
+    # cromàticament s'assemblen de debò al paper mostrejat.
     #
-    # Només considerem components que:
-    #   - ja eren paper candidat a best_passable,
-    #   - no han estat assolits pel flood exterior,
-    #   - són relativament petits,
-    #   - i estan a la part inferior de la silueta.
-    #
-    # Això evita eliminar grans regions clares legítimes com pit o ventre.
+    # Important: abans fèiem components sobre tot `best_passable`. Això podia
+    # agrupar plomatge pàl·lid amb una petita zona de paper i acabar esborrant
+    # una regió gran de l'ocell (p. ex. cos/cua del gaig). Ara els components
+    # es construeixen exclusivament sobre paper cromàtic estricte i només
+    # s'eliminen aquests mateixos píxels.
 
     if best_passable is not None:
+        # Paper interior que el flood exterior no ha pogut assolir.
         enclosed_passable = best_passable & ~exterior & clean
 
-        # Els forats interiors són la part més delicada del chroma cut:
-        # una zona clara del plomatge pot assemblar-se molt al paper.
-        #
-        # Per això aquí som deliberadament MÉS estrictes que al flood exterior.
-        # No n'hi ha prou que el píxel sigui simplement clar i poc saturat:
-        # també ha de ser cromàticament proper al paper real mostrejat a la vora.
-        hole_tol = min(max_tol, paper_p95 + 3.0)
-
+        # Llindar estricte basat en la variació REAL del paper. No utilitzem
+        # una via alternativa basada només en lluminositat/saturació, perquè
+        # plomatge crema/beix també podria complir-la.
+        hole_tol = float(max(10.0, min(32.0, paper_p95 + 2.0)))
         strict_hole_like = (
             (dist < hole_tol)
-            & (value > 0.70)
-            & (saturation < 0.24)
+            & (saturation < 0.30)
+            & (value > 0.55)
         )
 
+        # Els components es creen només amb píxels que realment semblen paper.
+        enclosed_hole = enclosed_passable & strict_hole_like
         hole_seen = np.zeros((h, w), dtype=bool)
 
         bird_height = y1 - y0 + 1
 
-        # Només considerem forats amb centre a la zona baixa de l'ocell.
-        lower_limit = y0 + int(0.55 * bird_height)
+        # Els buits problemàtics entre potes/dits acostumen a quedar a la
+        # meitat inferior. Evitem actuar sobre pit, coll i ales superiors.
+        lower_limit = y0 + int(0.52 * bird_height)
 
-        # Ignorem components petits: solen ser textura o detalls de l'ocell.
-        min_hole_size = 512
+        # En usar una màscara de paper estricta els components són més petits
+        # que abans; per això el mínim també és més baix.
+        min_hole_size = 96
+        max_hole_size = max(384, int(main_size * 0.035))
 
-        # Límit relatiu a la mida real del foreground principal.
-        max_hole_size = max(
-            256,
-            int(main_size * 0.06)
+        reliable_fg = (
+            strong_fg
+            | colored_restore
+            | pale_plumage_restore
         )
+
+        reliable_img = Image.fromarray(
+            reliable_fg.astype(np.uint8) * 255
+        )
+
+        # Banda molt estreta que protegeix el contorn real de potes/plomes.
+        contour_band = np.asarray(
+            reliable_img.filter(ImageFilter.MaxFilter(3))
+        ) > 127
 
         for hy in range(h):
             for hx in range(w):
-                if (
-                    not enclosed_passable[hy, hx]
-                    or hole_seen[hy, hx]
-                ):
+                if not enclosed_hole[hy, hx] or hole_seen[hy, hx]:
                     continue
 
                 q = deque([(hx, hy)])
@@ -601,16 +600,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
                         if (
                             0 <= nx < w
                             and 0 <= ny < h
-                            and enclosed_passable[ny, nx]
+                            and enclosed_hole[ny, nx]
                             and not hole_seen[ny, nx]
                         ):
                             hole_seen[ny, nx] = True
                             q.append((nx, ny))
 
-                if len(hole) < min_hole_size:
-                    continue
-
-                if len(hole) > max_hole_size:
+                if len(hole) < min_hole_size or len(hole) > max_hole_size:
                     continue
 
                 hole_xs = [px for px, py in hole]
@@ -622,105 +618,37 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
                 hx0, hx1 = min(hole_xs), max(hole_xs)
                 hy0, hy1 = min(hole_ys), max(hole_ys)
-
                 hole_w = hx1 - hx0 + 1
                 hole_h = hy1 - hy0 + 1
 
-                hole_mask = np.zeros((h, w), dtype=bool)
-                for px, py in hole:
-                    hole_mask[py, px] = True
-
-                reliable_fg = (
-                    strong_fg
-                    | colored_restore
-                    | pale_plumage_restore
-                )
-
-                reliable_img = Image.fromarray(
-                    reliable_fg.astype(np.uint8) * 255
-                )
-
-                # Banda que segueix el contorn del foreground fiable.
-                contour_keep = np.asarray(
-                    reliable_img.filter(ImageFilter.MaxFilter(5))
-                ) > 127
-
-                # Només ens interessa dins del forat actual.
-                contour_keep &= hole_mask
-
-                # Evita eliminar franges molt primes i allargades (potes).
+                # Evita franges llargues que poden correspondre a plomes, potes
+                # o vores clares de la silueta.
                 aspect = max(hole_w, hole_h) / max(1, min(hole_w, hole_h))
-                if aspect > 3.0:
+                if aspect > 4.0:
                     continue
 
-                # Exigeix una forma mínimament compacta.
                 bbox_area = hole_w * hole_h
                 fill_ratio = len(hole) / max(1, bbox_area)
-                if fill_ratio < 0.30:
+                if fill_ratio < 0.22:
                     continue
 
-                # Exigeix que gairebé tot el component sembli paper.
-                #
-                # A més del percentatge de píxels, comprovem estadístiques de
-                # color del component. Això evita confondre plomatge pàl·lid
-                # (cua, ventre, infracobertores, etc.) amb un buit real entre
-                # potes o dits.
-                hole_dist = np.array([
-                    dist[py, px]
-                    for px, py in hole
-                ], dtype=np.float32)
-
-                hole_sat = np.array([
-                    saturation[py, px]
-                    for px, py in hole
-                ], dtype=np.float32)
-
-                hole_val = np.array([
-                    value[py, px]
-                    for px, py in hole
-                ], dtype=np.float32)
-
-                paper_like_ratio = float(np.mean([
-                    strict_hole_like[py, px]
-                    for px, py in hole
-                ]))
-
-                if paper_like_ratio < 0.93:
+                # Comprovació cromàtica addicional del component complet.
+                dvals = np.array([dist[py, px] for px, py in hole])
+                if float(np.median(dvals)) > paper_p95 + 0.75:
+                    continue
+                if float(np.percentile(dvals, 90)) > hole_tol:
                     continue
 
-                # Un buit de paper real ha de quedar molt a prop del model de
-                # paper també en mediana i a la cua alta de la distribució.
-                median_dist = float(np.median(hole_dist))
-                p90_dist = float(np.percentile(hole_dist, 90))
-                median_sat = float(np.median(hole_sat))
-                median_val = float(np.median(hole_val))
-
-                if median_dist > paper_p90 + 3.0:
-                    continue
-
-                if p90_dist > paper_p95 + 4.0:
-                    continue
-
-                if median_sat > 0.18:
-                    continue
-
-                if median_val < 0.72:
-                    continue
-
-                # Eliminem del forat només el que NO forma part de la banda
-                # de contorn a conservar.
+                # Elimina NOMÉS paper estricte. No ampliem l'eliminació a la
+                # resta del component passable. Això és el que evita les grans
+                # mossegades dins del plomatge.
                 for px, py in hole:
-                    if not contour_keep[py, px]:
+                    if not contour_band[py, px]:
                         clean[py, px] = False
 
-                # I recuperem explícitament foreground fiable.
+                # Recuperació explícita de qualsevol foreground fiable.
                 for px, py in hole:
-                    if (
-                        strong_fg[py, px]
-                        or colored_restore[py, px]
-                        or pale_plumage_restore[py, px]
-                        or contour_keep[py, px]
-                    ):
+                    if reliable_fg[py, px] or contour_band[py, px]:
                         clean[py, px] = True
 
     # ------------------------------------------------------------------
