@@ -192,12 +192,20 @@ def chroma_cut(src: Path, dst: Path) -> None:
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
 
-        # Paper crema: molt clar i amb poca saturació.
-        # És deliberadament permissiu perquè després encara exigim
-        # connectivitat amb l'exterior.
+        # Paper clar/crema. Aquesta via NO pot ser només "clar + poc saturat":
+        # plomatge beix/blanc (gaig, gal·línula, etc.) també compleix això i,
+        # si té una connexió estreta amb l'exterior, el flood se'l menja.
+        #
+        # Exigim també proximitat cromàtica real al paper mostrejat. Això
+        # manté transitables gradients i gra del fons, però talla la propagació
+        # quan entra en plomatge clar encara que la luminància sigui semblant.
+        light_paper_tol = float(
+            min(46.0, max(26.0, paper_p99 + 8.0))
+        )
         light_paper = (
-            (value > 0.68)
-            & (saturation < 0.32)
+            (value > 0.70)
+            & (saturation < 0.26)
+            & (dist < light_paper_tol)
         )
 
         # El matching cromàtic normal utilitza una protecció ampla.
