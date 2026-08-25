@@ -4824,6 +4824,10 @@
         var cal = document.getElementById('statsCalendar');
         if (cal && cal.getAttribute('aria-hidden') === 'false') renderStatsCalendar();
       }
+      // The refresh may have started before a modal was opened.
+      // Never rebuild or move the background underneath an open modal.
+      if (modalIsOpen()) return;
+
       recomputeDerived();
       renderTimeIndependent(animate);
       renderHourly();
@@ -4848,6 +4852,17 @@
     });
   });
 
+  function modalIsOpen() {
+    var postcard = document.getElementById('postcard-modal');
+    var about = document.getElementById('about-modal');
+
+    return (
+      postcard && postcard.getAttribute('aria-hidden') === 'false'
+    ) || (
+      about && about.getAttribute('aria-hidden') === 'false'
+    );
+  }
+
   // ---- Realtime polling ----
   // Every POLL_MS the page refetches the live data set so the collage,
   // stats, and atlas reflect new detections without a manual reload.
@@ -4859,7 +4874,7 @@
   function startPolling() {
     stopPolling();
     pollTimer = setInterval(function () {
-      if (document.hidden) return;
+      if (document.hidden || modalIsOpen()) return;
       refreshAll();
     }, POLL_MS);
   }
@@ -4868,9 +4883,8 @@
     if (document.hidden) {
       stopPolling();
     } else {
-      // Force an immediate refresh on return so the user sees fresh
-      // data right away, then resume normal polling cadence.
-      refreshAll();
+      // Do not mutate the background while a modal is open.
+      if (!modalIsOpen()) refreshAll();
       startPolling();
     }
   });
