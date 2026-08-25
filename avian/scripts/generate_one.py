@@ -439,17 +439,9 @@ def chroma_cut(src: Path, dst: Path) -> None:
             for x, y in comp:
                 clean[y, x] = True
 
-    # Petita reparació de fissures produïdes pel chroma dins de la silueta.
-    # Closing del FOREGROUND: uneix esquerdes molt estretes però no pot
-    # recuperar grans masses de fons perquè ja hem descartat els components
-    # externs i les illes llunyanes.
-    clean_img = Image.fromarray(clean.astype(np.uint8) * 255)
-    clean_img = (
-        clean_img
-        .filter(ImageFilter.MaxFilter(5))
-        .filter(ImageFilter.MinFilter(5))
-    )
-    solid = np.asarray(clean_img) > 127
+    # No fem closing global del foreground:
+    # pot segellar espais estrets legítims entre potes, dits o plomes.
+    solid = clean.copy()
 
     # Interior completament opac.
     binary = solid.astype(np.uint8) * 255
