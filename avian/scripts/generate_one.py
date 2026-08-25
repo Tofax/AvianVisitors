@@ -785,6 +785,40 @@ def chroma_cut(src: Path, dst: Path) -> None:
             for px, py in hole:
                 clean[py, px] = True
 
+    # ------------------------------------------------------------------
+    # REPARACIÓ FINAL DE MICROFORATS AÏLLATS
+    # ------------------------------------------------------------------
+    # Recupera només píxels transparents pràcticament envoltats de foreground.
+    # Una sola passada evita engruixir contorns o tancar espais entre potes/dits.
+
+    micro_repair = clean.copy()
+
+    for py in range(y0 + 1, y1):
+        for px in range(x0 + 1, x1):
+            if clean[py, px]:
+                continue
+
+            foreground_neighbors = 0
+
+            for nx, ny in (
+                    (px - 1, py - 1),
+                    (px,     py - 1),
+                    (px + 1, py - 1),
+                    (px - 1, py),
+                    (px + 1, py),
+                    (px - 1, py + 1),
+                    (px,     py + 1),
+                    (px + 1, py + 1),
+            ):
+                if clean[ny, nx]:
+                    foreground_neighbors += 1
+
+            # Només un píxel gairebé completament envoltat d'ocell.
+            if foreground_neighbors >= 7:
+                micro_repair[py, px] = True
+
+    clean = micro_repair
+
     # No fem closing global del foreground:
     # pot segellar espais estrets legítims entre potes, dits o plomes.
     solid = clean.copy()
