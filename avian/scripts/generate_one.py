@@ -621,6 +621,10 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 hole_w = hx1 - hx0 + 1
                 hole_h = hy1 - hy0 + 1
 
+                # Conservem una petita franja superior del forat:
+                # és on sovint hi ha la unió plomatge-pota.
+                top_keep_y = hy0 + max(2, int(0.18 * hole_h))
+
                 # Evita eliminar franges molt primes i allargades (potes).
                 aspect = max(hole_w, hole_h) / max(1, min(hole_w, hole_h))
                 if aspect > 3.0:
@@ -644,7 +648,8 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 # forma, compactesa i aparença global de paper.
                 # Primer l'eliminem sencer.
                 for px, py in hole:
-                    clean[py, px] = False
+                    if py >= top_keep_y:
+                        clean[py, px] = False
 
                 # Després recuperem només foreground fiable:
                 # - zones clarament diferents del paper
