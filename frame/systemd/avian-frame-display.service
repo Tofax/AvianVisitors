@@ -1,0 +1,6 @@
+[Unit]
+Description=Update Avian Visitors e-paper if frame changed
+
+[Service]
+Type=oneshot
+ExecStart=/home/ferran/AvianVisitors/frame/scripts/update-if-changed.sh
