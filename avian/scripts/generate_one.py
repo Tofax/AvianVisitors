@@ -1,6 +1,3 @@
-
-
-
 #!/usr/bin/env python3
 """AvianVisitors - generate one species' illustrations on the Pi itself.
 
@@ -796,6 +793,113 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
             for px, py in hole:
                 clean[py, px] = True
+
+    # ------------------------------------------------------------------
+    # REPARACIÓ DE FORATS INTERIORS QUE NO SÓN PAPER
+    # ------------------------------------------------------------------
+    # El flood pot arribar a "mossegar" zones interiors de plomatge quan
+    # hi ha un corredor cromàtic molt fi. Abans del closing final,
+    # recuperem components transparents completament tancats dins la
+    # silueta si, mirant el RAW, la gran majoria dels seus píxels NO
+    # s'assemblen al paper.
+    #
+    # Això és diferent dels buits reals entre potes/dits/plomes:
+    # aquests acostumen a conservar el color del paper i, per tant,
+    # no superen aquesta prova.
+
+    restore_seen = np.zeros((h, w), dtype=bool)
+
+    # Llindar conservador de "paper real".
+    restore_paper_tol = min(
+        max_tol,
+        max(paper_p95 + 6.0, start_tol + 8.0)
+    )
+
+    # Només considerem components interiors petits/moderats.
+    # El límit relatiu evita reparar accidentalment grans zones.
+    max_restore_hole = max(
+        128,
+        int(main_size * 0.015)
+    )
+
+    for ry in range(y0, y1 + 1):
+        for rx in range(x0, x1 + 1):
+            if clean[ry, rx] or restore_seen[ry, rx]:
+                continue
+
+            q = deque([(rx, ry)])
+            restore_seen[ry, rx] = True
+            hole = []
+            touches_bbox = False
+
+            while q:
+                cx, cy = q.popleft()
+                hole.append((cx, cy))
+
+                if (
+                    cx == x0 or cx == x1
+                    or cy == y0 or cy == y1
+                ):
+                    touches_bbox = True
+
+                for nx, ny in (
+                    (cx - 1, cy),
+                    (cx + 1, cy),
+                    (cx, cy - 1),
+                    (cx, cy + 1),
+                    (cx - 1, cy - 1),
+                    (cx + 1, cy - 1),
+                    (cx - 1, cy + 1),
+                    (cx + 1, cy + 1),
+                ):
+                    if (
+                        x0 <= nx <= x1
+                        and y0 <= ny <= y1
+                        and not clean[ny, nx]
+                        and not restore_seen[ny, nx]
+                    ):
+                        restore_seen[ny, nx] = True
+                        q.append((nx, ny))
+
+            if touches_bbox or len(hole) > max_restore_hole:
+                continue
+
+            hy = np.array([py for px, py in hole], dtype=np.int32)
+            hx = np.array([px for px, py in hole], dtype=np.int32)
+
+            # Un buit real conserva majoritàriament el color del paper.
+            paper_like = (
+                (dist[hy, hx] < restore_paper_tol)
+                & (saturation[hy, hx] < 0.30)
+                & (value[hy, hx] > 0.62)
+            )
+            paper_ratio = float(np.mean(paper_like))
+
+            # Senyal addicional de foreground: tinta/color o distància
+            # cromàtica clara respecte del paper.
+            fg_like = (
+                (dist[hy, hx] >= strong_fg_tol)
+                | (saturation[hy, hx] >= 0.22)
+                | colored_restore[hy, hx]
+                | pale_plumage_restore[hy, hx]
+            )
+            fg_ratio = float(np.mean(fg_like))
+
+            # Recuperem només quan el RAW diu clarament "ocell".
+            # Per microforats minúsculs som una mica més permissius.
+            if len(hole) <= 24:
+                should_restore = (
+                    paper_ratio < 0.70
+                    or fg_ratio > 0.35
+                )
+            else:
+                should_restore = (
+                    paper_ratio < 0.38
+                    and fg_ratio > 0.45
+                )
+
+            if should_restore:
+                clean[hy, hx] = True
 
     # ------------------------------------------------------------------
     # REPARACIÓ FINAL DE MICROFORATS / PETITES MOSSEGADES
