@@ -57,7 +57,8 @@ DEFAULTS = {
     "opening": 0.7071,      # opening height as a panel fraction; 0.7071 preserves A5
     "rotate": 90,           # 90 or 270 if the frame hangs the other way up
     "saturation": 0.6,
-    "panel": "",            # "el133uf1" forces the 13.3" driver if auto() fails
+    "panel": "",            # "", "el133uf1", or "waveshare_7in3e"
+    "waveshare_lib": "~/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib",
     "quiet_start": 0, "quiet_end": 0,    # 0/0 = no quiet hours
     "heal_hours": 24,
     "state": "~/.birdframe/state.json",
@@ -264,22 +265,62 @@ def _draw_mat_box(img, opening):
                                   outline=(170, 60, 56), width=2)
 
 
+def configure_panel_geometry(panel):
+    """Set the logical portrait canvas for the selected physical panel."""
+    global PANEL_W, PANEL_H
+
+    if panel == "waveshare_7in3e":
+        # Physical panel is 800x480 landscape.  Keep AvianVisitors' working
+        # canvas portrait and rotate it immediately before pushing.
+        PANEL_W, PANEL_H = 480, 800
+    else:
+        PANEL_W, PANEL_H = 1200, 1600
+
+
 # --- hardware ---------------------------------------------------------------
-def push_panel(img, rotate, saturation, panel=""):
-    """Rotate to the panel's landscape buffer and push. Lazy import so this
-    module still loads on a machine without the Inky library."""
+def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
+    """Rotate and push an image to the configured e-ink panel."""
+
+    if panel == "waveshare_7in3e":
+        if rotate not in (0, 90, 180, 270):
+            print(f"rotate must be 0, 90, 180 or 270, not {rotate}; using 90",
+                  file=sys.stderr)
+            rotate = 90
+
+        lib = os.path.expanduser(waveshare_lib or
+                                 "~/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib")
+        if lib not in sys.path:
+            sys.path.insert(0, lib)
+
+        from waveshare_epd import epd7in3e
+
+        dev = epd7in3e.EPD()
+        dev.init()
+
+        buf = img.rotate(rotate, expand=True) if rotate else img.copy()
+        if buf.size != (dev.width, dev.height):
+            buf = buf.resize((dev.width, dev.height), Image.LANCZOS)
+
+        dev.display(dev.getbuffer(buf.convert("RGB")))
+        dev.sleep()
+        return
+
+    # Original Pimoroni Inky backend
     if rotate not in (90, 270):
         print(f"rotate must be 90 or 270, not {rotate}; using 90", file=sys.stderr)
         rotate = 90
+
     if panel == "el133uf1":
         from inky.inky_el133uf1 import Inky
         dev = Inky(resolution=(1600, 1200))
     else:
         from inky.auto import auto
         dev = auto()
+
     buf = img.rotate(rotate, expand=True)
     if buf.size != (dev.width, dev.height):
         buf = buf.resize((dev.width, dev.height), Image.LANCZOS)
+
     kw = {"saturation": saturation} if "saturation" in inspect.signature(dev.set_image).parameters else {}
     dev.set_image(buf, **kw)
     dev.show()
@@ -378,6 +419,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
             return
         print("refresh:", "changed" if changed else "heal")
 
+    configure_panel_geometry(cfg.get("panel", ""))
     try:
         img = fit_panel(obtain_image(cfg, species))
     except Exception as e:
@@ -392,7 +434,13 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
         print(f"wrote preview {preview}")
         return
     try:
-        push_panel(img, cfg["rotate"], cfg["saturation"], cfg.get("panel", ""))
+        push_panel(
+            img,
+            cfg["rotate"],
+            cfg["saturation"],
+            cfg.get("panel", ""),
+            cfg.get("waveshare_lib", ""),
+        )
     except Exception as e:
         print(f"panel push failed: {e}", file=sys.stderr)
         return
