@@ -556,6 +556,75 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 for px, py in hole:
                     clean[py, px] = False
 
+    # ------------------------------------------------------------------
+    # REPARACIÓ DE PETITS FORATS INTERIORS
+    # ------------------------------------------------------------------
+    # El chroma pot deixar alguns píxels o petites illes transparents dins
+    # del cos/plomes. Només omplim forats molt petits i completament
+    # envoltats pel foreground.
+    #
+    # No actuem a la zona baixa de les potes, perquè allà els buits són
+    # legítims i els volem conservar.
+
+    pin_seen = np.zeros((h, w), dtype=bool)
+
+    bird_height = y1 - y0 + 1
+    leg_zone_y = y0 + int(0.62 * bird_height)
+
+    # Prou petit per arreglar puntets, però no forats anatòmics.
+    max_pinhole_size = 128
+
+    for py in range(y0, y1 + 1):
+        for px in range(x0, x1 + 1):
+            if clean[py, px] or pin_seen[py, px]:
+                continue
+
+            q = deque([(px, py)])
+            pin_seen[py, px] = True
+            hole = []
+            touches_bbox = False
+
+            while q:
+                cx, cy = q.popleft()
+                hole.append((cx, cy))
+
+                if (
+                    cx == x0 or cx == x1
+                    or cy == y0 or cy == y1
+                ):
+                    touches_bbox = True
+
+                for nx, ny in (
+                        (cx - 1, cy),
+                        (cx + 1, cy),
+                        (cx, cy - 1),
+                        (cx, cy + 1),
+                ):
+                    if (
+                        x0 <= nx <= x1
+                        and y0 <= ny <= y1
+                        and not clean[ny, nx]
+                        and not pin_seen[ny, nx]
+                    ):
+                        pin_seen[ny, nx] = True
+                        q.append((nx, ny))
+
+            # Si comunica amb l'exterior de la silueta, no és un pinhole.
+            if touches_bbox:
+                continue
+
+            if len(hole) > max_pinhole_size:
+                continue
+
+            hole_center_y = sum(py for px, py in hole) / len(hole)
+
+            # No tanquem buits petits entre potes/dits.
+            if hole_center_y >= leg_zone_y:
+                continue
+
+            for px, py in hole:
+                clean[py, px] = True
+
     # No fem closing global del foreground:
     # pot segellar espais estrets legítims entre potes, dits o plomes.
     solid = clean.copy()
