@@ -497,9 +497,19 @@ def chroma_cut(src: Path, dst: Path) -> None:
         hole_tol = min(max_tol, paper_p95 + 4.0)
 
         strict_hole_like = (
-            ((dist < hole_tol) & (saturation < 0.28))
-            | ((value > 0.74) & (saturation < 0.20))
+            (
+                (dist < hole_tol)
+                & (saturation < 0.28)
+            )
+            | (
+                (value > 0.74)
+                & (saturation < 0.20)
+            )
         )
+
+        # Una zona amb color clarament saturat és molt probablement
+        # plomatge, pota, bec, etc., no paper crema.
+        strict_hole_like &= saturation < 0.35
 
         hole_seen = np.zeros((h, w), dtype=bool)
 
@@ -590,9 +600,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 if paper_like_ratio < 0.82:
                     continue
 
-                # Si passa tots els filtres, sí que ho considerem paper tancat.
+                # El component global és un buit de paper vàlid, però pot haver absorbit
+                # alguns píxels de la pota o dels dits. Només eliminem els píxels que
+                # individualment continuen tenint aparença de paper.
                 for px, py in hole:
-                    clean[py, px] = False
+                    if strict_hole_like[py, px]:
+                        clean[py, px] = False
 
     # ------------------------------------------------------------------
     # REPARACIÓ DE PETITS FORATS INTERIORS
