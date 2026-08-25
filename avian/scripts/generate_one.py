@@ -177,10 +177,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
         # 128 = paper candidat
         #   0 = foreground / barrera
         # 255 = paper exterior confirmat
-        m = Image.fromarray(
-            np.where(passable_for_flood, 128, 0).astype(np.uint8)
-        ).copy()
-
         seeds = []
 
         step_x = max(1, w // 64)
@@ -201,11 +197,35 @@ def chroma_cut(src: Path, dst: Path) -> None:
             (w - 1, h - 1),
         ])
 
-        for s in seeds:
-            if m.getpixel(s) == 128:
-                ImageDraw.floodfill(m, s, 255)
+        ext = np.zeros((h, w), dtype=bool)
+        q = deque()
 
-        ext = np.asarray(m) == 255
+        for x, y in seeds:
+            if passable_for_flood[y, x] and not ext[y, x]:
+                ext[y, x] = True
+                q.append((x, y))
+
+        neighbors8 = (
+            (-1, -1), (0, -1), (1, -1),
+            (-1,  0),           (1,  0),
+            (-1,  1), (0,  1), (1,  1),
+        )
+
+        while q:
+            cx, cy = q.popleft()
+
+            for dx, dy in neighbors8:
+                nx, ny = cx + dx, cy + dy
+
+                if (
+                    0 <= nx < w
+                    and 0 <= ny < h
+                    and passable_for_flood[ny, nx]
+                    and not ext[ny, nx]
+                ):
+                    ext[ny, nx] = True
+                    q.append((nx, ny))
+
         return ext, float(ext.mean()), passable_for_flood
 
     # Seqüència adaptativa de toleràncies. Passos petits perquè la detecció
