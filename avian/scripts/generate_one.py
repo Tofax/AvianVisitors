@@ -29,7 +29,7 @@ from collections import deque
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -508,6 +508,9 @@ def chroma_cut(src: Path, dst: Path) -> None:
         # Només considerem forats amb centre a la zona baixa de l'ocell.
         lower_limit = y0 + int(0.55 * bird_height)
 
+        # Ignorem components petits: solen ser textura o detalls de l'ocell.
+        min_hole_size = 512
+
         # Límit relatiu a la mida real del foreground principal.
         max_hole_size = max(
             256,
@@ -548,6 +551,9 @@ def chroma_cut(src: Path, dst: Path) -> None:
                         ):
                             hole_seen[ny, nx] = True
                             q.append((nx, ny))
+
+                if len(hole) < min_hole_size:
+                    continue
 
                 if len(hole) > max_hole_size:
                     continue
