@@ -122,7 +122,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # classificar el plomatge clar com a paper encara que el flood sigui
     # "connectat a la vora".
     start_tol = float(max(10.0, min(22.0, paper_p90 + 2.0)))
-    max_tol = float(min(52.0, max(30.0, paper_p99 + 6.0)))
+    max_tol = float(min(72.0, max(36.0, paper_p99 + 6.0)))
 
     # ------------------------------------------------------------------
     # MÀSCARA DE PROTECCIÓ DEL PRIMER PLA
@@ -150,26 +150,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
     def flood_for_tol(test_tol: float):
         passable = dist < test_tol
 
-        # Mai permetem que el flood travessi la banda de protecció.
+        # Protegim les zones de foreground clarament detectades.
         passable &= ~protected_fg
 
-        pass_img = Image.fromarray(
-            passable.astype(np.uint8) * 255
-        )
-
-        # Opening morfològic del PAPER (Min -> Max).
-        #
-        # Això és deliberadament l'ordre contrari d'un closing:
-        # primer erosiona els canals de paper molt fins i després recupera
-        # aproximadament el contorn. D'aquesta manera un petit "pont" de
-        # color crema dins del plomatge no obre una via cap a l'ocell.
-        pass_img = (
-            pass_img
-            .filter(ImageFilter.MinFilter(3))
-            .filter(ImageFilter.MaxFilter(3))
-        )
-
-        passable_for_flood = np.asarray(pass_img) > 127
+        # No fem morfologia sobre el paper:
+        # podria fragmentar el fons i impedir que el flood hi circuli.
+        passable_for_flood = passable
 
         # 128 = paper candidat
         #   0 = foreground / barrera
@@ -269,7 +255,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     exterior_frac = best_frac
     tol = best_tol if best_tol is not None else start_tol
 
-    if exterior is None or exterior_frac < 0.35:
+    if exterior is None or exterior_frac < 0.30:
         raise RuntimeError(
             f"cutout flood failed "
             f"(tol {tol:.1f}, "
