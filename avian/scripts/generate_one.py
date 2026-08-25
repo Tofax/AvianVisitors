@@ -230,44 +230,79 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # Everything not connected to external paper is foreground.
     solid = ~exterior
 
-    # Remove small disconnected foreground islands caused by paper grain.
-    clean = solid.copy()
+    # Conserva només els components foreground rellevants.
+    # El fons crema residual sol quedar com grans regions separades
+    # que toquen la vora o ocupen zones perifèriques.
     seen = np.zeros((h, w), dtype=bool)
-
-    min_component = max(48, int(h * w * 0.00010))
+    components = []
 
     for y in range(h):
         for x in range(w):
-            if not clean[y, x] or seen[y, x]:
+            if not solid[y, x] or seen[y, x]:
                 continue
 
             q = deque([(x, y)])
             seen[y, x] = True
-            component = []
+            comp = []
 
             while q:
                 cx, cy = q.popleft()
-                component.append((cx, cy))
+                comp.append((cx, cy))
 
-                if cx > 0 and clean[cy, cx - 1] and not seen[cy, cx - 1]:
-                    seen[cy, cx - 1] = True
-                    q.append((cx - 1, cy))
+                for nx, ny in (
+                        (cx - 1, cy), (cx + 1, cy),
+                        (cx, cy - 1), (cx, cy + 1)
+                ):
+                    if (
+                        0 <= nx < w and 0 <= ny < h
+                        and solid[ny, nx]
+                        and not seen[ny, nx]
+                    ):
+                        seen[ny, nx] = True
+                        q.append((nx, ny))
 
-                if cx + 1 < w and clean[cy, cx + 1] and not seen[cy, cx + 1]:
-                    seen[cy, cx + 1] = True
-                    q.append((cx + 1, cy))
+            components.append(comp)
 
-                if cy > 0 and clean[cy - 1, cx] and not seen[cy - 1, cx]:
-                    seen[cy - 1, cx] = True
-                    q.append((cx, cy - 1))
+    if not components:
+        raise RuntimeError("cutout produced no foreground")
 
-                if cy + 1 < h and clean[cy + 1, cx] and not seen[cy + 1, cx]:
-                    seen[cy + 1, cx] = True
-                    q.append((cx, cy + 1))
+    # El component principal hauria de ser l'ocell.
+    components.sort(key=len, reverse=True)
+    main = components[0]
 
-            if len(component) < min_component:
-                for cx, cy in component:
-                    clean[cy, cx] = False
+    clean = np.zeros((h, w), dtype=bool)
+
+    for x, y in main:
+        clean[y, x] = True
+
+    # Accepta també components petits molt propers al principal
+    # (potes, plomes separades, etc.).
+    main_ys, main_xs = np.where(clean)
+    x0, x1 = main_xs.min(), main_xs.max()
+    y0, y1 = main_ys.min(), main_ys.max()
+
+    margin = int(0.08 * max(x1 - x0 + 1, y1 - y0 + 1))
+
+    for comp in components[1:]:
+        if len(comp) < 32:
+            continue
+
+        xs = [p[0] for p in comp]
+        ys = [p[1] for p in comp]
+
+        cx0, cx1 = min(xs), max(xs)
+        cy0, cy1 = min(ys), max(ys)
+
+        nearby = (
+            cx1 >= x0 - margin and
+            cx0 <= x1 + margin and
+            cy1 >= y0 - margin and
+            cy0 <= y1 + margin
+        )
+
+        if nearby:
+            for x, y in comp:
+                clean[y, x] = True
 
     solid = clean
 
