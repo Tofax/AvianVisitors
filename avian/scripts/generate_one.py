@@ -230,9 +230,11 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # Everything not connected to external paper is foreground.
     solid = ~exterior
 
-    # Conserva només els components foreground rellevants.
-    # El fons crema residual sol quedar com grans regions separades
-    # que toquen la vora o ocupen zones perifèriques.
+    # El foreground provisional pot contenir grans zones de paper residual
+    # que el flood no ha pogut classificar. En els renders de Gemini l'ocell
+    # té marge i no toca la vora, de manera que qualsevol component que sí
+    # toqui el perímetre és fons residual i s'ha de descartar.
+
     seen = np.zeros((h, w), dtype=bool)
     components = []
 
@@ -245,45 +247,83 @@ def chroma_cut(src: Path, dst: Path) -> None:
             seen[y, x] = True
             comp = []
 
+            touches_border = False
+
             while q:
                 cx, cy = q.popleft()
                 comp.append((cx, cy))
 
+                if (
+                    cx == 0 or cx == w - 1
+                    or cy == 0 or cy == h - 1
+                ):
+                    touches_border = True
+
                 for nx, ny in (
-                        (cx - 1, cy), (cx + 1, cy),
-                        (cx, cy - 1), (cx, cy + 1)
+                        (cx - 1, cy),
+                        (cx + 1, cy),
+                        (cx, cy - 1),
+                        (cx, cy + 1),
                 ):
                     if (
-                        0 <= nx < w and 0 <= ny < h
+                        0 <= nx < w
+                        and 0 <= ny < h
                         and solid[ny, nx]
                         and not seen[ny, nx]
                     ):
                         seen[ny, nx] = True
                         q.append((nx, ny))
 
-            components.append(comp)
+            components.append({
+                "pixels": comp,
+                "touches_border": touches_border,
+            })
 
-    if not components:
-        raise RuntimeError("cutout produced no foreground")
+    # Elimina qualsevol massa residual connectada al marc exterior.
+    interior_components = [
+        c for c in components
+        if not c["touches_border"]
+    ]
 
-    # El component principal hauria de ser l'ocell.
-    components.sort(key=len, reverse=True)
-    main = components[0]
+    if not interior_components:
+        raise RuntimeError(
+            "cutout produced no interior foreground "
+            "(all foreground touches image border)"
+        )
+
+    # L'ocell és el component interior principal.
+    interior_components.sort(
+        key=lambda c: len(c["pixels"]),
+        reverse=True,
+    )
+
+    main = interior_components[0]["pixels"]
 
     clean = np.zeros((h, w), dtype=bool)
 
     for x, y in main:
         clean[y, x] = True
 
-    # Accepta també components petits molt propers al principal
-    # (potes, plomes separades, etc.).
+    # Bounding box del cos principal.
     main_ys, main_xs = np.where(clean)
+
     x0, x1 = main_xs.min(), main_xs.max()
     y0, y1 = main_ys.min(), main_ys.max()
 
-    margin = int(0.08 * max(x1 - x0 + 1, y1 - y0 + 1))
+    main_size = len(main)
+    main_span = max(
+        x1 - x0 + 1,
+        y1 - y0 + 1,
+        )
 
-    for comp in components[1:]:
+    # Recupera peces legítimes desconnectades de l'ocell:
+    # puntes de ploma, dits, potes, etc. Només si són prou properes
+    # al component principal i no són minúscules.
+    margin = int(0.10 * main_span)
+
+    for entry in interior_components[1:]:
+        comp = entry["pixels"]
+
         if len(comp) < 32:
             continue
 
@@ -294,13 +334,16 @@ def chroma_cut(src: Path, dst: Path) -> None:
         cy0, cy1 = min(ys), max(ys)
 
         nearby = (
-            cx1 >= x0 - margin and
-            cx0 <= x1 + margin and
-            cy1 >= y0 - margin and
-            cy0 <= y1 + margin
+            cx1 >= x0 - margin
+            and cx0 <= x1 + margin
+            and cy1 >= y0 - margin
+            and cy0 <= y1 + margin
         )
 
-        if nearby:
+        # Evita reincorporar una gran massa de paper residual.
+        reasonable_size = len(comp) < main_size * 0.35
+
+        if nearby and reasonable_size:
             for x, y in comp:
                 clean[y, x] = True
 
