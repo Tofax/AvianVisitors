@@ -58,11 +58,9 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     Only paper connected to the image border becomes transparent.
 
-    The flood uses three safeguards against eating pale plumage:
-      1. a conservative adaptive paper threshold,
-      2. a guard band around clearly non-paper pixels,
-      3. morphological opening of the passable-paper mask to break thin
-         channels before the border flood.
+    The flood uses an adaptive paper model plus a narrow guard band around
+    clearly non-paper pixels. Bright low-saturation paper remains passable so
+    paper gradients and grain do not isolate large background regions.
 
     After the flood, only the main bird component and genuinely nearby
     detached pieces are retained. The final alpha is fully opaque in the bird
@@ -94,6 +92,16 @@ def chroma_cut(src: Path, dst: Path) -> None:
     ], dtype=np.float32)
 
     rgb = arr.astype(np.float32)
+    rgb01 = rgb / 255.0
+
+    rgb_max = rgb01.max(axis=2)
+    rgb_min = rgb01.min(axis=2)
+
+    value = rgb_max
+
+    saturation = np.zeros_like(value)
+    nz = rgb_max > 1e-6
+    saturation[nz] = (rgb_max[nz] - rgb_min[nz]) / rgb_max[nz]
 
     # Distància de cada píxel al color de fons més semblant.
     distances = np.stack([
@@ -144,14 +152,23 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     # Guard band. 7 px és prou petit per no crear halos grans, però evita
     # que el flood travessi zones beix enganxades a línies fosques del cos.
-    strong_img = strong_img.filter(ImageFilter.MaxFilter(7))
+    strong_img = strong_img.filter(ImageFilter.MaxFilter(3))
     protected_fg = np.asarray(strong_img) > 127
 
     def flood_for_tol(test_tol: float):
-        passable = dist < test_tol
+        color_match = dist < test_tol
 
-        # Protegim les zones de foreground clarament detectades.
-        passable &= ~protected_fg
+        # Paper crema: molt clar i amb poca saturació.
+        # És deliberadament permissiu perquè després encara exigim
+        # connectivitat amb l'exterior.
+        light_paper = (
+            (value > 0.62)
+            & (saturation < 0.38)
+        )
+
+        # La protecció només impedeix que el criteri cromàtic ordinari
+        # travessi plomatge/tinta. El paper clar continua sent transitable.
+        passable = (color_match & ~protected_fg) | light_paper
 
         # No fem morfologia sobre el paper:
         # podria fragmentar el fons i impedir que el flood hi circuli.
