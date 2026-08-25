@@ -1,0 +1,7 @@
+[Unit]
+Description=Generate Avian Visitors frame
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ferran/AvianVisitors/server
+ExecStart=/home/ferran/AvianVisitors/server/.venv/bin/python /home/ferran/AvianVisitors/server/render-frame.py

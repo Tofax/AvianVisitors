@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate Avian Visitors frame periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=25min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
