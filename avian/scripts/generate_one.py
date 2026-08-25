@@ -637,7 +637,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
                 # Banda que segueix el contorn del foreground fiable.
                 contour_keep = np.asarray(
-                    reliable_img.filter(ImageFilter.MaxFilter(7))
+                    reliable_img.filter(ImageFilter.MaxFilter(5))
                 ) > 127
 
                 # Només ens interessa dins del forat actual.
@@ -740,9 +740,47 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
             hole_center_y = sum(py for px, py in hole) / len(hole)
 
-            # No tanquem buits petits entre potes/dits.
             if hole_center_y >= leg_zone_y:
-                continue
+                # Només reparem microforats a la zona de les potes.
+                if len(hole) > 16:
+                    continue
+
+                hole_set = set(hole)
+
+                reliable_neighbors = 0
+                total_neighbors = 0
+
+                for px, py in hole:
+                    for nx, ny in (
+                            (px - 1, py),
+                            (px + 1, py),
+                            (px, py - 1),
+                            (px, py + 1),
+                            (px - 1, py - 1),
+                            (px + 1, py - 1),
+                            (px - 1, py + 1),
+                            (px + 1, py + 1),
+                    ):
+                        if (
+                            0 <= nx < w
+                            and 0 <= ny < h
+                            and (nx, ny) not in hole_set
+                        ):
+                            total_neighbors += 1
+
+                            if (
+                                clean[ny, nx]
+                                or strong_fg[ny, nx]
+                                or colored_restore[ny, nx]
+                                or pale_plumage_restore[ny, nx]
+                            ):
+                                reliable_neighbors += 1
+
+                if (
+                    total_neighbors == 0
+                    or reliable_neighbors / total_neighbors < 0.75
+                ):
+                    continue
 
             for px, py in hole:
                 clean[py, px] = True
