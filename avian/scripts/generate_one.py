@@ -162,13 +162,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
         # És deliberadament permissiu perquè després encara exigim
         # connectivitat amb l'exterior.
         light_paper = (
-            (value > 0.62)
-            & (saturation < 0.38)
+            (value > 0.68)
+            & (saturation < 0.32)
         )
 
         # La protecció només impedeix que el criteri cromàtic ordinari
         # travessi plomatge/tinta. El paper clar continua sent transitable.
-        passable = (color_match & ~protected_fg) | light_paper
+        passable = (color_match | light_paper) & ~protected_fg
 
         # No fem morfologia sobre el paper:
         # podria fragmentar el fons i impedir que el flood hi circuli.
