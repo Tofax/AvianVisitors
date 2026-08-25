@@ -476,6 +476,86 @@ def chroma_cut(src: Path, dst: Path) -> None:
             for x, y in comp:
                 clean[y, x] = True
 
+    # ------------------------------------------------------------------
+    # PAPER TANCAT ENTRE POTES / DITS
+    # ------------------------------------------------------------------
+    # Algunes zones de paper són realment fons però queden completament
+    # tancades per les potes o els peus, de manera que el flood exterior
+    # no hi pot arribar.
+    #
+    # Només considerem components que:
+    #   - ja eren paper candidat a best_passable,
+    #   - no han estat assolits pel flood exterior,
+    #   - són relativament petits,
+    #   - i estan a la part inferior de la silueta.
+    #
+    # Això evita eliminar grans regions clares legítimes com pit o ventre.
+
+    if best_passable is not None:
+        enclosed_passable = best_passable & ~exterior & clean
+
+        hole_seen = np.zeros((h, w), dtype=bool)
+
+        bird_height = y1 - y0 + 1
+
+        # Només considerem forats amb centre a la zona baixa de l'ocell.
+        lower_limit = y0 + int(0.55 * bird_height)
+
+        # Límit relatiu a la mida real del foreground principal.
+        max_hole_size = max(
+            256,
+            int(main_size * 0.06)
+        )
+
+        for hy in range(h):
+            for hx in range(w):
+                if (
+                    not enclosed_passable[hy, hx]
+                    or hole_seen[hy, hx]
+                ):
+                    continue
+
+                q = deque([(hx, hy)])
+                hole_seen[hy, hx] = True
+                hole = []
+
+                while q:
+                    cx, cy = q.popleft()
+                    hole.append((cx, cy))
+
+                    for nx, ny in (
+                            (cx - 1, cy),
+                            (cx + 1, cy),
+                            (cx, cy - 1),
+                            (cx, cy + 1),
+                            (cx - 1, cy - 1),
+                            (cx + 1, cy - 1),
+                            (cx - 1, cy + 1),
+                            (cx + 1, cy + 1),
+                    ):
+                        if (
+                            0 <= nx < w
+                            and 0 <= ny < h
+                            and enclosed_passable[ny, nx]
+                            and not hole_seen[ny, nx]
+                        ):
+                            hole_seen[ny, nx] = True
+                            q.append((nx, ny))
+
+                if len(hole) > max_hole_size:
+                    continue
+
+                hole_ys = [py for px, py in hole]
+                center_y = sum(hole_ys) / len(hole_ys)
+
+                if center_y < lower_limit:
+                    continue
+
+                # Component petit, baix i clarament classificat com a paper:
+                # l'eliminem del foreground final.
+                for px, py in hole:
+                    clean[py, px] = False
+
     # No fem closing global del foreground:
     # pot segellar espais estrets legítims entre potes, dits o plomes.
     solid = clean.copy()
