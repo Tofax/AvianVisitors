@@ -70,19 +70,36 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     h, w, _ = arr.shape
 
-    # Estimate the paper colour from the four corners.
-    corners = np.concatenate([
-        arr[:15, :15].reshape(-1, 3),
-        arr[:15, -15:].reshape(-1, 3),
-        arr[-15:, :15].reshape(-1, 3),
-        arr[-15:, -15:].reshape(-1, 3),
+    # Diverses mostres del paper/fons. Això tolera millor gradients,
+    # vinyetatge i petites variacions cromàtiques del render.
+    patch = 20
+
+    samples = [
+        arr[:patch, :patch],                                      # cantonada SE? superior esquerra
+        arr[:patch, -patch:],                                     # superior dreta
+        arr[-patch:, :patch],                                     # inferior esquerra
+        arr[-patch:, -patch:],                                    # inferior dreta
+
+        arr[:patch, w // 2 - patch:w // 2 + patch],               # centre superior
+        arr[-patch:, w // 2 - patch:w // 2 + patch],              # centre inferior
+        arr[h // 2 - patch:h // 2 + patch, :patch],               # centre esquerra
+        arr[h // 2 - patch:h // 2 + patch, -patch:],              # centre dreta
+    ]
+
+    paper_colors = np.array([
+        np.median(s.reshape(-1, 3), axis=0)
+        for s in samples
+    ], dtype=np.float32)
+
+    rgb = arr.astype(np.float32)
+
+    # Distància de cada píxel al color de fons més semblant.
+    distances = np.stack([
+        np.sqrt(((rgb - c) ** 2).sum(axis=2))
+        for c in paper_colors
     ])
 
-    paper = np.median(corners, axis=0)
-
-    dist = np.sqrt(
-        ((arr.astype(np.int32) - paper) ** 2).sum(2)
-    )
+    dist = distances.min(axis=0)
 
     # Measure genuine paper variation on the outer strips.
     border = np.concatenate([
