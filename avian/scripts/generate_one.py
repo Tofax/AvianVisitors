@@ -534,22 +534,19 @@ def chroma_cut(src: Path, dst: Path) -> None:
     if best_passable is not None:
         enclosed_passable = best_passable & ~exterior & clean
 
-        hole_tol = min(max_tol, paper_p95 + 4.0)
+        # Els forats interiors són la part més delicada del chroma cut:
+        # una zona clara del plomatge pot assemblar-se molt al paper.
+        #
+        # Per això aquí som deliberadament MÉS estrictes que al flood exterior.
+        # No n'hi ha prou que el píxel sigui simplement clar i poc saturat:
+        # també ha de ser cromàticament proper al paper real mostrejat a la vora.
+        hole_tol = min(max_tol, paper_p95 + 3.0)
 
         strict_hole_like = (
-            (
-                (dist < hole_tol)
-                & (saturation < 0.28)
-            )
-            | (
-                (value > 0.74)
-                & (saturation < 0.20)
-            )
+            (dist < hole_tol)
+            & (value > 0.70)
+            & (saturation < 0.24)
         )
-
-        # Una zona amb color clarament saturat és molt probablement
-        # plomatge, pota, bec, etc., no paper crema.
-        strict_hole_like &= saturation < 0.35
 
         hole_seen = np.zeros((h, w), dtype=bool)
 
@@ -654,12 +651,52 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 if fill_ratio < 0.30:
                     continue
 
-                # Exigeix que la major part del component realment sembli paper.
-                paper_like_ratio = np.mean([
+                # Exigeix que gairebé tot el component sembli paper.
+                #
+                # A més del percentatge de píxels, comprovem estadístiques de
+                # color del component. Això evita confondre plomatge pàl·lid
+                # (cua, ventre, infracobertores, etc.) amb un buit real entre
+                # potes o dits.
+                hole_dist = np.array([
+                    dist[py, px]
+                    for px, py in hole
+                ], dtype=np.float32)
+
+                hole_sat = np.array([
+                    saturation[py, px]
+                    for px, py in hole
+                ], dtype=np.float32)
+
+                hole_val = np.array([
+                    value[py, px]
+                    for px, py in hole
+                ], dtype=np.float32)
+
+                paper_like_ratio = float(np.mean([
                     strict_hole_like[py, px]
                     for px, py in hole
-                ])
-                if paper_like_ratio < 0.82:
+                ]))
+
+                if paper_like_ratio < 0.93:
+                    continue
+
+                # Un buit de paper real ha de quedar molt a prop del model de
+                # paper també en mediana i a la cua alta de la distribució.
+                median_dist = float(np.median(hole_dist))
+                p90_dist = float(np.percentile(hole_dist, 90))
+                median_sat = float(np.median(hole_sat))
+                median_val = float(np.median(hole_val))
+
+                if median_dist > paper_p90 + 3.0:
+                    continue
+
+                if p90_dist > paper_p95 + 4.0:
+                    continue
+
+                if median_sat > 0.18:
+                    continue
+
+                if median_val < 0.72:
                     continue
 
                 # Eliminem del forat només el que NO forma part de la banda
