@@ -150,10 +150,16 @@ def chroma_cut(src: Path, dst: Path) -> None:
         .filter(ImageFilter.MaxFilter(3))
     )
 
-    # Guard band. 5 px és prou petit per no crear halos grans, però evita
-    # que el flood travessi zones beix enganxades a línies fosques del cos.
-    strong_img = strong_img.filter(ImageFilter.MaxFilter(5))
-    protected_fg = np.asarray(strong_img) > 127
+    # Dues bandes de protecció:
+    # - una més ampla per al matching cromàtic normal
+    # - una més estreta per al paper molt clar
+    protected_fg_color = np.asarray(
+        strong_img.filter(ImageFilter.MaxFilter(5))
+    ) > 127
+
+    protected_fg_light = np.asarray(
+        strong_img.filter(ImageFilter.MaxFilter(3))
+    ) > 127
 
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
@@ -166,9 +172,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
             & (saturation < 0.32)
         )
 
-        # La protecció només impedeix que el criteri cromàtic ordinari
-        # travessi plomatge/tinta. El paper clar continua sent transitable.
-        passable = (color_match | light_paper) & ~protected_fg
+        # El matching cromàtic normal utilitza una protecció ampla.
+        # El paper clar utilitza una protecció més estreta per mantenir
+        # oberts espais fins entre potes, dits i plomes.
+        passable = (
+            (color_match & ~protected_fg_color)
+            | (light_paper & ~protected_fg_light)
+        )
 
         # No fem morfologia sobre el paper:
         # podria fragmentar el fons i impedir que el flood hi circuli.
@@ -322,13 +332,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
         debug_dir / f"{dst.stem}-dist.png"
     )
 
-    # Foreground que estem protegint.
-    Image.fromarray(
-        protected_fg.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-protected.png"
-    )
-
     # Paper candidat amb la tolerància final seleccionada.
     if best_passable is not None:
         Image.fromarray(
@@ -342,6 +345,20 @@ def chroma_cut(src: Path, dst: Path) -> None:
         exterior.astype(np.uint8) * 255
     ).save(
         debug_dir / f"{dst.stem}-exterior.png"
+    )
+
+    # Protecció ampla usada pel color_match.
+    Image.fromarray(
+        protected_fg_color.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-protected-color.png"
+    )
+
+    # Protecció estreta usada pel light_paper.
+    Image.fromarray(
+        protected_fg_light.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-protected-light.png"
     )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
