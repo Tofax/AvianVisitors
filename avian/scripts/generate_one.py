@@ -109,62 +109,120 @@ def chroma_cut(src: Path, dst: Path) -> None:
         dist[:, -40:].ravel(),
     ])
 
-    # Keep the tolerance conservative so pale/white plumage is not
-    # accidentally classified as paper.
+    paper_p90 = float(np.percentile(border, 90))
+    paper_p95 = float(np.percentile(border, 95))
     paper_p99 = float(np.percentile(border, 99))
-    tol = float(min(28.0, max(12.0, paper_p99 + 6.0)))
 
-    passable = dist < tol
+    # No fem servir un únic llindar global fix. Alguns renders tenen
+    # gradient, vinyetatge o textura del paper molt més marcada.
+    #
+    # Provem diversos llindars de forma progressiva i ens quedem amb
+    # l'últim resultat estable abans que el flood comenci a créixer
+    # bruscament cap a l'interior de l'ocell.
+    start_tol = float(max(12.0, min(24.0, paper_p90 + 3.0)))
+    max_tol = float(min(82.0, max(36.0, paper_p99 + 10.0)))
 
-    # Shrink the passable-paper region very slightly before flooding.
-    # This closes one-pixel leaks through pale or weak outlines without
-    # excessively converting paper grain into foreground.
-    pass_img = Image.fromarray(
-        passable.astype(np.uint8) * 255
-    )
+    def flood_for_tol(test_tol: float):
+        passable = dist < test_tol
 
-    pass_img = pass_img.filter(ImageFilter.MinFilter(3))
-    passable_for_flood = np.asarray(pass_img) > 127
+        # Tanquem canals molt fins perquè un contorn pàl·lid o dèbil no
+        # permeti que el flood entri dins de l'ocell.
+        pass_img = Image.fromarray(
+            passable.astype(np.uint8) * 255
+        ).filter(ImageFilter.MinFilter(3))
 
-    # 128 = candidate paper
-    #   0 = barrier / foreground
-    # 255 = confirmed exterior paper
-    m = Image.fromarray(
-        np.where(passable_for_flood, 128, 0).astype(np.uint8)
-    ).copy()
+        passable_for_flood = np.asarray(pass_img) > 127
 
-    # Seed many positions along all four edges.
-    seeds = []
+        # 128 = paper candidat
+        #   0 = foreground / barrera
+        # 255 = paper exterior confirmat
+        m = Image.fromarray(
+            np.where(passable_for_flood, 128, 0).astype(np.uint8)
+        ).copy()
 
-    step_x = max(1, w // 32)
-    step_y = max(1, h // 32)
+        seeds = []
 
-    for x in range(0, w, step_x):
-        seeds.append((x, 0))
-        seeds.append((x, h - 1))
+        step_x = max(1, w // 48)
+        step_y = max(1, h // 48)
 
-    for y in range(0, h, step_y):
-        seeds.append((0, y))
-        seeds.append((w - 1, y))
+        for x in range(0, w, step_x):
+            seeds.append((x, 0))
+            seeds.append((x, h - 1))
 
-    seeds.extend([
-        (0, 0),
-        (w - 1, 0),
-        (0, h - 1),
-        (w - 1, h - 1),
-    ])
+        for y in range(0, h, step_y):
+            seeds.append((0, y))
+            seeds.append((w - 1, y))
 
-    for s in seeds:
-        if m.getpixel(s) == 128:
-            ImageDraw.floodfill(m, s, 255)
+        seeds.extend([
+            (0, 0),
+            (w - 1, 0),
+            (0, h - 1),
+            (w - 1, h - 1),
+        ])
 
-    exterior = np.asarray(m) == 255
-    exterior_frac = float(exterior.mean())
+        for s in seeds:
+            if m.getpixel(s) == 128:
+                ImageDraw.floodfill(m, s, 255)
 
-    if exterior_frac < 0.40:
+        ext = np.asarray(m) == 255
+        return ext, float(ext.mean())
+
+    # Construïm una seqüència adaptativa de toleràncies.
+    tolerances = []
+
+    t = start_tol
+    while t <= max_tol:
+        tolerances.append(float(t))
+        t += 4.0
+
+    if not tolerances or tolerances[-1] < max_tol:
+        tolerances.append(max_tol)
+
+    best_exterior = None
+    best_frac = 0.0
+    best_tol = None
+
+    previous_frac = 0.0
+
+    for test_tol in tolerances:
+        candidate, frac = flood_for_tol(test_tol)
+
+        # Si de cop el flood creix molt, probablement acaba de travessar
+        # el contorn i està entrant dins de plomatge clar.
+        jump = frac - previous_frac
+
+        if previous_frac >= 0.25 and jump > 0.18:
+            break
+
+        # No acceptem una màscara que deixi gairebé tota la imatge com a
+        # fons: seria un senyal clar que ens hem menjat l'ocell.
+        if frac > 0.93:
+            break
+
+        if frac > best_frac:
+            best_exterior = candidate
+            best_frac = frac
+            best_tol = test_tol
+
+        previous_frac = frac
+
+        # Normalment les il·lustracions tenen molt fons. Quan ja n'hem
+        # recuperat una quantitat raonable no cal continuar augmentant
+        # agressivament la tolerància.
+        if frac >= 0.55:
+            break
+
+    exterior = best_exterior
+    exterior_frac = best_frac
+    tol = best_tol if best_tol is not None else start_tol
+
+    if exterior is None or exterior_frac < 0.40:
         raise RuntimeError(
             f"cutout flood failed "
-            f"(tol {tol:.1f}, paper99 {paper_p99:.1f}, "
+            f"(tol {tol:.1f}, "
+            f"paper90 {paper_p90:.1f}, "
+            f"paper95 {paper_p95:.1f}, "
+            f"paper99 {paper_p99:.1f}, "
             f"exterior {100 * exterior_frac:.0f}%) - "
             f"raw kept for the upgrade pass"
         )
