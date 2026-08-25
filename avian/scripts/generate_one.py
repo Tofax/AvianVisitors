@@ -494,6 +494,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
     if best_passable is not None:
         enclosed_passable = best_passable & ~exterior & clean
 
+        hole_tol = min(max_tol, paper_p95 + 4.0)
+
+        strict_hole_like = (
+            ((dist < hole_tol) & (saturation < 0.28))
+            | ((value > 0.74) & (saturation < 0.20))
+        )
+
         hole_seen = np.zeros((h, w), dtype=bool)
 
         bird_height = y1 - y0 + 1
@@ -545,14 +552,39 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 if len(hole) > max_hole_size:
                     continue
 
+                hole_xs = [px for px, py in hole]
                 hole_ys = [py for px, py in hole]
-                center_y = sum(hole_ys) / len(hole_ys)
 
+                center_y = sum(hole_ys) / len(hole_ys)
                 if center_y < lower_limit:
                     continue
 
-                # Component petit, baix i clarament classificat com a paper:
-                # l'eliminem del foreground final.
+                hx0, hx1 = min(hole_xs), max(hole_xs)
+                hy0, hy1 = min(hole_ys), max(hole_ys)
+
+                hole_w = hx1 - hx0 + 1
+                hole_h = hy1 - hy0 + 1
+
+                # Evita eliminar franges molt primes i allargades (potes).
+                aspect = max(hole_w, hole_h) / max(1, min(hole_w, hole_h))
+                if aspect > 3.0:
+                    continue
+
+                # Exigeix una forma mínimament compacta.
+                bbox_area = hole_w * hole_h
+                fill_ratio = len(hole) / max(1, bbox_area)
+                if fill_ratio < 0.30:
+                    continue
+
+                # Exigeix que la major part del component realment sembli paper.
+                paper_like_ratio = np.mean([
+                    strict_hole_like[py, px]
+                    for px, py in hole
+                ])
+                if paper_like_ratio < 0.82:
+                    continue
+
+                # Si passa tots els filtres, sí que ho considerem paper tancat.
                 for px, py in hole:
                     clean[py, px] = False
 
