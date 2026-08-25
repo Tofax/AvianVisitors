@@ -7392,6 +7392,7 @@
 
     var filter = 'pending';
     var levelFilter = 'candidate';
+    var localFilter = 'priority';
     var page = 0;
     var pageSize = 24;
     var data = null;
@@ -7411,7 +7412,7 @@
         + '.cutrev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}'
         + '.cutrev-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper);min-width:0}.cutrev-card[data-review="good"]{opacity:.72}.cutrev-card[data-review="bad"]{box-shadow:inset 0 0 0 2px rgba(190,45,35,.28)}'
         + '.cutrev-img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#14cdbe}.cutrev-body{padding:11px 12px 12px}.cutrev-name{font:650 13px/1.25 system-ui,sans-serif;margin:0 0 3px}.cutrev-sci{font:10px/1.25 ui-monospace,monospace;color:var(--ink-soft);margin:0 0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
-        + '.cutrev-metrics{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.cutrev-chip{font:9px/1 ui-monospace,monospace;border:1px solid var(--line);border-radius:999px;padding:5px 7px}.cutrev-chip.hot{border-color:#b9362c;color:#a52f27}.cutrev-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cutrev-mark.good[data-active="1"]{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-mark.bad[data-active="1"]{background:#9f332b;color:#fff;border-color:#9f332b}'
+        + '.cutrev-metrics{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.cutrev-chip{font:9px/1 ui-monospace,monospace;border:1px solid var(--line);border-radius:999px;padding:5px 7px}.cutrev-chip.hot{border-color:#b9362c;color:#a52f27}.cutrev-chip.local{border-color:#2e7d59;color:#246548}.cutrev-chip.detected{background:#2e7d59;color:#fff;border-color:#2e7d59}.cutrev-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cutrev-mark.good[data-active="1"]{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-mark.bad[data-active="1"]{background:#9f332b;color:#fff;border-color:#9f332b}'
         + '.cutrev-repairs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.cutrev-repair{font:600 11px/1 system-ui,sans-serif;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:9px 8px;cursor:pointer}.cutrev-repair.primary{background:var(--ink);color:var(--paper)}.cutrev-repair:disabled{opacity:.45;cursor:default}.cutrev-repair-note{margin:8px 0 0;font:10px/1.35 system-ui,sans-serif;color:var(--ink-soft)}'
         + '.cutrev-empty{padding:40px 12px;text-align:center;color:var(--ink-soft)}.cutrev-pager{display:flex;justify-content:center;gap:10px;align-items:center;margin:18px 0 4px}.cutrev-pager button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 12px;cursor:pointer}.cutrev-pager button:disabled{opacity:.35;cursor:default}.cutrev-note{font:11px/1.45 system-ui,sans-serif;color:var(--ink-soft);margin:-8px 0 16px}'
         + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}}'
@@ -7453,7 +7454,7 @@
 
     function candidates() {
       if (!data) return [];
-      return (data.items || []).filter(function (item) {
+      var out = (data.items || []).filter(function (item) {
         if (filter === 'pending' && !(item.review === 'pending' && item.review_candidate)) return false;
         if (filter === 'bad' && item.review !== 'bad') return false;
         if (filter === 'good' && item.review !== 'good') return false;
@@ -7462,9 +7463,24 @@
         if (levelFilter === 'very_high' && item.level !== 'very_high') return false;
         if (levelFilter === 'high' && item.level !== 'high') return false;
         if (levelFilter === 'medium' && item.level !== 'medium') return false;
-        if (levelFilter === 'all') return true;
+        if (localFilter === 'detected' && !item.detected_here) return false;
+        if (localFilter === 'probable' && !(item.probable_local && !item.detected_here)) return false;
+        if (localFilter === 'local' && !(item.detected_here || item.probable_local)) return false;
         return true;
       });
+      // Default: species actually heard at this station first, then species
+      // predicted by BirdNET's range model for the station coordinates/week,
+      // then the rest. Preserve cutout severity inside each group.
+      if (localFilter === 'priority') {
+        out.sort(function (a, b) {
+          return (+a.local_priority || 0) - (+b.local_priority || 0)
+            || (+b.score || 0) - (+a.score || 0)
+            || String(a.file).localeCompare(String(b.file));
+        });
+      } else {
+        out.sort(function (a, b) { return (+b.score || 0) - (+a.score || 0); });
+      }
+      return out;
     }
 
     function render() {
@@ -7509,6 +7525,10 @@
         + [['candidate','Alta + molt alta'],['very_high','Molt alta'],['high','Alta'],['medium','Mitjana'],['all','Tots els nivells']].map(function (x) {
           return '<button data-level="' + x[0] + '" aria-current="' + (levelFilter === x[0] ? 'true' : 'false') + '">' + x[1] + '</button>';
         }).join('') + '</div>';
+      html += '<div class="cutrev-filters" data-cutrev-local>'
+        + [['priority','Prioritat local'],['local','De la zona'],['detected','Detectades aquí'],['probable','Probables a la zona'],['all','Qualsevol zona']].map(function (x) {
+          return '<button data-local="' + x[0] + '" aria-current="' + (localFilter === x[0] ? 'true' : 'false') + '">' + x[1] + '</button>';
+        }).join('') + '</div>';
 
       if (!shown.length) {
         html += '<div class="cutrev-empty">No hi ha il·lustracions en aquest filtre.</div>';
@@ -7529,6 +7549,9 @@
             + '<span class="cutrev-chip">' + adminEsc(levelCa(item.level)) + '</span>'
             + '<span class="cutrev-chip">forat ' + (+item.hole_pct).toFixed(2) + '%</span>'
             + '<span class="cutrev-chip">alpha ' + (+item.partial_pct).toFixed(2) + '%</span>'
+            + (item.detected_here ? '<span class="cutrev-chip detected">● detectada aquí</span>'
+              : (item.probable_local ? '<span class="cutrev-chip local">○ probable a la zona'
+                + (item.local_frequency != null ? ' · ' + Math.round((+item.local_frequency || 0) * 100) + '%' : '') + '</span>' : ''))
             + (item.has_raw ? '<span class="cutrev-chip">raw disponible</span>' : '')
             + '</div>'
             + '<div class="cutrev-actions">'
@@ -7541,7 +7564,7 @@
                 + (item.can_regenerate ? '<button class="cutrev-repair" data-repair="regenerate">✦ Regenera</button>' : '')
                 + '</div>'
                 + ((!item.has_raw && !item.can_regenerate)
-                  ? '<p class="cutrev-repair-note">No hi ha RAW i aquesta espècie no consta entre les deteccions; no es pot regenerar des de la Pi.</p>'
+                  ? '<p class="cutrev-repair-note">No hi ha RAW i no s’ha pogut resoldre aquesta espècie al catàleg BirdNET.</p>'
                   : (repairBusyFile === item.file ? '<p class="cutrev-repair-note">reparant...</p>' : ''))
               : '')
             + '</div></article>';
@@ -7671,7 +7694,7 @@
       fetch('./avian/api/generate.php?action=start', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
-        body: JSON.stringify({ sci: item.sci, force: true, pose: +item.pose || 1 })
+        body: JSON.stringify({ sci: item.sci, force: true, pose: +item.pose || 1, review_file: item.file })
       }).then(function (r) {
         return r.json().then(function (j) { return { ok: r.ok, j: j }; });
       }).then(function (res) {
@@ -7704,6 +7727,9 @@
       });
       adminBody.querySelectorAll('[data-cutrev-level] button').forEach(function (b) {
         b.addEventListener('click', function () { levelFilter = b.dataset.level; page = 0; render(); });
+      });
+      adminBody.querySelectorAll('[data-cutrev-local] button').forEach(function (b) {
+        b.addEventListener('click', function () { localFilter = b.dataset.local; page = 0; render(); });
       });
       adminBody.querySelectorAll('.cutrev-card').forEach(function (card) {
         card.querySelectorAll('.cutrev-mark').forEach(function (b) {

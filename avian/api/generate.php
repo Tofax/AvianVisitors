@@ -35,6 +35,9 @@ if (!is_string($LOCK) || $LOCK === '') {
 }
 $LOG     = "$ILLUS/.generate.log";
 $DB_PATH = "$BIRDNETPI_DIR/scripts/birds.db";
+$REVIEW_PATH = "$ILLUS/.cutout-review.json";
+$AUDIT_PATH = "$ILLUS/.cutout-audit.json";
+$LABELS_PATH = "$BIRDNETPI_DIR/model/labels.txt";
 $CONF    = "$BIRDNETPI_DIR/birdnet.conf";
 $STALE_S = 15 * 60;   // a "running" state older than this is a dead run
 $HOUR_CAP = 20;       // max starts per rolling hour (cost brake)
@@ -122,6 +125,39 @@ function find_executable(string $name): ?string {
     return null;
 }
 
+
+function review_species_for_file(string $file, string $sci, ?int $pose,
+                                 string $reviewPath, string $auditPath, string $labelsPath): ?array {
+    if (!preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)+(?:-2)?\\.png$/', $file)) return null;
+    $reviews = is_readable($reviewPath) ? json_decode((string)file_get_contents($reviewPath), true) : null;
+    if (!is_array($reviews) || !is_array($reviews[$file] ?? null)
+        || ($reviews[$file]['status'] ?? '') !== 'bad') return null;
+
+    $audit = is_readable($auditPath) ? json_decode((string)file_get_contents($auditPath), true) : null;
+    if (!is_array($audit) || !is_array($audit['items'] ?? null)) return null;
+    $auditItem = null;
+    foreach ($audit['items'] as $item) {
+        if (is_array($item) && ($item['file'] ?? '') === $file) { $auditItem = $item; break; }
+    }
+    if (!is_array($auditItem)) return null;
+    $expectedPose = (int)($auditItem['pose'] ?? 1);
+    if ($pose !== null && $pose !== $expectedPose) return null;
+    $expectedSlug = (string)($auditItem['slug'] ?? '');
+    $actualSlug = trim((string)preg_replace('/[^a-z0-9]+/', '-', strtolower($sci)), '-');
+    if ($expectedSlug === '' || !hash_equals($expectedSlug, $actualSlug)) return null;
+
+    if (!is_readable($labelsPath)) return null;
+    $lines = @file($labelsPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) return null;
+    foreach ($lines as $line) {
+        $parts = explode('_', trim((string)$line), 2);
+        if (($parts[0] ?? '') === $sci) {
+            return ['sci'=>$sci, 'com'=>trim($parts[1] ?? ''), 'pose'=>$expectedPose];
+        }
+    }
+    return null;
+}
+
 $action = $_GET['action'] ?? 'status';
 
 if ($action === 'status') {
@@ -162,7 +198,7 @@ if ($action === 'start') {
         exit;
     }
     $fields = get_object_vars($body);
-    if (array_diff(array_keys($fields), ['sci', 'force', 'pose'])) {
+    if (array_diff(array_keys($fields), ['sci', 'force', 'pose', 'review_file'])) {
         http_response_code(400);
         echo json_encode(['error' => 'unexpected field']);
         exit;
@@ -186,6 +222,12 @@ if ($action === 'start') {
     $sci = trim($fields['sci']);
     $force = $fields['force'] ?? false;
     $pose = $fields['pose'] ?? null;
+    $reviewFile = $fields['review_file'] ?? null;
+    if ($reviewFile !== null && !is_string($reviewFile)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'review_file must be a string']);
+        exit;
+    }
     // Strict binomial, same shape cutout.php enforces. This string (and
     // the DB-resolved common name) is all that ever reaches the shell,
     // and both still go through escapeshellarg.
@@ -207,12 +249,24 @@ if ($action === 'start') {
     $st->bindValue(':s', $sci, SQLITE3_TEXT);
     $row = $st->execute()->fetchArray(SQLITE3_ASSOC);
     $db->close();
-    if (!$row) {
-        http_response_code(404);
-        echo json_encode(['error' => 'species not in your detections']);
-        exit;
+    if ($row) {
+        $com = (string)$row['Com_Name'];
+    } else {
+        // The illustration-review workflow may regenerate a catalog species
+        // that has not yet been heard, but only after a human explicitly marks
+        // that exact audited file as incorrect. Resolve the common name from
+        // model/labels.txt rather than accepting it from the browser.
+        $reviewSpecies = is_string($reviewFile) && $reviewFile !== ''
+            ? review_species_for_file($reviewFile, $sci, $pose, $REVIEW_PATH, $AUDIT_PATH, $LABELS_PATH)
+            : null;
+        if (!is_array($reviewSpecies)) {
+            http_response_code(404);
+            echo json_encode(['error' => 'species not in your detections or approved review queue']);
+            exit;
+        }
+        $com = (string)$reviewSpecies['com'];
+        if ($pose === null) $pose = (int)$reviewSpecies['pose'];
     }
-    $com = (string)$row['Com_Name'];
 
     $key = conf_value($CONF, 'GEMINI_API_KEY');
     if ($key === '') {

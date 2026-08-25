@@ -26,6 +26,9 @@ $LOG = "$ILLUS/.cutout-audit.log";
 $PREVIEW_CACHE = "$ILLUS/.cutout-preview-cache";
 $SCRIPT = "$ROOT/avian/scripts/audit_cutouts.py";
 $DB_PATH = "$ROOT/scripts/birds.db";
+$LABELS_PATH = "$ROOT/model/labels.txt";
+$SPECIES_SCRIPT = "$ROOT/scripts/species.py";
+$LOCAL_SPECIES_CACHE = "$ILLUS/.cutout-local-species.json";
 $STALE_S = 20 * 60;
 
 function json_response(int $status, array $body): void {
@@ -111,6 +114,86 @@ function detected_species_by_slug(string $dbPath): array {
     return $out;
 }
 
+function catalog_species_by_slug(string $labelsPath): array {
+    if (!is_readable($labelsPath)) return [];
+    $out = [];
+    $lines = @file($labelsPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) return [];
+    foreach ($lines as $line) {
+        $line = trim((string)$line);
+        if ($line === '') continue;
+        $parts = explode('_', $line, 2);
+        $sci = trim($parts[0] ?? '');
+        if ($sci === '' || !preg_match('/^[A-Z][a-z-]+ [a-z-]+$/', $sci)) continue;
+        $slug = slugify_sci($sci);
+        if ($slug === '') continue;
+        $out[$slug] = ['sci'=>$sci, 'com'=>trim($parts[1] ?? '')];
+    }
+    return $out;
+}
+
+function local_species_by_slug(string $root, string $python, string $script,
+                               string $cachePath, string $confPath): array {
+    $week = (int)date('W');
+    $thresholdRaw = avian_conf_value($confPath, 'SF_THRESH');
+    $threshold = is_string($thresholdRaw) && is_numeric($thresholdRaw)
+        ? max(0.001, min(0.99, (float)$thresholdRaw)) : 0.03;
+    $lat = avian_conf_value($confPath, 'LATITUDE');
+    $lon = avian_conf_value($confPath, 'LONGITUDE');
+    $scriptMtime = is_file($script) ? (int)@filemtime($script) : 0;
+    $cacheKey = hash('sha256', implode('|', [(string)$week, (string)$threshold,
+        (string)$lat, (string)$lon, (string)$scriptMtime]));
+
+    $cached = read_json_file($cachePath);
+    if (($cached['key'] ?? '') === $cacheKey && is_array($cached['species'] ?? null)) {
+        return ['available'=>true, 'source'=>'cache', 'week'=>$week, 'threshold'=>$threshold,
+                'lat'=>$lat, 'lon'=>$lon, 'species'=>$cached['species']];
+    }
+
+    if ($python === '' || !is_readable($script) || !function_exists('proc_open')) {
+        return ['available'=>false, 'source'=>'unavailable', 'week'=>$week, 'threshold'=>$threshold,
+                'lat'=>$lat, 'lon'=>$lon, 'species'=>[]];
+    }
+
+    $command = [$python, $script, '--threshold', (string)$threshold];
+    $descriptors = [0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']];
+    $env = $_ENV;
+    $env['HOME'] = dirname($root);
+    $env['USER'] = basename(dirname($root));
+    $process = @proc_open($command, $descriptors, $pipes, $root, $env, ['bypass_shell'=>true]);
+    if (!is_resource($process)) {
+        return ['available'=>false, 'source'=>'spawn_failed', 'week'=>$week, 'threshold'=>$threshold,
+                'lat'=>$lat, 'lon'=>$lon, 'species'=>[]];
+    }
+    $stdout = stream_get_contents($pipes[1]); fclose($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]); fclose($pipes[2]);
+    $rc = proc_close($process);
+    if ($rc !== 0) {
+        return ['available'=>false, 'source'=>'worker_failed', 'week'=>$week, 'threshold'=>$threshold,
+                'lat'=>$lat, 'lon'=>$lon, 'error'=>trim((string)$stderr), 'species'=>[]];
+    }
+
+    $species = [];
+    foreach (preg_split('/\\R/', (string)$stdout) ?: [] as $line) {
+        // species.py prints: "Scientific name_Common name - 0.1234"
+        if (!preg_match('/^(.+?)\\s+-\\s+([0-9]*\\.?[0-9]+)\\s*$/', trim($line), $m)) continue;
+        $label = trim($m[1]);
+        $prob = (float)$m[2];
+        $parts = explode('_', $label, 2);
+        $sci = trim($parts[0] ?? '');
+        if ($sci === '' || !preg_match('/^[A-Z][a-z-]+ [a-z-]+$/', $sci)) continue;
+        $slug = slugify_sci($sci);
+        if ($slug === '') continue;
+        $species[$slug] = ['sci'=>$sci, 'com'=>trim($parts[1] ?? ''), 'frequency'=>round($prob, 6)];
+    }
+
+    $payload = ['schema'=>1,'key'=>$cacheKey,'generated_at'=>time(),'week'=>$week,
+                'threshold'=>$threshold,'lat'=>$lat,'lon'=>$lon,'species'=>$species];
+    @atomic_write_json($cachePath, $payload);
+    return ['available'=>true, 'source'=>'model', 'week'=>$week, 'threshold'=>$threshold,
+            'lat'=>$lat, 'lon'=>$lon, 'species'=>$species];
+}
+
 function current_audit_state(string $path, int $staleSeconds): array {
     $state = read_json_file($path);
     $running = !empty($state['running']);
@@ -125,14 +208,19 @@ function current_audit_state(string $path, int $staleSeconds): array {
 }
 
 function merged_list(string $auditPath, string $reviewPath, string $statePath,
-                     int $staleSeconds, string $dbPath): array {
+                     int $staleSeconds, string $dbPath, string $labelsPath, string $root,
+                     string $python, string $speciesScript, string $localCache, string $confPath): array {
     $audit = read_json_file($auditPath);
     $reviews = read_json_file($reviewPath);
     $state = current_audit_state($statePath, $staleSeconds);
-    $species = detected_species_by_slug($dbPath);
+    $detected = detected_species_by_slug($dbPath);
+    $catalog = catalog_species_by_slug($labelsPath);
+    $localInfo = local_species_by_slug($root, $python, $speciesScript, $localCache, $confPath);
+    $local = is_array($localInfo['species'] ?? null) ? $localInfo['species'] : [];
     $items = [];
     $counts = ['pending'=>0,'good'=>0,'bad'=>0,'suspicious'=>0,'review_candidates'=>0,
-               'very_likely_bad'=>0,'very_high'=>0,'high'=>0,'medium'=>0,'low'=>0,'very_low'=>0];
+               'very_likely_bad'=>0,'detected_here'=>0,'probable_local'=>0,'other_local'=>0,
+               'very_high'=>0,'high'=>0,'medium'=>0,'low'=>0,'very_low'=>0];
 
     foreach (($audit['items'] ?? []) as $item) {
         if (!is_array($item) || !isset($item['file'])) continue;
@@ -144,7 +232,11 @@ function merged_list(string $auditPath, string $reviewPath, string $statePath,
         $candidate = array_key_exists('review_candidate', $item) ? !empty($item['review_candidate']) : $score >= 40.0;
         $veryLikely = array_key_exists('very_likely_bad', $item) ? !empty($item['very_likely_bad']) : $score >= 70.0;
         $slug = (string)($item['slug'] ?? '');
-        $sp = $species[$slug] ?? null;
+        $heard = $detected[$slug] ?? null;
+        $near = $local[$slug] ?? null;
+        $sp = $heard ?? $near ?? ($catalog[$slug] ?? null);
+        $localStatus = is_array($heard) ? 'detected' : (is_array($near) ? 'probable' : 'other');
+        $localPriority = $localStatus === 'detected' ? 0 : ($localStatus === 'probable' ? 1 : 2);
 
         $item['review_candidate'] = $candidate;
         $item['very_likely_bad'] = $veryLikely;
@@ -153,12 +245,20 @@ function merged_list(string $auditPath, string $reviewPath, string $statePath,
         $item['sci'] = is_array($sp) ? $sp['sci'] : null;
         $item['com'] = is_array($sp) ? $sp['com'] : null;
         $item['can_regenerate'] = is_array($sp);
+        $item['detected_here'] = is_array($heard);
+        $item['probable_local'] = is_array($near);
+        $item['local_status'] = $localStatus;
+        $item['local_priority'] = $localPriority;
+        $item['local_frequency'] = is_array($near) ? (float)($near['frequency'] ?? 0) : null;
         $items[] = $item;
 
         if ($status === 'pending') { if ($candidate) $counts['pending']++; }
         else $counts[$status]++;
         if ($candidate) $counts['review_candidates']++;
         if ($veryLikely) $counts['very_likely_bad']++;
+        if ($localStatus === 'detected') $counts['detected_here']++;
+        elseif ($localStatus === 'probable') $counts['probable_local']++;
+        else $counts['other_local']++;
         if (!empty($item['suspicious'])) $counts['suspicious']++;
         $level = (string)($item['level'] ?? '');
         if (array_key_exists($level, $counts)) $counts[$level]++;
@@ -169,9 +269,15 @@ function merged_list(string $auditPath, string $reviewPath, string $statePath,
         'summary'=>['total'=>count($items),'pending'=>$counts['pending'],'good'=>$counts['good'],
             'bad'=>$counts['bad'],'suspicious'=>$counts['suspicious'],
             'review_candidates'=>$counts['review_candidates'],'very_likely_bad'=>$counts['very_likely_bad'],
+            'detected_here'=>$counts['detected_here'],'probable_local'=>$counts['probable_local'],
+            'other_local'=>$counts['other_local'],
             'levels'=>['very_high'=>$counts['very_high'],'high'=>$counts['high'],'medium'=>$counts['medium'],
                        'low'=>$counts['low'],'very_low'=>$counts['very_low']],
             'errors'=>is_array($audit['errors'] ?? null) ? count($audit['errors']) : 0],
+        'local'=>['available'=>!empty($localInfo['available']),'source'=>$localInfo['source'] ?? null,
+            'week'=>$localInfo['week'] ?? null,'threshold'=>$localInfo['threshold'] ?? null,
+            'lat'=>$localInfo['lat'] ?? null,'lon'=>$localInfo['lon'] ?? null,
+            'count'=>count($local)],
         'items'=>$items];
 }
 
@@ -204,7 +310,7 @@ $action = (string)($_GET['action'] ?? 'list');
 $method = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
 if ($method === 'GET' && $action === 'list') {
-    json_response(200, merged_list($AUDIT, $REVIEW, $STATE, $STALE_S, $DB_PATH));
+    json_response(200, merged_list($AUDIT, $REVIEW, $STATE, $STALE_S, $DB_PATH, $LABELS_PATH, $ROOT, audit_python($ROOT), $SPECIES_SCRIPT, $LOCAL_SPECIES_CACHE, "$ROOT/birdnet.conf"));
 }
 
 if ($method === 'GET' && $action === 'preview') {
@@ -316,7 +422,7 @@ if ($action === 'mark' || $bodyAction === 'mark') {
     else $reviews[$file] = ['status'=>$status,'reviewed_at'=>time()];
     ksort($reviews, SORT_STRING);
     if (!atomic_write_json($REVIEW, $reviews)) json_response(500, ['ok'=>false,'error'=>'cannot save review']);
-    json_response(200, merged_list($AUDIT,$REVIEW,$STATE,$STALE_S,$DB_PATH));
+    json_response(200, merged_list($AUDIT,$REVIEW,$STATE,$STALE_S,$DB_PATH,$LABELS_PATH,$ROOT,audit_python($ROOT),$SPECIES_SCRIPT,$LOCAL_SPECIES_CACHE,"$ROOT/birdnet.conf"));
 }
 
 if ($action === 'recut' || $bodyAction === 'recut' || $action === 'refresh' || $bodyAction === 'refresh') {
@@ -333,7 +439,7 @@ if ($action === 'recut' || $bodyAction === 'recut' || $action === 'refresh' || $
         ['--dir',$ILLUS,'--output',$AUDIT,'--'.($wanted === 'recut' ? 'recut' : 'refresh'),$file]);
     if (empty($worker['ok'])) json_response(409, ['ok'=>false,'error'=>$worker['error'] ?? 'repair failed']);
     if (!clear_review($REVIEW, $file)) json_response(500, ['ok'=>false,'error'=>'repair succeeded but review state could not be reset']);
-    $list = merged_list($AUDIT,$REVIEW,$STATE,$STALE_S,$DB_PATH);
+    $list = merged_list($AUDIT,$REVIEW,$STATE,$STALE_S,$DB_PATH,$LABELS_PATH,$ROOT,audit_python($ROOT),$SPECIES_SCRIPT,$LOCAL_SPECIES_CACHE,"$ROOT/birdnet.conf");
     $list['changed'] = $worker['item'] ?? null;
     json_response(200, $list);
 }
