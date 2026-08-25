@@ -174,6 +174,21 @@ def chroma_cut(src: Path, dst: Path) -> None:
         colored_core_img.filter(ImageFilter.MaxFilter(3))
     ) > 127
 
+    # Plomatge pàl·lid que queda enganxat a una zona de foreground fiable.
+    plumage_restore = np.asarray(
+        strong_img.filter(ImageFilter.MaxFilter(7))
+    ) > 127
+
+    pale_plumage_candidate = (
+        (dist >= paper_p95 + 2.0)
+        | (saturation >= 0.12)
+    )
+
+    pale_plumage_restore = (
+        plumage_restore
+        & pale_plumage_candidate
+    )
+
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
 
@@ -378,6 +393,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
         colored_restore.astype(np.uint8) * 255
     ).save(
         debug_dir / f"{dst.stem}-colored-restore.png"
+    )
+
+    Image.fromarray(
+        pale_plumage_restore.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-pale-plumage-restore.png"
     )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
@@ -632,6 +653,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
                     if (
                         strong_fg[py, px]
                         or colored_restore[py, px]
+                        or pale_plumage_restore[py, px]
                     ):
                         clean[py, px] = True
 
