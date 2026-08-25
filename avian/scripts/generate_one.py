@@ -152,7 +152,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     # Guard band. 7 px és prou petit per no crear halos grans, però evita
     # que el flood travessi zones beix enganxades a línies fosques del cos.
-    strong_img = strong_img.filter(ImageFilter.MaxFilter(3))
+    strong_img = strong_img.filter(ImageFilter.MaxFilter(5))
     protected_fg = np.asarray(strong_img) > 127
 
     def flood_for_tol(test_tol: float):
