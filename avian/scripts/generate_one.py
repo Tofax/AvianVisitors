@@ -492,13 +492,20 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # Això evita eliminar grans regions clares legítimes com pit o ventre.
 
     if best_passable is not None:
-        enclosed_passable = best_passable & ~exterior & clean
-
         hole_tol = min(max_tol, paper_p95 + 4.0)
 
         strict_hole_like = (
             ((dist < hole_tol) & (saturation < 0.28))
             | ((value > 0.74) & (saturation < 0.20))
+        )
+
+        # Només construïm components amb píxels que realment
+        # tenen aparença estricta de paper.
+        enclosed_passable = (
+            best_passable
+            & ~exterior
+            & clean
+            & strict_hole_like
         )
 
         hole_seen = np.zeros((h, w), dtype=bool)
@@ -574,14 +581,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 bbox_area = hole_w * hole_h
                 fill_ratio = len(hole) / max(1, bbox_area)
                 if fill_ratio < 0.30:
-                    continue
-
-                # Exigeix que la major part del component realment sembli paper.
-                paper_like_ratio = np.mean([
-                    strict_hole_like[py, px]
-                    for px, py in hole
-                ])
-                if paper_like_ratio < 0.82:
                     continue
 
                 # Si passa tots els filtres, sí que ho considerem paper tancat.
