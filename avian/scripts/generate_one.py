@@ -287,65 +287,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
     solid = ~exterior
 
     # ------------------------------------------------------------------
-    # FORATS INTERIORS DE PAPER
-    # ------------------------------------------------------------------
-    # El flood exterior no pot entrar en zones de paper completament
-    # tancades per la silueta, per exemple entre dues potes juntes.
-    #
-    # Eliminem només components interiors que tinguin aparença clara de paper,
-    # evitant així foradar plomatge legítim.
-
-    hole_tol = min(max_tol, paper_p95 + 4.0)
-
-    enclosed_paper_candidate = (
-        (dist < hole_tol)
-        | (
-            (value > 0.72)
-            & (saturation < 0.28)
-        )
-    )
-
-    enclosed = enclosed_paper_candidate & ~exterior
-
-    seen_holes = np.zeros((h, w), dtype=bool)
-    max_hole_size = int(0.015 * h * w)
-
-    for y in range(h):
-        for x in range(w):
-            if not enclosed[y, x] or seen_holes[y, x]:
-                continue
-
-            q = deque([(x, y)])
-            seen_holes[y, x] = True
-            comp = []
-
-            while q:
-                cx, cy = q.popleft()
-                comp.append((cx, cy))
-
-                for nx, ny in (
-                        (cx - 1, cy),
-                        (cx + 1, cy),
-                        (cx, cy - 1),
-                        (cx, cy + 1),
-                ):
-                    if (
-                        0 <= nx < w
-                        and 0 <= ny < h
-                        and enclosed[ny, nx]
-                        and not seen_holes[ny, nx]
-                    ):
-                        seen_holes[ny, nx] = True
-                        q.append((nx, ny))
-
-            if len(comp) > max_hole_size:
-                continue
-
-            # Paper interior confirmat.
-            for px, py in comp:
-                solid[py, px] = False
-
-    # ------------------------------------------------------------------
     # COMPONENTS DEL FOREGROUND
     # ------------------------------------------------------------------
     seen = np.zeros((h, w), dtype=bool)
