@@ -637,7 +637,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
                 # Banda que segueix el contorn del foreground fiable.
                 contour_keep = np.asarray(
-                    reliable_img.filter(ImageFilter.MaxFilter(5))
+                    reliable_img.filter(ImageFilter.MaxFilter(7))
                 ) > 127
 
                 # Només ens interessa dins del forat actual.
