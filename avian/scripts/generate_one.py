@@ -621,9 +621,27 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 hole_w = hx1 - hx0 + 1
                 hole_h = hy1 - hy0 + 1
 
-                # Conservem una petita franja superior del forat:
-                # és on sovint hi ha la unió plomatge-pota.
-                top_keep_y = hy0 + max(2, int(0.18 * hole_h))
+                hole_mask = np.zeros((h, w), dtype=bool)
+                for px, py in hole:
+                    hole_mask[py, px] = True
+
+                reliable_fg = (
+                    strong_fg
+                    | colored_restore
+                    | pale_plumage_restore
+                )
+
+                reliable_img = Image.fromarray(
+                    reliable_fg.astype(np.uint8) * 255
+                )
+
+                # Banda que segueix el contorn del foreground fiable.
+                contour_keep = np.asarray(
+                    reliable_img.filter(ImageFilter.MaxFilter(5))
+                ) > 127
+
+                # Només ens interessa dins del forat actual.
+                contour_keep &= hole_mask
 
                 # Evita eliminar franges molt primes i allargades (potes).
                 aspect = max(hole_w, hole_h) / max(1, min(hole_w, hole_h))
@@ -644,21 +662,19 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 if paper_like_ratio < 0.82:
                     continue
 
-                # El component ja ha passat els filtres de mida, posició,
-                # forma, compactesa i aparença global de paper.
-                # Primer l'eliminem sencer.
+                # Eliminem del forat només el que NO forma part de la banda
+                # de contorn a conservar.
                 for px, py in hole:
-                    if py >= top_keep_y:
+                    if not contour_keep[py, px]:
                         clean[py, px] = False
 
-                # Després recuperem només foreground fiable:
-                # - zones clarament diferents del paper
-                # - zones clarament acolorides, com potes o bec
+                # I recuperem explícitament foreground fiable.
                 for px, py in hole:
                     if (
                         strong_fg[py, px]
                         or colored_restore[py, px]
                         or pale_plumage_restore[py, px]
+                        or contour_keep[py, px]
                     ):
                         clean[py, px] = True
 
