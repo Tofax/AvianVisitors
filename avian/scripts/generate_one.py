@@ -161,6 +161,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
         strong_img.filter(ImageFilter.MaxFilter(3))
     ) > 127
 
+    # Protecció específica per a la neteja de forats interiors.
+    # És una banda estreta al voltant del foreground segur que impedeix
+    # que la neteja del paper entre potes mossegui potes, dits o plomes.
+    protected_fg_holes = np.asarray(
+        strong_img.filter(ImageFilter.MaxFilter(5))
+    ) > 127
+
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
 
@@ -359,6 +366,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
         protected_fg_light.astype(np.uint8) * 255
     ).save(
         debug_dir / f"{dst.stem}-protected-light.png"
+    )
+
+    Image.fromarray(
+        protected_fg_holes.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-protected-holes.png"
     )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
@@ -604,7 +617,10 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 # alguns píxels de la pota o dels dits. Només eliminem els píxels que
                 # individualment continuen tenint aparença de paper.
                 for px, py in hole:
-                    if strict_hole_like[py, px]:
+                    if (
+                        strict_hole_like[py, px]
+                        and not protected_fg_holes[py, px]
+                    ):
                         clean[py, px] = False
 
     # ------------------------------------------------------------------
