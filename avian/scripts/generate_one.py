@@ -168,6 +168,22 @@ def chroma_cut(src: Path, dst: Path) -> None:
         strong_img.filter(ImageFilter.MaxFilter(5))
     ) > 127
 
+    # Les parts clarament acolorides (potes, bec, plomatge viu, etc.)
+    # no poden ser paper crema encara que algun píxel clar de la textura
+    # s'hi assembli per luminància.
+    colored_fg = saturation > 0.35
+
+    colored_img = Image.fromarray(
+        colored_fg.astype(np.uint8) * 255
+    )
+
+    # Protegeix també els píxels clars immediatament adjacents al color.
+    colored_guard = np.asarray(
+        colored_img.filter(ImageFilter.MaxFilter(5))
+    ) > 127
+
+    protected_fg_holes |= colored_guard
+
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
 
@@ -372,6 +388,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
         protected_fg_holes.astype(np.uint8) * 255
     ).save(
         debug_dir / f"{dst.stem}-protected-holes.png"
+    )
+
+    Image.fromarray(
+        colored_guard.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-protected-color-detail.png"
     )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
