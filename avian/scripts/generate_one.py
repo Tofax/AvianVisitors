@@ -129,7 +129,19 @@ def chroma_cut(src: Path, dst: Path) -> None:
         # permeti que el flood entri dins de l'ocell.
         pass_img = Image.fromarray(
             passable.astype(np.uint8) * 255
-        ).filter(ImageFilter.MinFilter(3))
+        )
+
+        # Closing morfològic:
+        # - MaxFilter uneix petites interrupcions del paper provocades pel gra.
+        # - MinFilter recupera aproximadament el límit original.
+        #
+        # És important NO fer només MinFilter: això erosiona el paper i el
+        # fragmenta, que és precisament el problema que veiem en aquest render.
+        pass_img = (
+            pass_img
+            .filter(ImageFilter.MaxFilter(5))
+            .filter(ImageFilter.MinFilter(5))
+        )
 
         passable_for_flood = np.asarray(pass_img) > 127
 
@@ -191,7 +203,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
         # el contorn i està entrant dins de plomatge clar.
         jump = frac - previous_frac
 
-        if previous_frac >= 0.25 and jump > 0.18:
+        if previous_frac >= 0.35 and jump > 0.12:
             break
 
         # No acceptem una màscara que deixi gairebé tota la imatge com a
@@ -205,12 +217,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
             best_tol = test_tol
 
         previous_frac = frac
-
-        # Normalment les il·lustracions tenen molt fons. Quan ja n'hem
-        # recuperat una quantitat raonable no cal continuar augmentant
-        # agressivament la tolerància.
-        if frac >= 0.55:
-            break
 
     exterior = best_exterior
     exterior_frac = best_frac
