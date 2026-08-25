@@ -786,38 +786,45 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 clean[py, px] = True
 
     # ------------------------------------------------------------------
-    # REPARACIÓ FINAL DE MICROFORATS AÏLLATS
+    # REPARACIÓ FINAL DE MICROFORATS / PETITES MOSSEGADES
     # ------------------------------------------------------------------
-    # Recupera només píxels transparents pràcticament envoltats de foreground.
-    # Una sola passada evita engruixir contorns o tancar espais entre potes/dits.
+    # Un microforat pot estar connectat al buit entre les potes per un coll
+    # d'1 píxel i, per tant, no ser topològicament un "forat".
+    #
+    # Fem un closing mínim de 3x3, però només acceptem els píxels afegits
+    # que quedin immediatament al costat de foreground fiable. Així reparem
+    # petites mossegades sense tancar globalment els espais entre potes/dits.
 
-    micro_repair = clean.copy()
+    clean_img = Image.fromarray(
+        clean.astype(np.uint8) * 255
+    )
 
-    for py in range(y0 + 1, y1):
-        for px in range(x0 + 1, x1):
-            if clean[py, px]:
-                continue
+    closed = np.asarray(
+        clean_img
+        .filter(ImageFilter.MaxFilter(3))
+        .filter(ImageFilter.MinFilter(3))
+    ) > 127
 
-            foreground_neighbors = 0
+    # Només els píxels que el closing voldria recuperar.
+    closing_added = closed & ~clean
 
-            for nx, ny in (
-                    (px - 1, py - 1),
-                    (px,     py - 1),
-                    (px + 1, py - 1),
-                    (px - 1, py),
-                    (px + 1, py),
-                    (px - 1, py + 1),
-                    (px,     py + 1),
-                    (px + 1, py + 1),
-            ):
-                if clean[ny, nx]:
-                    foreground_neighbors += 1
+    reliable_fg = (
+        strong_fg
+        | colored_restore
+        | pale_plumage_restore
+    )
 
-            # Només un píxel gairebé completament envoltat d'ocell.
-            if foreground_neighbors >= 7:
-                micro_repair[py, px] = True
+    # Una banda molt estreta, 1 píxel aproximadament,
+    # al voltant del foreground que sabem que és ocell.
+    repair_support = np.asarray(
+        Image.fromarray(
+            reliable_fg.astype(np.uint8) * 255
+        ).filter(ImageFilter.MaxFilter(3))
+    ) > 127
 
-    clean = micro_repair
+    # Recuperem exclusivament petites mossegades enganxades
+    # al foreground fiable.
+    clean |= closing_added & repair_support
 
     # No fem closing global del foreground:
     # pot segellar espais estrets legítims entre potes, dits o plomes.
