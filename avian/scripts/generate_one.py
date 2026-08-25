@@ -150,7 +150,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
         .filter(ImageFilter.MaxFilter(3))
     )
 
-    # Guard band. 7 px és prou petit per no crear halos grans, però evita
+    # Guard band. 5 px és prou petit per no crear halos grans, però evita
     # que el flood travessi zones beix enganxades a línies fosques del cos.
     strong_img = strong_img.filter(ImageFilter.MaxFilter(5))
     protected_fg = np.asarray(strong_img) > 127
@@ -206,7 +206,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 ImageDraw.floodfill(m, s, 255)
 
         ext = np.asarray(m) == 255
-        return ext, float(ext.mean())
+        return ext, float(ext.mean()), passable_for_flood
 
     # Seqüència adaptativa de toleràncies. Passos petits perquè la detecció
     # de fuita sigui més sensible que amb salts de 4.
@@ -223,40 +223,44 @@ def chroma_cut(src: Path, dst: Path) -> None:
     best_exterior = None
     best_frac = 0.0
     best_tol = None
+    best_passable = None
 
     previous_frac = None
     previous_candidate = None
 
     for test_tol in tolerances:
-        candidate, frac = flood_for_tol(test_tol)
+        candidate, frac, candidate_passable = flood_for_tol(test_tol)
 
         if previous_frac is not None:
             jump = frac - previous_frac
 
-            # Amb passos de 2, un salt de 6% ja és sospitós. El criteri antic
-            # de 12% podia deixar passar una invasió gradual del plomatge.
             if previous_frac >= 0.35 and jump > 0.06:
                 break
 
-            # Si els nous píxels de fons apareixen majoritàriament lluny del
-            # perímetre, és un altre senyal que el flood ha entrat a l'ocell.
             newly_exterior = candidate & ~previous_candidate
             if newly_exterior.any():
                 yy, xx = np.where(newly_exterior)
+
                 edge_dist = np.minimum.reduce([
                     xx,
                     (w - 1) - xx,
                     yy,
                     (h - 1) - yy,
                     ])
+
                 deep_ratio = float(
-                    np.mean(edge_dist > int(0.12 * min(h, w)))
+                    np.mean(
+                        edge_dist > int(0.12 * min(h, w))
+                    )
                 )
 
-                if previous_frac >= 0.35 and jump > 0.02 and deep_ratio > 0.55:
+                if (
+                    previous_frac >= 0.35
+                    and jump > 0.02
+                    and deep_ratio > 0.55
+                ):
                     break
 
-        # No acceptem una màscara que deixi gairebé tota la imatge com a fons.
         if frac > 0.90:
             break
 
@@ -264,6 +268,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
             best_exterior = candidate
             best_frac = frac
             best_tol = test_tol
+            best_passable = candidate_passable.copy()
 
         previous_frac = frac
         previous_candidate = candidate
@@ -282,6 +287,42 @@ def chroma_cut(src: Path, dst: Path) -> None:
             f"exterior {100 * exterior_frac:.0f}%) - "
             f"raw kept for the upgrade pass"
         )
+
+    debug_dir = dst.parent / "debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    # Distància respecte del paper.
+    dist_debug = np.clip(
+        dist / max(1.0, max_tol) * 255.0,
+        0,
+        255
+    ).astype(np.uint8)
+
+    Image.fromarray(dist_debug).save(
+        debug_dir / f"{dst.stem}-dist.png"
+    )
+
+    # Foreground que estem protegint.
+    Image.fromarray(
+        protected_fg.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-protected.png"
+    )
+
+    # Paper candidat amb la tolerància final seleccionada.
+    if best_passable is not None:
+        Image.fromarray(
+            best_passable.astype(np.uint8) * 255
+        ).save(
+            debug_dir / f"{dst.stem}-passable.png"
+        )
+
+    # Paper que finalment ha pogut assolir el flood.
+    Image.fromarray(
+        exterior.astype(np.uint8) * 255
+    ).save(
+        debug_dir / f"{dst.stem}-exterior.png"
+    )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
     solid = ~exterior
