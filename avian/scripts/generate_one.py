@@ -57,13 +57,16 @@ def chroma_cut(src: Path, dst: Path) -> None:
     """Instant cutout for a cream-ground render.
 
     Only paper connected to the image border becomes transparent.
-    A conservative adaptive threshold plus a small connectivity barrier
-    prevents the flood from leaking through pale or weakly inked parts of
-    white birds.
 
-    Small disconnected foreground islands caused by paper grain are removed
-    after the flood. The final alpha is fully opaque in the bird interior and
-    feathered only along the outer silhouette.
+    The flood uses three safeguards against eating pale plumage:
+      1. a conservative adaptive paper threshold,
+      2. a guard band around clearly non-paper pixels,
+      3. morphological opening of the passable-paper mask to break thin
+         channels before the border flood.
+
+    After the flood, only the main bird component and genuinely nearby
+    detached pieces are retained. The final alpha is fully opaque in the bird
+    interior and feathered only along the outer silhouette.
     """
     im = Image.open(src).convert("RGB")
     arr = np.asarray(im)
@@ -75,11 +78,10 @@ def chroma_cut(src: Path, dst: Path) -> None:
     patch = 20
 
     samples = [
-        arr[:patch, :patch],                                      # cantonada SE? superior esquerra
+        arr[:patch, :patch],                                      # superior esquerra
         arr[:patch, -patch:],                                     # superior dreta
         arr[-patch:, :patch],                                     # inferior esquerra
         arr[-patch:, -patch:],                                    # inferior dreta
-
         arr[:patch, w // 2 - patch:w // 2 + patch],               # centre superior
         arr[-patch:, w // 2 - patch:w // 2 + patch],              # centre inferior
         arr[h // 2 - patch:h // 2 + patch, :patch],               # centre esquerra
@@ -101,7 +103,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     dist = distances.min(axis=0)
 
-    # Measure genuine paper variation on the outer strips.
+    # Variació real del paper a les franges exteriors.
     border = np.concatenate([
         dist[:40, :].ravel(),
         dist[-40:, :].ravel(),
@@ -113,34 +115,58 @@ def chroma_cut(src: Path, dst: Path) -> None:
     paper_p95 = float(np.percentile(border, 95))
     paper_p99 = float(np.percentile(border, 99))
 
-    # No fem servir un únic llindar global fix. Alguns renders tenen
-    # gradient, vinyetatge o textura del paper molt més marcada.
+    # Llindars adaptatius.
     #
-    # Provem diversos llindars de forma progressiva i ens quedem amb
-    # l'últim resultat estable abans que el flood comenci a créixer
-    # bruscament cap a l'interior de l'ocell.
-    start_tol = float(max(12.0, min(24.0, paper_p90 + 3.0)))
-    max_tol = float(min(82.0, max(36.0, paper_p99 + 10.0)))
+    # Important: no deixem que max_tol s'allunyi massa del paper real.
+    # Amb ocells marrons/beix (com el gaig), toleràncies molt altes poden
+    # classificar el plomatge clar com a paper encara que el flood sigui
+    # "connectat a la vora".
+    start_tol = float(max(10.0, min(22.0, paper_p90 + 2.0)))
+    max_tol = float(min(52.0, max(30.0, paper_p99 + 6.0)))
+
+    # ------------------------------------------------------------------
+    # MÀSCARA DE PROTECCIÓ DEL PRIMER PLA
+    # ------------------------------------------------------------------
+    # Els píxels clarament diferents del paper són tinta/plomatge segur.
+    # N'eliminem el gra aïllat i després els dilatem una mica per protegir
+    # també els tons pàl·lids immediatament adjacents.
+    strong_fg_tol = float(max(30.0, min(58.0, paper_p99 + 12.0)))
+    strong_fg = dist >= strong_fg_tol
+
+    strong_img = Image.fromarray(strong_fg.astype(np.uint8) * 255)
+
+    # Opening del foreground: elimina puntets de gra petits sense unir-los.
+    strong_img = (
+        strong_img
+        .filter(ImageFilter.MinFilter(3))
+        .filter(ImageFilter.MaxFilter(3))
+    )
+
+    # Guard band. 7 px és prou petit per no crear halos grans, però evita
+    # que el flood travessi zones beix enganxades a línies fosques del cos.
+    strong_img = strong_img.filter(ImageFilter.MaxFilter(7))
+    protected_fg = np.asarray(strong_img) > 127
 
     def flood_for_tol(test_tol: float):
         passable = dist < test_tol
 
-        # Tanquem canals molt fins perquè un contorn pàl·lid o dèbil no
-        # permeti que el flood entri dins de l'ocell.
+        # Mai permetem que el flood travessi la banda de protecció.
+        passable &= ~protected_fg
+
         pass_img = Image.fromarray(
             passable.astype(np.uint8) * 255
         )
 
-        # Closing morfològic:
-        # - MaxFilter uneix petites interrupcions del paper provocades pel gra.
-        # - MinFilter recupera aproximadament el límit original.
+        # Opening morfològic del PAPER (Min -> Max).
         #
-        # És important NO fer només MinFilter: això erosiona el paper i el
-        # fragmenta, que és precisament el problema que veiem en aquest render.
+        # Això és deliberadament l'ordre contrari d'un closing:
+        # primer erosiona els canals de paper molt fins i després recupera
+        # aproximadament el contorn. D'aquesta manera un petit "pont" de
+        # color crema dins del plomatge no obre una via cap a l'ocell.
         pass_img = (
             pass_img
-            .filter(ImageFilter.MaxFilter(5))
-            .filter(ImageFilter.MinFilter(5))
+            .filter(ImageFilter.MinFilter(3))
+            .filter(ImageFilter.MaxFilter(3))
         )
 
         passable_for_flood = np.asarray(pass_img) > 127
@@ -154,8 +180,8 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
         seeds = []
 
-        step_x = max(1, w // 48)
-        step_y = max(1, h // 48)
+        step_x = max(1, w // 64)
+        step_y = max(1, h // 64)
 
         for x in range(0, w, step_x):
             seeds.append((x, 0))
@@ -179,13 +205,14 @@ def chroma_cut(src: Path, dst: Path) -> None:
         ext = np.asarray(m) == 255
         return ext, float(ext.mean())
 
-    # Construïm una seqüència adaptativa de toleràncies.
+    # Seqüència adaptativa de toleràncies. Passos petits perquè la detecció
+    # de fuita sigui més sensible que amb salts de 4.
     tolerances = []
 
     t = start_tol
     while t <= max_tol:
         tolerances.append(float(t))
-        t += 4.0
+        t += 2.0
 
     if not tolerances or tolerances[-1] < max_tol:
         tolerances.append(max_tol)
@@ -194,21 +221,40 @@ def chroma_cut(src: Path, dst: Path) -> None:
     best_frac = 0.0
     best_tol = None
 
-    previous_frac = 0.0
+    previous_frac = None
+    previous_candidate = None
 
     for test_tol in tolerances:
         candidate, frac = flood_for_tol(test_tol)
 
-        # Si de cop el flood creix molt, probablement acaba de travessar
-        # el contorn i està entrant dins de plomatge clar.
-        jump = frac - previous_frac
+        if previous_frac is not None:
+            jump = frac - previous_frac
 
-        if previous_frac >= 0.35 and jump > 0.12:
-            break
+            # Amb passos de 2, un salt de 6% ja és sospitós. El criteri antic
+            # de 12% podia deixar passar una invasió gradual del plomatge.
+            if previous_frac >= 0.35 and jump > 0.06:
+                break
 
-        # No acceptem una màscara que deixi gairebé tota la imatge com a
-        # fons: seria un senyal clar que ens hem menjat l'ocell.
-        if frac > 0.93:
+            # Si els nous píxels de fons apareixen majoritàriament lluny del
+            # perímetre, és un altre senyal que el flood ha entrat a l'ocell.
+            newly_exterior = candidate & ~previous_candidate
+            if newly_exterior.any():
+                yy, xx = np.where(newly_exterior)
+                edge_dist = np.minimum.reduce([
+                    xx,
+                    (w - 1) - xx,
+                    yy,
+                    (h - 1) - yy,
+                    ])
+                deep_ratio = float(
+                    np.mean(edge_dist > int(0.12 * min(h, w)))
+                )
+
+                if previous_frac >= 0.35 and jump > 0.02 and deep_ratio > 0.55:
+                    break
+
+        # No acceptem una màscara que deixi gairebé tota la imatge com a fons.
+        if frac > 0.90:
             break
 
         if frac > best_frac:
@@ -217,12 +263,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
             best_tol = test_tol
 
         previous_frac = frac
+        previous_candidate = candidate
 
     exterior = best_exterior
     exterior_frac = best_frac
     tol = best_tol if best_tol is not None else start_tol
 
-    if exterior is None or exterior_frac < 0.40:
+    if exterior is None or exterior_frac < 0.35:
         raise RuntimeError(
             f"cutout flood failed "
             f"(tol {tol:.1f}, "
@@ -233,14 +280,12 @@ def chroma_cut(src: Path, dst: Path) -> None:
             f"raw kept for the upgrade pass"
         )
 
-    # Everything not connected to external paper is foreground.
+    # Tot el que no és paper exterior confirmat és foreground provisional.
     solid = ~exterior
 
-    # El foreground provisional pot contenir grans zones de paper residual
-    # que el flood no ha pogut classificar. En els renders de Gemini l'ocell
-    # té marge i no toca la vora, de manera que qualsevol component que sí
-    # toqui el perímetre és fons residual i s'ha de descartar.
-
+    # ------------------------------------------------------------------
+    # COMPONENTS DEL FOREGROUND
+    # ------------------------------------------------------------------
     seen = np.zeros((h, w), dtype=bool)
     components = []
 
@@ -252,7 +297,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
             q = deque([(x, y)])
             seen[y, x] = True
             comp = []
-
             touches_border = False
 
             while q:
@@ -285,7 +329,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 "touches_border": touches_border,
             })
 
-    # Elimina qualsevol massa residual connectada al marc exterior.
+    # Qualsevol massa residual connectada al marc exterior és fons.
     interior_components = [
         c for c in components
         if not c["touches_border"]
@@ -304,13 +348,11 @@ def chroma_cut(src: Path, dst: Path) -> None:
     )
 
     main = interior_components[0]["pixels"]
-
     clean = np.zeros((h, w), dtype=bool)
 
     for x, y in main:
         clean[y, x] = True
 
-    # Bounding box del cos principal.
     main_ys, main_xs = np.where(clean)
 
     x0, x1 = main_xs.min(), main_xs.max()
@@ -322,43 +364,53 @@ def chroma_cut(src: Path, dst: Path) -> None:
         y1 - y0 + 1,
         )
 
-    # Recupera peces legítimes desconnectades de l'ocell:
-    # puntes de ploma, dits, potes, etc. Només si són prou properes
-    # al component principal i no són minúscules.
-    margin = int(0.10 * main_span)
+    # Màscara de proximitat real al component principal.
+    #
+    # El codi anterior només comparava bounding boxes. Això feia que qualsevol
+    # taca de paper dins del rectangle global de l'ocell pogués considerar-se
+    # "nearby". Ara exigim proximitat píxel-a-píxel.
+    proximity = max(8, min(28, int(round(0.025 * main_span))))
+    proximity_size = 2 * proximity + 1
 
+    near_main = np.asarray(
+        Image.fromarray(clean.astype(np.uint8) * 255)
+        .filter(ImageFilter.MaxFilter(proximity_size))
+    ) > 127
+
+    # Recupera peces legítimes desconnectades: punta de cua, dits, plomes, etc.
+    # Han de tocar la zona de proximitat real i tenir una mida raonable.
     for entry in interior_components[1:]:
         comp = entry["pixels"]
 
-        if len(comp) < 32:
+        if len(comp) < 24:
             continue
 
-        xs = [p[0] for p in comp]
-        ys = [p[1] for p in comp]
+        reasonable_size = len(comp) < main_size * 0.40
+        if not reasonable_size:
+            continue
 
-        cx0, cx1 = min(xs), max(xs)
-        cy0, cy1 = min(ys), max(ys)
+        is_near = any(near_main[y, x] for x, y in comp)
 
-        nearby = (
-            cx1 >= x0 - margin
-            and cx0 <= x1 + margin
-            and cy1 >= y0 - margin
-            and cy0 <= y1 + margin
-        )
-
-        # Evita reincorporar una gran massa de paper residual.
-        reasonable_size = len(comp) < main_size * 0.35
-
-        if nearby and reasonable_size:
+        if is_near:
             for x, y in comp:
                 clean[y, x] = True
 
-    solid = clean
+    # Petita reparació de fissures produïdes pel chroma dins de la silueta.
+    # Closing del FOREGROUND: uneix esquerdes molt estretes però no pot
+    # recuperar grans masses de fons perquè ja hem descartat els components
+    # externs i les illes llunyanes.
+    clean_img = Image.fromarray(clean.astype(np.uint8) * 255)
+    clean_img = (
+        clean_img
+        .filter(ImageFilter.MaxFilter(5))
+        .filter(ImageFilter.MinFilter(5))
+    )
+    solid = np.asarray(clean_img) > 127
 
-    # Fully opaque interior.
+    # Interior completament opac.
     binary = solid.astype(np.uint8) * 255
 
-    # Feather only the outer silhouette.
+    # Feather només a la silueta exterior.
     feather = np.asarray(
         Image.fromarray(binary).filter(
             ImageFilter.GaussianBlur(0.65)
@@ -367,7 +419,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     feather[~solid] = 0
 
-    # Make the interior fully opaque.
+    # Interior completament opac.
     feather[solid & (feather >= 220)] = 255
 
     rgba = np.dstack([arr, feather]).astype(np.uint8)
