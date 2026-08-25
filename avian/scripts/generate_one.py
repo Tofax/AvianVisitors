@@ -161,28 +161,18 @@ def chroma_cut(src: Path, dst: Path) -> None:
         strong_img.filter(ImageFilter.MaxFilter(3))
     ) > 127
 
-    # Protecció específica per a la neteja de forats interiors.
-    # És una banda estreta al voltant del foreground segur que impedeix
-    # que la neteja del paper entre potes mossegui potes, dits o plomes.
-    protected_fg_holes = np.asarray(
-        strong_img.filter(ImageFilter.MaxFilter(5))
-    ) > 127
-
     # Les parts clarament acolorides (potes, bec, plomatge viu, etc.)
     # no poden ser paper crema encara que algun píxel clar de la textura
     # s'hi assembli per luminància.
     colored_fg = saturation > 0.35
 
-    colored_img = Image.fromarray(
+    colored_core_img = Image.fromarray(
         colored_fg.astype(np.uint8) * 255
     )
 
-    # Protegeix també els píxels clars immediatament adjacents al color.
-    colored_guard = np.asarray(
-        colored_img.filter(ImageFilter.MaxFilter(5))
+    colored_restore = np.asarray(
+        colored_core_img.filter(ImageFilter.MaxFilter(3))
     ) > 127
-
-    protected_fg_holes |= colored_guard
 
     def flood_for_tol(test_tol: float):
         color_match = dist < test_tol
@@ -385,15 +375,9 @@ def chroma_cut(src: Path, dst: Path) -> None:
     )
 
     Image.fromarray(
-        protected_fg_holes.astype(np.uint8) * 255
+        colored_restore.astype(np.uint8) * 255
     ).save(
-        debug_dir / f"{dst.stem}-protected-holes.png"
-    )
-
-    Image.fromarray(
-        colored_guard.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-protected-color-detail.png"
+        debug_dir / f"{dst.stem}-colored-restore.png"
     )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
@@ -635,15 +619,21 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 if paper_like_ratio < 0.82:
                     continue
 
-                # El component global és un buit de paper vàlid, però pot haver absorbit
-                # alguns píxels de la pota o dels dits. Només eliminem els píxels que
-                # individualment continuen tenint aparença de paper.
+                # El component ja ha passat els filtres de mida, posició,
+                # forma, compactesa i aparença global de paper.
+                # Primer l'eliminem sencer.
+                for px, py in hole:
+                    clean[py, px] = False
+
+                # Després recuperem només foreground fiable:
+                # - zones clarament diferents del paper
+                # - zones clarament acolorides, com potes o bec
                 for px, py in hole:
                     if (
-                        strict_hole_like[py, px]
-                        and not protected_fg_holes[py, px]
+                        strong_fg[py, px]
+                        or colored_restore[py, px]
                     ):
-                        clean[py, px] = False
+                        clean[py, px] = True
 
     # ------------------------------------------------------------------
     # REPARACIÓ DE PETITS FORATS INTERIORS
