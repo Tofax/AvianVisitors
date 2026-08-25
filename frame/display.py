@@ -421,11 +421,25 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
 
     configure_panel_geometry(cfg.get("panel", ""))
     try:
-        img = fit_panel(obtain_image(cfg, species))
+        src = obtain_image(cfg, species)
+
+        if (
+            cfg.get("panel", "") == "waveshare_7in3e"
+            and src.size == (PANEL_W, PANEL_H)
+        ):
+            img = src
+        else:
+            img = fit_panel(src)
     except Exception as e:
         print(f"could not get image: {e}", file=sys.stderr)  # keep last panel image
         return
-    img = mat_and_center(img, cfg["mat"], cfg["opening"])
+    # A pre-rendered PhotoPainter frame already has the exact logical
+    # 480x800 geometry. Do not crop/recompose it through the Inky A5 layout.
+    if not (
+        cfg.get("panel", "") == "waveshare_7in3e"
+        and img.size == (PANEL_W, PANEL_H)
+    ):
+        img = mat_and_center(img, cfg["mat"], cfg["opening"])
     if preview:
         out = quantize_spectra6(img)
         if mat_box:
