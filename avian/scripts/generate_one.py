@@ -173,19 +173,24 @@ def _magenta_chroma_cut(
     alpha[dist >= feather_tol] = 255
 
     # ------------------------------------------------------------------
-    # NETEJA DE MICROARTEFACTES DESENGANXATS
+    # NETEJA DE RESIDUS FORA DE LA SILUETA PRINCIPAL
     # ------------------------------------------------------------------
-    # En mode croma pot quedar algun puntet residual (per exemple prop de
-    # la cua) que forma un component minúscul separat del cos principal.
-    # El component principal es conserva sempre; els microcomponents molt
-    # petits i desconnectats s'eliminen.
-    fg = alpha > 40
+    # Els artefactes petits prop de la cua o del ventre sovint NO formen
+    # components totalment separats en un llindar baix d'alpha, perquè
+    # queden units per una franja fina semitransparent.
+    #
+    # En lloc de treballar amb un foreground "fluix", construïm una
+    # silueta estricta amb píxels gairebé opacs, n'agafem el component
+    # principal, i només permetem alpha dins d'una petita dilatació
+    # d'aquesta silueta principal.
+
+    solid_fg = alpha >= 220
     seen = np.zeros((h, w), dtype=bool)
     components = []
 
     for sy in range(h):
         for sx in range(w):
-            if not fg[sy, sx] or seen[sy, sx]:
+            if not solid_fg[sy, sx] or seen[sy, sx]:
                 continue
 
             q = deque([(sx, sy)])
@@ -209,7 +214,7 @@ def _magenta_chroma_cut(
                     if (
                         0 <= nx < w
                         and 0 <= ny < h
-                        and fg[ny, nx]
+                        and solid_fg[ny, nx]
                         and not seen[ny, nx]
                     ):
                         seen[ny, nx] = True
@@ -217,20 +222,25 @@ def _magenta_chroma_cut(
 
             components.append(comp)
 
-    if components:
-        main = max(components, key=len)
+    if not components:
+        raise RuntimeError(
+            "magenta chroma cut produced no solid foreground component"
+        )
 
-        for comp in components:
-            if comp is main:
-                continue
+    main = max(components, key=len)
 
-            # Elimina només microcomponents clarament residuals.
-            if len(comp) <= 24:
-                cy = np.array([p[1] for p in comp], dtype=np.int32)
-                cx = np.array([p[0] for p in comp], dtype=np.int32)
-                alpha[cy, cx] = 0
+    main_mask = np.zeros((h, w), dtype=bool)
+    for px, py in main:
+        main_mask[py, px] = True
 
-    fg = alpha > 40
+    # Permetem una petita aurèola al voltant del component principal
+    # per conservar antialiasing i vores suaus, però eliminem qualsevol
+    # residu que quedi més lluny.
+    main_support = _dilate(main_mask, 5)
+
+    alpha[(alpha > 0) & ~main_support] = 0
+
+    fg = alpha > 20
     ys, xs = np.where(fg)
 
     if not len(ys):
