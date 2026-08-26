@@ -1,17 +1,26 @@
 (function () {
   var PLACEHOLDER = [{ "sci": "Calypte anna", "com": "Anna's Hummingbird", "featured": true }, { "sci": "Passer domesticus", "com": "House Sparrow" }, { "sci": "Haemorhous mexicanus", "com": "House Finch" }, { "sci": "Turdus migratorius", "com": "American Robin" }, { "sci": "Zenaida macroura", "com": "Mourning Dove" }, { "sci": "Spinus psaltria", "com": "Lesser Goldfinch" }, { "sci": "Zonotrichia leucophrys", "com": "White-crowned Sparrow" }, { "sci": "Aphelocoma californica", "com": "California Scrub-Jay" }, { "sci": "Mimus polyglottos", "com": "Northern Mockingbird" }, { "sci": "Sayornis nigricans", "com": "Black Phoebe" }, { "sci": "Larus occidentalis", "com": "Western Gull" }, { "sci": "Corvus brachyrhynchos", "com": "American Crow" }];
-  // Bumped whenever the offline sketch build changes, so the browser
-  // doesn't keep a stale cache after we regenerate the sketches.
+  // Library-wide revision for a full offline sketch rebuild. One-species
+  // corrections use ART_REVISIONS below.
   var SKETCH_VERSION = 'r12'; // r12: 84 eastern NA birds (PR #23) refined + re-cut. r11: full library restyle: every species
   // re-rendered (perched + flight) with clean cutouts.
-  // Cache-bust for /api/img - bump whenever a bird gets re-rendered via
-  // /api/regen or whenever you need every CF DC to drop its cached copy.
+  // Cache-bust for /avian/api/cutout.php. Bump only when every CF DC must
+  // drop the full image library.
   // Cloudflare keys on the full URL incl. query, so bumping this is
-  // equivalent to a global cache purge for /api/img. (caches.default
-  // .delete() in the worker only affects ONE colo at a time, so a
-  // versioned URL is the only reliable way to invalidate everywhere.)
+  // equivalent to a global cache purge for /avian/api/cutout.php.
+  // caches.default.delete() in the worker only affects one colo at a time,
+  // so a versioned URL is the only reliable way to invalidate everywhere.
   var IMG_VERSION = 'r12'; // r12: 84 eastern NA birds (PR #23) refined + re-cut. r11: full library restyle: every species re-rendered
   // with clean cutouts, so drop every cached copy.
+  // Keep table and one-off art revisions separate from the library-wide
+  // versions above. A corrected species should not evict every bird image.
+  var TABLE_VERSION = 'r13';
+  var ART_REVISIONS = {
+    'aphelocoma-woodhouseii': 'anatomy-1'
+  };
+  function artRevision(sci, fallback) {
+    return ART_REVISIONS[slugify(String(sci || ''))] || fallback;
+  }
 
   // ---- Sliding pill helper ----
   // Each segmented control has a single .seg-pill element that we move via
@@ -437,7 +446,7 @@
   function loadTables(bust) {
     // bust=true refetches past every cache - used after an on-Pi generate
     // adds a species, so its mask becomes drawable without a reload.
-    var q = '?v=' + SKETCH_VERSION + (bust ? '&t=' + Date.now() : '');
+    var q = '?v=' + TABLE_VERSION + (bust ? '&t=' + Date.now() : '');
     return Promise.all([
       fetch('./dims.json' + q).then(function (r) { return r.json(); }),
       fetch('./masks.json' + q).then(function (r) { return r.json(); })
@@ -470,7 +479,7 @@
     var com = commonName || (sp ? (sp.com || '') : '');
     if (com) base += '&com=' + encodeURIComponent(com);
     if (+pose > 1) base += '&pose=' + (+pose);
-    return base + '&v=' + (version || SKETCH_VERSION);
+    return base + '&v=' + artRevision(sci, version || SKETCH_VERSION);
   }
 
   function collageImageSrc(sci, pose, commonName) {
@@ -2239,7 +2248,8 @@
       var s = r.data;
       // com flows through so the worker's JIT Gemini job uses the right
       // common name in its prompt for a freshly-detected species.
-      // &v=IMG_VERSION busts CF edge cache when we re-render any species.
+      // The per-species revision busts corrected art without evicting the
+      // rest of the illustration library from edge caches.
       var img = collageImageSrc(s.sci, r.pose, s.com);
       var btn = document.createElement('button');
       btn.className = 'gtile';
@@ -4469,7 +4479,7 @@
       var isLifer = !isAllWindow && !isNaN(firstMs) && firstMs >= windowStartMs;
       var sketchSrc = './avian/api/cutout.php?sci=' + encodeURIComponent(s.sci) +
         (s.com ? '&com=' + encodeURIComponent(s.com) : '') +
-        '&v=' + SKETCH_VERSION;
+        '&v=' + artRevision(s.sci, SKETCH_VERSION);
       var audioSrc = './avian/api/recording.php?sci=' + encodeURIComponent(s.sci);
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
@@ -4491,7 +4501,8 @@
         placeholder: needsArt
       };
       var renderKey = [s.sci, s.com || '', accession[s.sci] || 0, total,
-        needsArt ? 'todo' : 'stamp', fresh, SKETCH_VERSION].join('|');
+        needsArt ? 'todo' : 'stamp', fresh,
+        artRevision(s.sci, SKETCH_VERSION)].join('|');
       // Keep the Atlas issue itself as one clean click target. Generation lives
       // in the postcard's pose-control slot, where its cost and resulting state
       // change have enough context; no badge competes with the family artwork.
@@ -5913,7 +5924,7 @@
     var com = sp ? (sp.com || '') : '';
     var base = './avian/api/cutout.php?sci=' + encodeURIComponent(sci) +
       (com ? '&com=' + encodeURIComponent(com) : '') +
-      '&v=' + SKETCH_VERSION;
+      '&v=' + artRevision(sci, SKETCH_VERSION);
     var n = +pose || 1;
     return n > 1 ? base + '&pose=' + n : base;
   }
