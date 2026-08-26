@@ -7434,7 +7434,12 @@
         + '.cutrev-result-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 18px 12px}.cutrev-result-head h3{margin:0;font:700 17px/1.25 system-ui,sans-serif}.cutrev-result-head p{margin:4px 0 0;color:var(--ink-soft);font:11px/1.3 ui-monospace,monospace}.cutrev-result-close{border:0;background:transparent;color:var(--ink);font:24px/1 system-ui,sans-serif;cursor:pointer;padding:0 3px}'
         + '.cutrev-result-img{display:block;width:100%;max-height:62vh;object-fit:contain;background:#14cdbe;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}'
         + '.cutrev-result-actions{display:grid;grid-template-columns:1fr 1fr auto;gap:9px;padding:14px 18px 18px}.cutrev-result-actions button{font:650 12px/1 system-ui,sans-serif;border:1px solid var(--line);border-radius:999px;padding:11px 14px;cursor:pointer;background:var(--paper);color:var(--ink)}.cutrev-result-actions .good{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-result-actions .bad{background:#9f332b;color:#fff;border-color:#9f332b}'
-        + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}.cutrev-result-actions{grid-template-columns:1fr 1fr}.cutrev-result-actions .later{grid-column:1/-1}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}.cutrev-result-modal{padding:10px}}'
+        + '.cutrev-loading{position:fixed;inset:0;z-index:10030;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(0,0,0,.58);backdrop-filter:blur(3px)}'
+        + '.cutrev-loading-card{width:min(420px,92vw);background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:18px;box-shadow:0 22px 70px rgba(0,0,0,.32);padding:24px 22px;text-align:center}'
+        + '.cutrev-loading-spinner{width:42px;height:42px;border-radius:50%;border:4px solid rgba(0,0,0,.10);border-top-color:var(--ink);margin:0 auto 14px;animation:cutrevspin 1s linear infinite}'
+        + '.cutrev-loading-card h3{margin:0 0 8px;font:700 18px/1.2 system-ui,sans-serif}.cutrev-loading-card p{margin:0;color:var(--ink-soft);font:12px/1.45 system-ui,sans-serif}'
+        + '@keyframes cutrevspin{to{transform:rotate(360deg)}}'
+        + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}.cutrev-result-actions{grid-template-columns:1fr 1fr}.cutrev-result-actions .later{grid-column:1/-1}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}.cutrev-result-modal,.cutrev-loading{padding:10px}}'
         + '</style>';
     }
 
@@ -7606,6 +7611,7 @@
         if (auditPoll) { clearTimeout(auditPoll); auditPoll = null; }
         if (generationPoll) { clearTimeout(generationPoll); generationPoll = null; }
         closeRepairReview();
+        closeRepairLoading();
         adminTitle.textContent = ADMIN_TITLES.tools;
         renderAdminTools();
       });
@@ -7720,6 +7726,44 @@
       });
     }
 
+    function closeRepairLoading() {
+      var modal = document.getElementById('cutrevLoadingModal');
+      if (modal) modal.remove();
+    }
+
+    function openRepairLoading(file, mode) {
+      closeRepairLoading();
+
+      var item = itemByFile(file);
+      if (!item) return;
+
+      var sci = item.sci || sciFor(item);
+      var name = displayNameBySci(sci, item.com || sci);
+      var title = mode === 'recut'
+        ? 'Tornant a retallar la il·lustració'
+        : 'Generant la il·lustració';
+      var subtitle = mode === 'recut'
+        ? 'S’està aplicant el retall nou i preparant la previsualització.'
+        : 'Això pot trigar una estona. Quan acabi s’obrirà la revisió automàticament.';
+
+      var modal = document.createElement('div');
+      modal.id = 'cutrevLoadingModal';
+      modal.className = 'cutrev-loading';
+      modal.setAttribute('role', 'status');
+      modal.setAttribute('aria-live', 'polite');
+      modal.setAttribute('aria-busy', 'true');
+
+      modal.innerHTML =
+        '<div class="cutrev-loading-card">'
+        + '<div class="cutrev-loading-spinner" aria-hidden="true"></div>'
+        + '<h3>' + adminEsc(title) + '</h3>'
+        + '<p><strong>' + adminEsc(name) + '</strong><br>' + adminEsc(item.file) + '</p>'
+        + '<p style="margin-top:10px">' + adminEsc(subtitle) + '</p>'
+        + '</div>';
+
+      document.body.appendChild(modal);
+    }
+
     function setRepairBusy(file, busy) {
       repairBusyFile = busy ? file : null;
       render();
@@ -7728,15 +7772,18 @@
     function recut(item) {
       if (!item || !item.has_raw) return;
       setRepairBusy(item.file, true);
+      openRepairLoading(item.file, 'recut');
       api('recut', { action: 'recut', file: item.file }).then(function (j) {
         data = j;
         repairBusyFile = null;
         loadTables(true);
         render();
+        closeRepairLoading();
         openRepairReview(item.file);
       }).catch(function (e) {
         repairBusyFile = null;
         render();
+        closeRepairLoading();
         alert("No s’ha pogut tornar a retallar la imatge: " + (e.message || e));
       });
     }
@@ -7747,10 +7794,12 @@
         repairBusyFile = null;
         loadTables(true);
         render();
+        closeRepairLoading();
         openRepairReview(item.file);
       }).catch(function (e) {
         repairBusyFile = null;
         render();
+        closeRepairLoading();
         alert("La imatge s’ha regenerat, però no s’ha pogut actualitzar l’auditoria: " + (e.message || e));
       });
     }
@@ -7773,10 +7822,12 @@
           return;
         }
         repairBusyFile = null;
+        closeRepairLoading();
         render();
         alert("No s’ha pogut regenerar la imatge: " + (st.error || 'ha fallat'));
       }).catch(function (e) {
         repairBusyFile = null;
+        closeRepairLoading();
         render();
         alert("No s’ha pogut consultar la regeneració: " + (e.message || e));
       });
@@ -7787,6 +7838,7 @@
       if (!confirm('Regenerar només la pose ' + item.pose + ' de ' + displayNameBySci(item.sci, item.com || item.sci)
         + '?\n\nAquesta acció consumeix una petició de Gemini.')) return;
       setRepairBusy(item.file, true);
+      openRepairLoading(item.file, 'generate');
       fetch('./avian/api/generate.php?action=start', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
@@ -7798,6 +7850,7 @@
         generationPoll = setTimeout(function () { pollRegeneration(item); }, 1200);
       }).catch(function (e) {
         repairBusyFile = null;
+        closeRepairLoading();
         render();
         alert("No s’ha pogut iniciar la regeneració: " + (e.message || e));
       });
