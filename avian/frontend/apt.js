@@ -7429,7 +7429,12 @@
         + '.cutrev-metrics{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.cutrev-chip{font:9px/1 ui-monospace,monospace;border:1px solid var(--line);border-radius:999px;padding:5px 7px}.cutrev-chip.hot{border-color:#b9362c;color:#a52f27}.cutrev-chip.local{border-color:#2e7d59;color:#246548}.cutrev-chip.detected{background:#2e7d59;color:#fff;border-color:#2e7d59}.cutrev-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cutrev-mark.good[data-active="1"]{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-mark.bad[data-active="1"]{background:#9f332b;color:#fff;border-color:#9f332b}'
         + '.cutrev-repairs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.cutrev-repair{font:600 11px/1 system-ui,sans-serif;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:9px 8px;cursor:pointer}.cutrev-repair.primary{background:var(--ink);color:var(--paper)}.cutrev-repair:disabled{opacity:.45;cursor:default}.cutrev-repair-note{margin:8px 0 0;font:10px/1.35 system-ui,sans-serif;color:var(--ink-soft)}'
         + '.cutrev-empty{padding:40px 12px;text-align:center;color:var(--ink-soft)}.cutrev-pager{display:flex;justify-content:center;gap:10px;align-items:center;margin:18px 0 4px}.cutrev-pager button{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:8px 12px;cursor:pointer}.cutrev-pager button:disabled{opacity:.35;cursor:default}.cutrev-note{font:11px/1.45 system-ui,sans-serif;color:var(--ink-soft);margin:-8px 0 16px}'
-        + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}}'
+        + '.cutrev-result-modal{position:fixed;inset:0;z-index:10020;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(0,0,0,.58);backdrop-filter:blur(3px)}'
+        + '.cutrev-result-dialog{width:min(760px,96vw);max-height:92vh;overflow:auto;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:18px;box-shadow:0 22px 70px rgba(0,0,0,.32)}'
+        + '.cutrev-result-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 18px 12px}.cutrev-result-head h3{margin:0;font:700 17px/1.25 system-ui,sans-serif}.cutrev-result-head p{margin:4px 0 0;color:var(--ink-soft);font:11px/1.3 ui-monospace,monospace}.cutrev-result-close{border:0;background:transparent;color:var(--ink);font:24px/1 system-ui,sans-serif;cursor:pointer;padding:0 3px}'
+        + '.cutrev-result-img{display:block;width:100%;max-height:62vh;object-fit:contain;background:#14cdbe;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}'
+        + '.cutrev-result-actions{display:grid;grid-template-columns:1fr 1fr auto;gap:9px;padding:14px 18px 18px}.cutrev-result-actions button{font:650 12px/1 system-ui,sans-serif;border:1px solid var(--line);border-radius:999px;padding:11px 14px;cursor:pointer;background:var(--paper);color:var(--ink)}.cutrev-result-actions .good{background:#1f6b45;color:#fff;border-color:#1f6b45}.cutrev-result-actions .bad{background:#9f332b;color:#fff;border-color:#9f332b}'
+        + '@media(max-width:720px){.cutrev-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cutrev-grid{grid-template-columns:1fr 1fr}.cutrev-result-actions{grid-template-columns:1fr 1fr}.cutrev-result-actions .later{grid-column:1/-1}}@media(max-width:480px){.cutrev-grid{grid-template-columns:1fr}.cutrev-result-modal{padding:10px}}'
         + '</style>';
     }
 
@@ -7600,6 +7605,7 @@
       if (back) back.addEventListener('click', function () {
         if (auditPoll) { clearTimeout(auditPoll); auditPoll = null; }
         if (generationPoll) { clearTimeout(generationPoll); generationPoll = null; }
+        closeRepairReview();
         adminTitle.textContent = ADMIN_TITLES.tools;
         renderAdminTools();
       });
@@ -7640,6 +7646,80 @@
       return data && (data.items || []).find(function (item) { return item.file === file; });
     }
 
+    function closeRepairReview() {
+      var modal = document.getElementById('cutrevResultModal');
+      if (modal) modal.remove();
+    }
+
+    function openRepairReview(file) {
+      closeRepairReview();
+
+      var item = itemByFile(file);
+      if (!item) return;
+
+      var sci = item.sci || sciFor(item);
+      var name = displayNameBySci(sci, item.com || sci);
+      var preview = './avian/api/cutout-review.php?action=preview&file='
+        + encodeURIComponent(item.file)
+        + '&t=' + Date.now();
+
+      var modal = document.createElement('div');
+      modal.id = 'cutrevResultModal';
+      modal.className = 'cutrev-result-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'cutrevResultTitle');
+
+      modal.innerHTML =
+        '<div class="cutrev-result-dialog">'
+        + '<div class="cutrev-result-head">'
+        + '<div><h3 id="cutrevResultTitle">Revisa la il·lustració</h3>'
+        + '<p>' + adminEsc(name) + ' · ' + adminEsc(item.file) + '</p></div>'
+        + '<button class="cutrev-result-close" type="button" aria-label="Tanca">×</button>'
+        + '</div>'
+        + '<img class="cutrev-result-img" src="' + preview + '" alt="Previsualització de ' + adminEsc(name) + '">'
+        + '<div class="cutrev-result-actions">'
+        + '<button class="good" type="button" data-result-status="good">✓ Correcta</button>'
+        + '<button class="bad" type="button" data-result-status="bad">✕ Incorrecta</button>'
+        + '<button class="later" type="button" data-result-close="1">Revisar més tard</button>'
+        + '</div></div>';
+
+      document.body.appendChild(modal);
+
+      function save(status) {
+        var buttons = modal.querySelectorAll('button');
+        buttons.forEach(function (b) { b.disabled = true; });
+
+        api('mark', {
+          action: 'mark',
+          file: item.file,
+          status: status
+        }).then(function (j) {
+          data = j;
+          closeRepairReview();
+          render();
+        }).catch(function (e) {
+          buttons.forEach(function (b) { b.disabled = false; });
+          alert("No s’ha pogut desar la revisió: " + (e.message || e));
+        });
+      }
+
+      modal.querySelector('[data-result-status="good"]').addEventListener('click', function () {
+        save('good');
+      });
+
+      modal.querySelector('[data-result-status="bad"]').addEventListener('click', function () {
+        save('bad');
+      });
+
+      modal.querySelector('.cutrev-result-close').addEventListener('click', closeRepairReview);
+      modal.querySelector('[data-result-close="1"]').addEventListener('click', closeRepairReview);
+
+      modal.addEventListener('click', function (ev) {
+        if (ev.target === modal) closeRepairReview();
+      });
+    }
+
     function setRepairBusy(file, busy) {
       repairBusyFile = busy ? file : null;
       render();
@@ -7653,6 +7733,7 @@
         repairBusyFile = null;
         loadTables(true);
         render();
+        openRepairReview(item.file);
       }).catch(function (e) {
         repairBusyFile = null;
         render();
@@ -7666,6 +7747,7 @@
         repairBusyFile = null;
         loadTables(true);
         render();
+        openRepairReview(item.file);
       }).catch(function (e) {
         repairBusyFile = null;
         render();
