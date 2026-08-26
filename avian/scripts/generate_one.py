@@ -1020,6 +1020,21 @@ def chroma_cut(src: Path, dst: Path) -> None:
             )
             paper_ratio = float(np.mean(paper_like))
 
+            # Excepció topològica forta:
+            # si el buit està completament enclavat dins la silueta principal,
+            # és fora de la zona de potes i té una geometria compacta,
+            # la topologia té prioritat sobre el color del RAW. Això resol
+            # zones de plomatge molt pàl·lid que cromàticament semblen paper.
+            if (
+                not in_leg_zone
+                and 512 <= len(hole) <= 4096
+                and shell_ratio >= 0.995
+                and fill_ratio >= 0.30
+                and aspect <= 2.0
+            ):
+                clean[hy, hx] = True
+                continue
+
             # 1) Microforats: omple'ls si estan clarament envoltats per ocell.
             if len(hole) <= 16 and shell_ratio >= 0.82:
                 clean[hy, hx] = True
@@ -1085,6 +1100,68 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # Recuperem exclusivament petites mossegades enganxades
     # al foreground fiable.
     clean |= closing_added & repair_support
+
+    # ------------------------------------------------------------------
+    # REPARACIÓ EXTRA 5x5 NOMÉS PER COMPONENTS MOLT PETITS
+    # ------------------------------------------------------------------
+    # Un microforat pot comunicar amb l'exterior per un coll d'1-2 píxels i
+    # escapar de la detecció topològica. Un closing 5x5 el detecta, però no
+    # l'apliquem globalment: només recuperem components nous molt petits i
+    # enganxats a foreground fiable.
+    repair_support5 = np.asarray(
+        Image.fromarray(
+            reliable_fg.astype(np.uint8) * 255
+        ).filter(ImageFilter.MaxFilter(5))
+    ) > 127
+
+    closing5_candidates = (
+        closing5_added
+        & ~closing_added
+        & repair_support5
+    )
+
+    extra_seen = np.zeros((h, w), dtype=bool)
+
+    for sy in range(h):
+        for sx in range(w):
+            if (
+                not closing5_candidates[sy, sx]
+                or extra_seen[sy, sx]
+            ):
+                continue
+
+            q = deque([(sx, sy)])
+            extra_seen[sy, sx] = True
+            comp = []
+
+            while q:
+                cx, cy = q.popleft()
+                comp.append((cx, cy))
+
+                for nx, ny in (
+                        (cx - 1, cy),
+                        (cx + 1, cy),
+                        (cx, cy - 1),
+                        (cx, cy + 1),
+                        (cx - 1, cy - 1),
+                        (cx + 1, cy - 1),
+                        (cx - 1, cy + 1),
+                        (cx + 1, cy + 1),
+                ):
+                    if (
+                        0 <= nx < w
+                        and 0 <= ny < h
+                        and closing5_candidates[ny, nx]
+                        and not extra_seen[ny, nx]
+                    ):
+                        extra_seen[ny, nx] = True
+                        q.append((nx, ny))
+
+            # Només recuperem microcomponents. Això repara mossegades mínimes
+            # sense segellar espais reals entre potes, dits o plomes.
+            if len(comp) <= 24:
+                for px, py in comp:
+                    clean[py, px] = True
 
     # No fem closing global del foreground:
     # pot segellar espais estrets legítims entre potes, dits o plomes.
