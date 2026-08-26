@@ -59,6 +59,7 @@ DEFAULTS = {
     "saturation": 0.6,
     "panel": "",            # "", "el133uf1", or "waveshare_7in3e"
     "waveshare_lib": "~/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib",
+    "clear_every": 20,
     "quiet_start": 0, "quiet_end": 0,    # 0/0 = no quiet hours
     "heal_hours": 24,
     "state": "~/.birdframe/state.json",
@@ -329,7 +330,52 @@ def quantize_waveshare6(img):
 
     return out
 
-def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
+def maybe_clear_waveshare(dev, every):
+    """Clear the panel periodically to reduce accumulated ghosting."""
+
+    try:
+        every = int(every)
+    except (TypeError, ValueError):
+        every = 0
+
+    if every <= 0:
+        return
+
+    counter_path = os.path.expanduser(
+        "~/.cache/avian-frame/refresh-count"
+    )
+    os.makedirs(os.path.dirname(counter_path), exist_ok=True)
+
+    try:
+        with open(counter_path, "r") as f:
+            count = int(f.read().strip())
+    except (OSError, ValueError):
+        count = 0
+
+    count += 1
+
+    if count >= every:
+        print(f"Waveshare periodic clear after {count} refreshes...")
+        dev.Clear()
+        count = 0
+
+    try:
+        with open(counter_path, "w") as f:
+            f.write(str(count))
+    except OSError as e:
+        print(
+            f"warning: could not save Waveshare refresh counter: {e}",
+            file=sys.stderr,
+        )
+
+def push_panel(
+    img,
+    rotate,
+    saturation,
+    panel="",
+    waveshare_lib="",
+    clear_every=20,
+):
     """Rotate and push an image to the configured e-ink panel."""
 
     if panel == "waveshare_7in3e":
@@ -364,11 +410,13 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
                 threshold=3,
             )
         )
-
-        # Convertim nosaltres mateixos als 6 colors físics de la Waveshare.
-        # Sense Floyd-Steinberg: evita els punts de color al voltant de text
-        # i il·lustracions.
+        # Quantize explicitly before handing the image to the Waveshare driver.
         buf = quantize_waveshare6(buf)
+
+        maybe_clear_waveshare(
+            dev,
+            clear_every,
+        )
 
         dev.display(dev.getbuffer(buf))
         dev.sleep()
@@ -525,6 +573,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
             cfg["saturation"],
             cfg.get("panel", ""),
             cfg.get("waveshare_lib", ""),
+            cfg.get("clear_every", 20),
         )
     except Exception as e:
         print(f"panel push failed: {e}", file=sys.stderr)
