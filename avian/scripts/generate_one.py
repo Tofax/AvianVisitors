@@ -1020,6 +1020,8 @@ def chroma_cut(src: Path, dst: Path) -> None:
             )
             paper_ratio = float(np.mean(paper_like))
 
+            in_leg_zone = center_y >= leg_zone_y
+
             # Excepció topològica forta:
             # si el buit està completament enclavat dins la silueta principal,
             # és fora de la zona de potes i té una geometria compacta,
@@ -1042,7 +1044,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
             # 2) Zona típica de potes/dits: sigueu molt més estrictes per no
             #    segellar espais legítims.
-            in_leg_zone = center_y >= leg_zone_y
             if in_leg_zone:
                 if aspect > 2.2 or fill_ratio < 0.45 or paper_ratio > 0.88:
                     continue
