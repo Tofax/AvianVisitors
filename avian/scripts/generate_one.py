@@ -31,6 +31,28 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
 
+
+def _mask_image(mask: np.ndarray) -> Image.Image:
+    """Convert a boolean mask to an 8-bit Pillow image."""
+    return Image.fromarray(mask.astype(np.uint8) * 255)
+
+
+def _dilate(mask: np.ndarray, size: int) -> np.ndarray:
+    """Dilate a boolean mask with Pillow's MaxFilter."""
+    return np.asarray(
+        _mask_image(mask).filter(ImageFilter.MaxFilter(size))
+    ) > 127
+
+
+def _close(mask: np.ndarray, size: int) -> np.ndarray:
+    """Morphological closing using the same Pillow filters as before."""
+    return np.asarray(
+        _mask_image(mask)
+        .filter(ImageFilter.MaxFilter(size))
+        .filter(ImageFilter.MinFilter(size))
+    ) > 127
+
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import pregen  # noqa: E402  (reuses gen_one + the reference machinery)
@@ -42,6 +64,9 @@ STATE = ILLUS / ".generate.state.json"
 GENERATION_LOCK = Path(os.environ.get(
     "AVIAN_GENERATION_LOCK", "/run/lock/avian-generation.lock"
 ))
+CUTOUT_DEBUG = os.environ.get("AVIAN_CUTOUT_DEBUG", "").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 
 
 def write_state(**kw) -> None:
@@ -141,7 +166,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     strong_fg_tol = float(max(30.0, min(58.0, paper_p99 + 12.0)))
     strong_fg = dist >= strong_fg_tol
 
-    strong_img = Image.fromarray(strong_fg.astype(np.uint8) * 255)
+    strong_img = _mask_image(strong_fg)
 
     # Opening del foreground: elimina puntets de gra petits sense unir-los.
     strong_img = (
@@ -166,13 +191,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # s'hi assembli per luminància.
     colored_fg = saturation > 0.35
 
-    colored_core_img = Image.fromarray(
-        colored_fg.astype(np.uint8) * 255
-    )
-
-    colored_restore = np.asarray(
-        colored_core_img.filter(ImageFilter.MaxFilter(3))
-    ) > 127
+    colored_restore = _dilate(colored_fg, 3)
 
     # Plomatge pàl·lid que queda enganxat a una zona de foreground fiable.
     plumage_restore = np.asarray(
@@ -184,9 +203,13 @@ def chroma_cut(src: Path, dst: Path) -> None:
         | (saturation >= 0.12)
     )
 
-    pale_plumage_restore = (
-        plumage_restore
-        & pale_plumage_candidate
+    pale_plumage_restore = plumage_restore & pale_plumage_candidate
+
+    # Evidència de foreground reutilitzada per les fases de reparació.
+    reliable_fg = (
+        strong_fg
+        | colored_restore
+        | pale_plumage_restore
     )
 
     def flood_for_tol(test_tol: float):
@@ -200,13 +223,8 @@ def chroma_cut(src: Path, dst: Path) -> None:
             & (saturation < 0.32)
         )
 
-        # El matching cromàtic normal utilitza una protecció ampla.
-        # El paper clar utilitza una protecció més estreta per mantenir
-        # oberts espais fins entre potes, dits i plomes.
-        # Mantén el paper clar permissiu al fons global, però evita que
-        # aquesta via travessi plomatge pàl·lid que està enganxat a foreground
-        # fiable. Fer el light_paper globalment més estricte fragmenta el fons;
-        # el veto local amb pale_plumage_restore protegeix només la zona de l'ocell.
+        # El paper clar continua sent permissiu al fons global, però queda
+        # bloquejat prop de foreground fiable per no travessar plomatge pàl·lid.
         passable = (
             (color_match & ~protected_fg_color)
             | (
@@ -355,60 +373,61 @@ def chroma_cut(src: Path, dst: Path) -> None:
             f"raw kept for the upgrade pass"
         )
 
-    debug_dir = dst.parent / "debug"
-    debug_dir.mkdir(parents=True, exist_ok=True)
+    if CUTOUT_DEBUG:
+        debug_dir = dst.parent / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
 
-    # Distància respecte del paper.
-    dist_debug = np.clip(
-        dist / max(1.0, max_tol) * 255.0,
-        0,
-        255
-    ).astype(np.uint8)
+        # Distància respecte del paper.
+        dist_debug = np.clip(
+            dist / max(1.0, max_tol) * 255.0,
+            0,
+            255
+        ).astype(np.uint8)
 
-    Image.fromarray(dist_debug).save(
-        debug_dir / f"{dst.stem}-dist.png"
-    )
-
-    # Paper candidat amb la tolerància final seleccionada.
-    if best_passable is not None:
-        Image.fromarray(
-            best_passable.astype(np.uint8) * 255
-        ).save(
-            debug_dir / f"{dst.stem}-passable.png"
+        Image.fromarray(dist_debug).save(
+            debug_dir / f"{dst.stem}-dist.png"
         )
 
-    # Paper que finalment ha pogut assolir el flood.
-    Image.fromarray(
-        exterior.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-exterior.png"
-    )
+        # Paper candidat amb la tolerància final seleccionada.
+        if best_passable is not None:
+            Image.fromarray(
+                best_passable.astype(np.uint8) * 255
+            ).save(
+                debug_dir / f"{dst.stem}-passable.png"
+            )
 
-    # Protecció ampla usada pel color_match.
-    Image.fromarray(
-        protected_fg_color.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-protected-color.png"
-    )
+        # Paper que finalment ha pogut assolir el flood.
+        Image.fromarray(
+            exterior.astype(np.uint8) * 255
+        ).save(
+            debug_dir / f"{dst.stem}-exterior.png"
+        )
 
-    # Protecció estreta usada pel light_paper.
-    Image.fromarray(
-        protected_fg_light.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-protected-light.png"
-    )
+        # Protecció ampla usada pel color_match.
+        Image.fromarray(
+            protected_fg_color.astype(np.uint8) * 255
+        ).save(
+            debug_dir / f"{dst.stem}-protected-color.png"
+        )
 
-    Image.fromarray(
-        colored_restore.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-colored-restore.png"
-    )
+        # Protecció estreta usada pel light_paper.
+        Image.fromarray(
+            protected_fg_light.astype(np.uint8) * 255
+        ).save(
+            debug_dir / f"{dst.stem}-protected-light.png"
+        )
 
-    Image.fromarray(
-        pale_plumage_restore.astype(np.uint8) * 255
-    ).save(
-        debug_dir / f"{dst.stem}-pale-plumage-restore.png"
-    )
+        Image.fromarray(
+            colored_restore.astype(np.uint8) * 255
+        ).save(
+            debug_dir / f"{dst.stem}-colored-restore.png"
+        )
+
+        Image.fromarray(
+            pale_plumage_restore.astype(np.uint8) * 255
+        ).save(
+            debug_dir / f"{dst.stem}-pale-plumage-restore.png"
+        )
 
     # Tot el que no és paper exterior confirmat és foreground provisional.
     solid = ~exterior
@@ -502,10 +521,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     proximity = max(8, min(28, int(round(0.025 * main_span))))
     proximity_size = 2 * proximity + 1
 
-    near_main = np.asarray(
-        Image.fromarray(clean.astype(np.uint8) * 255)
-        .filter(ImageFilter.MaxFilter(proximity_size))
-    ) > 127
+    near_main = _dilate(clean, proximity_size)
 
     # Recupera peces legítimes desconnectades: punta de cua, dits, plomes, etc.
     # Han de tocar la zona de proximitat real i tenir una mida raonable.
@@ -634,20 +650,8 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 for px, py in hole:
                     hole_mask[py, px] = True
 
-                reliable_fg = (
-                    strong_fg
-                    | colored_restore
-                    | pale_plumage_restore
-                )
-
-                reliable_img = Image.fromarray(
-                    reliable_fg.astype(np.uint8) * 255
-                )
-
                 # Banda que segueix el contorn del foreground fiable.
-                contour_keep = np.asarray(
-                    reliable_img.filter(ImageFilter.MaxFilter(5))
-                ) > 127
+                contour_keep = _dilate(reliable_fg, 5)
 
                 # Només ens interessa dins del forat actual.
                 contour_keep &= hole_mask
@@ -1071,32 +1075,14 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # que quedin immediatament al costat de foreground fiable. Així reparem
     # petites mossegades sense tancar globalment els espais entre potes/dits.
 
-    clean_img = Image.fromarray(
-        clean.astype(np.uint8) * 255
-    )
-
-    closed = np.asarray(
-        clean_img
-        .filter(ImageFilter.MaxFilter(3))
-        .filter(ImageFilter.MinFilter(3))
-    ) > 127
+    closed = _close(clean, 3)
 
     # Només els píxels que el closing voldria recuperar.
     closing_added = closed & ~clean
 
-    reliable_fg = (
-        strong_fg
-        | colored_restore
-        | pale_plumage_restore
-    )
-
     # Una banda molt estreta, 1 píxel aproximadament,
     # al voltant del foreground que sabem que és ocell.
-    repair_support = np.asarray(
-        Image.fromarray(
-            reliable_fg.astype(np.uint8) * 255
-        ).filter(ImageFilter.MaxFilter(3))
-    ) > 127
+    repair_support = _dilate(reliable_fg, 3)
 
     # Recuperem exclusivament petites mossegades enganxades
     # al foreground fiable.
@@ -1105,11 +1091,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # Closing 5x5 calculat sobre la mateixa màscara original. No s'aplica
     # globalment: només s'utilitza més avall per detectar microcomponents
     # addicionals que el closing 3x3 no ha pogut capturar.
-    closed5 = np.asarray(
-        clean_img
-        .filter(ImageFilter.MaxFilter(5))
-        .filter(ImageFilter.MinFilter(5))
-    ) > 127
+    closed5 = _close(clean, 5)
 
     closing5_added = closed5 & ~clean
 
@@ -1120,11 +1102,7 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # escapar de la detecció topològica. Un closing 5x5 el detecta, però no
     # l'apliquem globalment: només recuperem components nous molt petits i
     # enganxats a foreground fiable.
-    repair_support5 = np.asarray(
-        Image.fromarray(
-            reliable_fg.astype(np.uint8) * 255
-        ).filter(ImageFilter.MaxFilter(5))
-    ) > 127
+    repair_support5 = _dilate(reliable_fg, 5)
 
     closing5_candidates = (
         closing5_added
