@@ -79,6 +79,116 @@ def flood_exterior(alpha: np.ndarray, alpha_transparent: int) -> tuple[np.ndarra
     flooded = np.asarray(mask)
     return flooded == 255, flooded == 128
 
+def suppress_leg_gap_holes(
+    alpha: np.ndarray,
+    holes: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Exclude clear leg-gap geometry from cutout-hole scoring."""
+    opaque = alpha >= 250
+
+    ys, xs = np.where(opaque)
+    if not len(ys):
+        return holes, np.zeros_like(holes)
+
+    x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()), int(ys.max())
+
+    bird_w = x1 - x0 + 1
+    bird_h = y1 - y0 + 1
+
+    seen = np.zeros_like(holes)
+    ignored = np.zeros_like(holes)
+
+    neighbors8 = (
+        (-1, -1), (0, -1), (1, -1),
+        (-1,  0),          (1,  0),
+        (-1,  1), (0,  1), (1,  1),
+    )
+
+    h, w = holes.shape
+
+    for sy in range(h):
+        for sx in range(w):
+            if not holes[sy, sx] or seen[sy, sx]:
+                continue
+
+            q = [(sx, sy)]
+            seen[sy, sx] = True
+            comp = []
+
+            while q:
+                cx, cy = q.pop()
+                comp.append((cx, cy))
+
+                for dx, dy in neighbors8:
+                    nx, ny = cx + dx, cy + dy
+
+                    if (
+                        0 <= nx < w
+                        and 0 <= ny < h
+                        and holes[ny, nx]
+                        and not seen[ny, nx]
+                    ):
+                        seen[ny, nx] = True
+                        q.append((nx, ny))
+
+            if len(comp) < 64:
+                continue
+
+            cxs = [px for px, py in comp]
+            cys = [py for px, py in comp]
+
+            hx0, hx1 = min(cxs), max(cxs)
+            hy0, hy1 = min(cys), max(cys)
+
+            hole_w = hx1 - hx0 + 1
+            hole_h = hy1 - hy0 + 1
+
+            center_x = (hx0 + hx1) / 2.0
+            center_y = (hy0 + hy1) / 2.0
+
+            relative_center_y = (
+                (center_y - y0) / max(1, bird_h)
+            )
+
+            relative_bottom = (
+                (hy1 - y0) / max(1, bird_h)
+            )
+
+            relative_width = (
+                hole_w / max(1, bird_w)
+            )
+
+            aspect = (
+                hole_h / max(1, hole_w)
+            )
+
+            horizontally_inside = (
+                x0 + 0.15 * bird_w
+                <= center_x
+                <= x1 - 0.15 * bird_w
+            )
+
+            # Espai típic entre dues potes:
+            # - a la part inferior de la silueta,
+            # - arriba pràcticament fins als peus,
+            # - estret respecte de l'ocell,
+            # - i clarament més alt que ample.
+            leg_gap = (
+                relative_center_y >= 0.62
+                and relative_bottom >= 0.86
+                and relative_width <= 0.28
+                and aspect >= 1.35
+                and horizontally_inside
+            )
+
+            if not leg_gap:
+                continue
+
+            for px, py in comp:
+                ignored[py, px] = True
+
+    return holes & ~ignored, ignored
 
 def filename_parts(path: Path) -> tuple[str, int]:
     stem = path.stem
@@ -116,8 +226,20 @@ def analyze_image(path: Path, raw_dir: Path,
     alpha = np.asarray(im.getchannel("A"))
     h, w = alpha.shape
     total = h * w
-    _exterior, holes = flood_exterior(alpha, alpha_transparent)
+    _exterior, holes = flood_exterior(
+        alpha,
+        alpha_transparent,
+    )
+
+    holes, ignored_leg_holes = suppress_leg_gap_holes(
+        alpha,
+        holes,
+    )
+
     hole_pixels = int(holes.sum())
+    ignored_leg_gap_pixels = int(
+        ignored_leg_holes.sum()
+    )
     opaque_pixels = int((alpha >= 250).sum())
     foreground_reference = opaque_pixels + hole_pixels
     hole_pct_foreground = 100.0 * hole_pixels / foreground_reference if foreground_reference else 0.0
@@ -151,6 +273,7 @@ def analyze_image(path: Path, raw_dir: Path,
         "review_candidate": score >= 40.0,
         "very_likely_bad": score >= 70.0,
         "hole_pixels": hole_pixels,
+        "ignored_leg_gap_pixels": ignored_leg_gap_pixels,
         "hole_pct": round(hole_pct_foreground, 4),
         "partial_pixels": partial_pixels,
         "partial_pct": round(partial_pct_total, 4),
