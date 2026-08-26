@@ -843,14 +843,14 @@ def chroma_cut(src: Path, dst: Path) -> None:
                     touches_bbox = True
 
                 for nx, ny in (
-                    (cx - 1, cy),
-                    (cx + 1, cy),
-                    (cx, cy - 1),
-                    (cx, cy + 1),
-                    (cx - 1, cy - 1),
-                    (cx + 1, cy - 1),
-                    (cx - 1, cy + 1),
-                    (cx + 1, cy + 1),
+                        (cx - 1, cy),
+                        (cx + 1, cy),
+                        (cx, cy - 1),
+                        (cx, cy + 1),
+                        (cx - 1, cy - 1),
+                        (cx + 1, cy - 1),
+                        (cx - 1, cy + 1),
+                        (cx + 1, cy + 1),
                 ):
                     if (
                         x0 <= nx <= x1
@@ -899,6 +899,150 @@ def chroma_cut(src: Path, dst: Path) -> None:
                 )
 
             if should_restore:
+                clean[hy, hx] = True
+
+    # ------------------------------------------------------------------
+    # REPARACIÓ TOPOLOGICA DE FORATS ENCLAUSTRATS
+    # ------------------------------------------------------------------
+    # Si encara queda un buit completament tancat dins la silueta principal,
+    # mirem el seu "anell" de veïns immediats. Quan gairebé tot l'anell és
+    # foreground fiable, el buit és molt probablement una mossegada falsa i
+    # no un espai real de fons.
+    #
+    # Aquesta passada complementa la reparació cromàtica anterior:
+    # - omple microforats encara que el color s'assembli al paper;
+    # - per a forats més grans, exigeix suport topològic molt fort al voltant;
+    # - continua evitant la zona típica entre potes/dits.
+
+    topo_seen = np.zeros((h, w), dtype=bool)
+
+    max_topo_hole = max(
+        2048,
+        int(main_size * 0.03)
+    )
+
+    for ty in range(y0, y1 + 1):
+        for tx in range(x0, x1 + 1):
+            if clean[ty, tx] or topo_seen[ty, tx]:
+                continue
+
+            q = deque([(tx, ty)])
+            topo_seen[ty, tx] = True
+            hole = []
+            touches_bbox = False
+
+            while q:
+                cx, cy = q.popleft()
+                hole.append((cx, cy))
+
+                if (
+                    cx == x0 or cx == x1
+                    or cy == y0 or cy == y1
+                ):
+                    touches_bbox = True
+
+                for nx, ny in (
+                        (cx - 1, cy),
+                        (cx + 1, cy),
+                        (cx, cy - 1),
+                        (cx, cy + 1),
+                        (cx - 1, cy - 1),
+                        (cx + 1, cy - 1),
+                        (cx - 1, cy + 1),
+                        (cx + 1, cy + 1),
+                ):
+                    if (
+                        x0 <= nx <= x1
+                        and y0 <= ny <= y1
+                        and not clean[ny, nx]
+                        and not topo_seen[ny, nx]
+                    ):
+                        topo_seen[ny, nx] = True
+                        q.append((nx, ny))
+
+            if touches_bbox or len(hole) > max_topo_hole:
+                continue
+
+            hole_set = set(hole)
+            hole_xs = [px for px, py in hole]
+            hole_ys = [py for px, py in hole]
+
+            center_y = sum(hole_ys) / len(hole_ys)
+            hx0, hx1 = min(hole_xs), max(hole_xs)
+            hy0, hy1 = min(hole_ys), max(hole_ys)
+
+            hole_w = hx1 - hx0 + 1
+            hole_h = hy1 - hy0 + 1
+            aspect = max(hole_w, hole_h) / max(1, min(hole_w, hole_h))
+            bbox_area = hole_w * hole_h
+            fill_ratio = len(hole) / max(1, bbox_area)
+
+            shell_total = 0
+            shell_reliable = 0
+
+            for px, py in hole:
+                for nx, ny in (
+                        (px - 1, py),
+                        (px + 1, py),
+                        (px, py - 1),
+                        (px, py + 1),
+                        (px - 1, py - 1),
+                        (px + 1, py - 1),
+                        (px - 1, py + 1),
+                        (px + 1, py + 1),
+                ):
+                    if (
+                        0 <= nx < w
+                        and 0 <= ny < h
+                        and (nx, ny) not in hole_set
+                    ):
+                        shell_total += 1
+                        if (
+                            clean[ny, nx]
+                            or strong_fg[ny, nx]
+                            or colored_restore[ny, nx]
+                            or pale_plumage_restore[ny, nx]
+                        ):
+                            shell_reliable += 1
+
+            if shell_total == 0:
+                continue
+
+            shell_ratio = shell_reliable / shell_total
+
+            hy = np.array(hole_ys, dtype=np.int32)
+            hx = np.array(hole_xs, dtype=np.int32)
+
+            paper_like = (
+                (dist[hy, hx] < min(max_tol, paper_p95 + 6.0))
+                & (saturation[hy, hx] < 0.30)
+                & (value[hy, hx] > 0.62)
+            )
+            paper_ratio = float(np.mean(paper_like))
+
+            # 1) Microforats: omple'ls si estan clarament envoltats per ocell.
+            if len(hole) <= 16 and shell_ratio >= 0.82:
+                clean[hy, hx] = True
+                continue
+
+            # 2) Zona típica de potes/dits: sigueu molt més estrictes per no
+            #    segellar espais legítims.
+            in_leg_zone = center_y >= leg_zone_y
+            if in_leg_zone:
+                if aspect > 2.2 or fill_ratio < 0.45 or paper_ratio > 0.88:
+                    continue
+                if shell_ratio >= 0.965 and len(hole) <= 256:
+                    clean[hy, hx] = True
+                continue
+
+            # 3) Fora de la zona de potes, un anell molt fiable és una bona
+            #    evidència de mossegada falsa.
+            if (
+                shell_ratio >= 0.92
+                and (paper_ratio < 0.78 or len(hole) <= 64)
+                and fill_ratio >= 0.35
+                and aspect <= 3.2
+            ):
                 clean[hy, hx] = True
 
     # ------------------------------------------------------------------
