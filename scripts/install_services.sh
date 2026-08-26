@@ -338,6 +338,7 @@ Restart=always
 Type=simple
 RestartSec=3
 User=${USER}
+ExecCondition=/usr/local/bin/livestream.sh --check
 ExecStart=/usr/local/bin/livestream.sh
 [Install]
 WantedBy=multi-user.target

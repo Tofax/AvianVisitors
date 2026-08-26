@@ -24,6 +24,8 @@ mkdir -p "$repo/scripts" "$repo/avian/frontend/fonts" "$repo/avian/frontend/asse
   /usr/local/bin /usr/local/sbin
 id "$station_user" >/dev/null 2>&1 \
   || useradd -M -d "$station_home" -s /bin/bash "$station_user"
+id caddy >/dev/null 2>&1 \
+  || useradd -M -d /var/lib/caddy -s /usr/sbin/nologin caddy
 
 cp /source/scripts/reinstall_services.sh "$repo/scripts/reinstall_services.sh"
 for helper in update_birdnet maintenance_control archive_control admin_control; do
@@ -33,17 +35,13 @@ echo $helper
 EOF
 done
 cp /source/scripts/link_webroot.sh "$repo/scripts/link_webroot.sh"
+cp /source/scripts/livestream.sh "$repo/scripts/livestream.sh"
 cat >"$repo/scripts/update_caddyfile.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'called\n' >>/tmp/avian-service-refresh-smoke/caddy.called
 EOF
-cat >"$repo/scripts/security_refresh.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-touch /tmp/avian-service-refresh-smoke/security.called
-rm -f /etc/sudoers.d/010_caddy-nopasswd
-EOF
+cp /source/scripts/security_refresh.sh "$repo/scripts/security_refresh.sh"
 cat >"$repo/scripts/example.sh" <<'EOF'
 #!/usr/bin/env bash
 echo example
@@ -78,8 +76,11 @@ chown -R "$station_user:$station_user" "$station_home"
 cat >/etc/birdnet/birdnet.conf <<EOF
 BIRDNET_USER=$station_user
 EXTRACTED=$webroot
+REC_CARD=plughw:CARD=Device
+RTSP_STREAM=
 EOF
-printf 'legacy broad rule\n' >/etc/sudoers.d/010_caddy-nopasswd
+printf '%s\n' 'caddy ALL=(ALL) NOPASSWD: ALL' \
+  >/etc/sudoers.d/010_caddy-nopasswd
 printf 'cron sentinel\n' >/etc/crontab
 printf 'keep local bin\n' >/usr/local/bin/avian-refresh-unknown
 chown root:root /usr/local/bin
@@ -98,6 +99,14 @@ cat >/usr/local/bin/apt <<'EOF'
 touch /tmp/avian-service-refresh-smoke/apt.called
 exit 99
 EOF
+cat >/usr/local/bin/pgrep <<'EOF'
+#!/usr/bin/env bash
+if [ "$*" = '-u birdrefresh -x pulseaudio' ]; then
+  printf '%s\n' 4242
+  exit 0
+fi
+exit 1
+EOF
 cat >/usr/local/bin/mktemp <<'EOF'
 #!/usr/bin/env bash
 for argument in "$@"; do
@@ -111,9 +120,15 @@ done
 printf '%s\n' "$*" >>/tmp/avian-service-refresh-smoke/mktemp.log
 exec /usr/bin/mktemp "$@"
 EOF
-chmod 0755 /usr/local/bin/systemctl /usr/local/bin/apt /usr/local/bin/mktemp
+chmod 0755 \
+  /usr/local/bin/systemctl /usr/local/bin/apt /usr/local/bin/pgrep \
+  /usr/local/bin/mktemp
 
-cp /source/scripts/reinstall_services.sh /usr/local/sbin/avian-service-refresh
+previous_refresh=/source/tests/testdata/reinstall_services_16c7217d.sh
+[ "$(sha256sum "$previous_refresh" | cut -d' ' -f1)" = \
+  6ac215542c525e99b9315ff704eff05218999f3ec4adf015c9bc7c7d8caba9c5 ] \
+  || fail 'previous release helper fixture does not match public commit 16c7217d'
+cp "$previous_refresh" /usr/local/sbin/avian-service-refresh
 chown root:root /usr/local/sbin/avian-service-refresh
 chmod 0755 /usr/local/sbin/avian-service-refresh
 
@@ -137,7 +152,7 @@ if /usr/local/sbin/avian-service-refresh >"$test_root/contention.log" 2>&1; then
 fi
 grep -q 'another update is already running' "$test_root/contention.log" \
   || fail 'service refresh lock error was unclear'
-[ ! -e "$test_root/security.called" ] \
+[ ! -e /etc/sudoers.d/020_avian-admin ] \
   || fail 'contended service refresh changed security state'
 flock -u 8
 exec 8>&-
@@ -150,6 +165,77 @@ AVIAN_UPDATE_LOCK_FD=9 /usr/local/sbin/avian-service-refresh --legacy-migration 
   >"$test_root/refresh.log" 2>&1 || fail 'inherited-lock service refresh failed'
 flock -u 9
 exec 9>&-
+
+# This invocation began in the exact 16c7217d helper. It atomically replaced
+# itself, then invoked the newly installed security helper. The new security
+# hook must apply the audio policy before that first old process returns.
+[ "$(sha256sum /usr/local/sbin/avian-service-refresh | cut -d' ' -f1)" = \
+  "$(sha256sum "$repo/scripts/reinstall_services.sh" | cut -d' ' -f1)" ] \
+  || fail 'first-hop refresh did not install the new service helper'
+[ -f /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf ] \
+  || fail 'first-hop refresh did not install the live stream restart policy'
+if grep -qx 'Restart=on-failure' \
+  /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf; then
+  fail 'first-hop live stream policy downgraded restart resilience'
+fi
+grep -qx 'Restart=always' \
+  /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf \
+  || fail 'first-hop live stream policy has the wrong restart mode'
+grep -qx 'ExecCondition=/usr/local/bin/livestream.sh --check' \
+  /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf \
+  || fail 'first-hop live stream policy lacks its capture condition'
+[ "$(grep -c '^stop livestream.service$' "$test_root/systemctl.log")" -eq 1 ] \
+  || fail 'first-hop refresh did not immediately stop direct live streaming'
+grep -q 'PulseAudio is still running for birdrefresh' "$test_root/refresh.log" \
+  || fail 'first-hop refresh did not report the existing PulseAudio process'
+grep -q 'Bird recording is not yet confirmed recovered' "$test_root/refresh.log" \
+  || fail 'first-hop refresh overstated direct recorder recovery'
+grep -q 'Reboot the station, then check birdnet_recording.service' \
+  "$test_root/refresh.log" \
+  || fail 'first-hop PulseAudio warning lacked reboot guidance'
+if /usr/local/bin/livestream.sh --check; then
+  fail 'direct ALSA condition allowed the live stream to start'
+fi
+sed -i 's/^REC_CARD=.*/REC_CARD=default/' /etc/birdnet/birdnet.conf
+/usr/local/bin/livestream.sh --check \
+  || fail 'direct to default transition left the live stream blocked'
+
+# Reapplying the policy must safely replace its existing root-owned drop-in.
+# A normal shared-audio path has no migration warning on stderr.
+policy_file=/etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf
+/usr/local/sbin/avian-service-refresh --audio-policy \
+  >"$test_root/safe-policy.out" 2>"$test_root/safe-policy.err" \
+  || fail 'safe existing live stream drop-in was rejected'
+[ ! -s "$test_root/safe-policy.err" ] \
+  || fail 'safe existing live stream drop-in produced unexpected stderr'
+grep -q 'shared audio or RTSP remains available' "$test_root/safe-policy.out" \
+  || fail 'shared-audio policy status was not reported'
+[ "$(stat -c '%U:%G:%a' "$policy_file")" = root:root:644 ] \
+  || fail 'safe existing live stream drop-in lost its ownership or mode'
+
+# Never replace a policy file whose ownership shows that it is not managed by
+# root. Restore the fixture afterward so the remaining idempotence checks run.
+policy_hash=$(sha256sum "$policy_file" | cut -d' ' -f1)
+chown "$station_user:$station_user" "$policy_file"
+if /usr/local/sbin/avian-service-refresh --audio-policy \
+  >"$test_root/unsafe-policy.out" 2>"$test_root/unsafe-policy.err"; then
+  fail 'non-root-owned live stream drop-in was accepted'
+fi
+grep -q 'live stream drop-in file is unsafe' "$test_root/unsafe-policy.err" \
+  || fail 'unsafe live stream drop-in failure was unclear'
+[ "$(stat -c '%U:%G' "$policy_file")" = "$station_user:$station_user" ] \
+  || fail 'unsafe live stream drop-in ownership was changed'
+[ "$(sha256sum "$policy_file" | cut -d' ' -f1)" = "$policy_hash" ] \
+  || fail 'unsafe live stream drop-in contents were changed'
+chown root:root "$policy_file"
+chmod 0644 "$policy_file"
+
+sed -i 's|^RTSP_STREAM=.*|RTSP_STREAM=rtsp://camera.example.test/audio|' \
+  /etc/birdnet/birdnet.conf
+sed -i 's/^REC_CARD=.*/REC_CARD=plughw:CARD=Device/' /etc/birdnet/birdnet.conf
+/usr/local/bin/livestream.sh --check \
+  || fail 'RTSP transition was blocked by direct REC_CARD'
+sed -i 's|^RTSP_STREAM=.*|RTSP_STREAM=|' /etc/birdnet/birdnet.conf
 run_refresh
 
 grep -q '/var/tmp/avian-service-refresh.' "$test_root/mktemp.log" \
@@ -159,7 +245,8 @@ if find /var/tmp -maxdepth 1 -type d -name 'avian-service-refresh.*' \
   fail 'service refresh left its verified fetch workspace behind'
 fi
 
-[ -e "$test_root/security.called" ] || fail 'security policy hook was not called'
+[ -f /etc/sudoers.d/020_avian-admin ] \
+  || fail 'security policy hook did not install its focused sudo rule'
 [ ! -e /etc/sudoers.d/010_caddy-nopasswd ] \
   || fail 'legacy unrestricted sudo rule survived'
 [ ! -e "$test_root/apt.called" ] || fail 'service refresh ran a package command'
@@ -192,19 +279,35 @@ for target in \
   [ -L "$webroot/$target" ] || fail "webroot link missing: $target"
 done
 
-[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 2 ] \
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 5 ] \
   || fail 'daemon reload was not idempotent'
+[ "$(grep -c '^stop livestream.service$' "$test_root/systemctl.log")" -eq 2 ] \
+  || fail 'direct ALSA mode did not stop live streaming'
+if grep -q '^disable .*livestream.service$' "$test_root/systemctl.log"; then
+  fail 'direct ALSA mode disabled the live stream unit'
+fi
+[ -f /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf ] \
+  || fail 'live stream restart drop-in was not installed'
+[ "$(stat -c '%U:%G:%a' /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf)" = root:root:644 ] \
+  || fail 'live stream restart drop-in permissions are unsafe'
+grep -qx 'Restart=always' \
+  /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf \
+  || fail 'live stream restart drop-in has the wrong policy'
+grep -qx 'ExecCondition=/usr/local/bin/livestream.sh --check' \
+  /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf \
+  || fail 'live stream restart drop-in lacks its capture condition'
 
 # A checkout change to code that would become privileged must fail before the
 # installed helper or security policy is replaced.
 installed_hash=$(sha256sum /usr/local/sbin/avian-maintenance-control | cut -d' ' -f1)
 printf 'dirty\n' >>"$repo/scripts/maintenance_control.sh"
 chown "$station_user:$station_user" "$repo/scripts/maintenance_control.sh"
-rm -f "$test_root/security.called"
+rm -f /etc/sudoers.d/020_avian-admin
 if /usr/local/sbin/avian-service-refresh >"$test_root/dirty.log" 2>&1; then
   fail 'dirty privileged helper was accepted'
 fi
-[ ! -e "$test_root/security.called" ] || fail 'dirty helper reached security hook'
+[ ! -e /etc/sudoers.d/020_avian-admin ] \
+  || fail 'dirty helper reached security hook'
 [ "$(sha256sum /usr/local/sbin/avian-maintenance-control | cut -d' ' -f1)" = "$installed_hash" ] \
   || fail 'dirty helper replaced the installed copy'
 

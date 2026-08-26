@@ -129,6 +129,20 @@ for helper in \
   fi
 done
 
+# A running pre-patch service refresher keeps reading its old inode after it
+# atomically installs the new helpers. It does invoke this newly installed
+# security helper, so use that guaranteed first-hop hook to apply the focused
+# live stream policy immediately. The audio-only path exits before calling
+# back into security refresh and therefore cannot recurse.
+update_lock=/run/lock/avian-update.lock
+if [ -e /proc/self/fd/9 ] \
+  && [ "$(readlink -f /proc/self/fd/9)" = "$update_lock" ]; then
+  AVIAN_UPDATE_LOCK_FD=9 \
+    /usr/local/sbin/avian-service-refresh --audio-policy
+else
+  /usr/local/sbin/avian-service-refresh --audio-policy
+fi
+
 sudoers_temp=$(mktemp /etc/sudoers.d/.020_avian-admin.XXXXXX)
 trap 'rm -f "${sudoers_temp-}"' EXIT
 cat >"$sudoers_temp" <<'EOF'
