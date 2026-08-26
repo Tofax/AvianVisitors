@@ -191,6 +191,15 @@ with sync_playwright() as p:
         timeout=120_000,
     )
 
+    page.add_style_tag(content="""
+        .gtile-label text {
+            fill: #000000 !important;
+            filter: none !important;
+            opacity: 1 !important;
+            font-weight: 500 !important;
+        }
+    """)
+
     # Temps perquè acabin de carregar dades, il·lustracions i layout
     page.wait_for_timeout(5000)
 
