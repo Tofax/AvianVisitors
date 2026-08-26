@@ -270,7 +270,7 @@ def configure_panel_geometry(panel):
     global PANEL_W, PANEL_H
 
     if panel == "waveshare_7in3e":
-        # Physical panel is 800x480 landscape.  Keep AvianVisitors' working
+        # Physical panel is 800x480 landscape. Keep AvianVisitors' working
         # canvas portrait and rotate it immediately before pushing.
         PANEL_W, PANEL_H = 480, 800
     else:
@@ -283,12 +283,16 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
 
     if panel == "waveshare_7in3e":
         if rotate not in (0, 90, 180, 270):
-            print(f"rotate must be 0, 90, 180 or 270, not {rotate}; using 270",
-                  file=sys.stderr)
-            rotate = 270
+            print(
+                f"rotate must be 0, 90, 180 or 270, not {rotate}; using 90",
+                file=sys.stderr
+            )
+            rotate = 90
 
-        lib = os.path.expanduser(waveshare_lib or
-                                 "~/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib")
+        lib = os.path.expanduser(
+            waveshare_lib
+            or "~/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib"
+        )
         if lib not in sys.path:
             sys.path.insert(0, lib)
 
@@ -308,7 +312,7 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
     # Original Pimoroni Inky backend
     if rotate not in (90, 270):
         print(f"rotate must be 90 or 270, not {rotate}; using 90", file=sys.stderr)
-        rotate = 270
+        rotate = 90
 
     if panel == "el133uf1":
         from inky.inky_el133uf1 import Inky
@@ -420,6 +424,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
         print("refresh:", "changed" if changed else "heal")
 
     configure_panel_geometry(cfg.get("panel", ""))
+
     try:
         src = obtain_image(cfg, species)
 
@@ -433,6 +438,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
     except Exception as e:
         print(f"could not get image: {e}", file=sys.stderr)  # keep last panel image
         return
+
     # A pre-rendered PhotoPainter frame already has the exact logical
     # 480x800 geometry. Do not crop/recompose it through the Inky A5 layout.
     if not (
