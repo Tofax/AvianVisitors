@@ -240,6 +240,132 @@ def _magenta_chroma_cut(
 
     alpha[(alpha > 0) & ~main_support] = 0
 
+    # ------------------------------------------------------------------
+    # REPARACIÓ DE MICROFORATS TANCATS
+    # ------------------------------------------------------------------
+    # Alguns píxels de la vora interior poden quedar massa semblants al
+    # croma i convertir-se en petits forats completament tancats dins
+    # l'ocell. Reparem exclusivament components minúsculs i molt envoltats
+    # de foreground opac.
+    #
+    # Els buits reals entre potes, dits, ales o plomes són molt més grans
+    # o comuniquen amb l'exterior i, per tant, no entren aquí.
+    out_rgb = arr.copy()
+
+    transparent = alpha <= 16
+    exterior = np.zeros((h, w), dtype=bool)
+    q = deque()
+
+    for x in range(w):
+        if transparent[0, x]:
+            exterior[0, x] = True
+            q.append((x, 0))
+        if transparent[h - 1, x] and not exterior[h - 1, x]:
+            exterior[h - 1, x] = True
+            q.append((x, h - 1))
+
+    for y in range(h):
+        if transparent[y, 0] and not exterior[y, 0]:
+            exterior[y, 0] = True
+            q.append((0, y))
+        if transparent[y, w - 1] and not exterior[y, w - 1]:
+            exterior[y, w - 1] = True
+            q.append((w - 1, y))
+
+    neighbors8 = (
+        (-1, -1), (0, -1), (1, -1),
+        (-1,  0),          (1,  0),
+        (-1,  1), (0,  1), (1,  1),
+    )
+
+    while q:
+        cx, cy = q.popleft()
+
+        for dx, dy in neighbors8:
+            nx, ny = cx + dx, cy + dy
+
+            if (
+                0 <= nx < w
+                and 0 <= ny < h
+                and transparent[ny, nx]
+                and not exterior[ny, nx]
+            ):
+                exterior[ny, nx] = True
+                q.append((nx, ny))
+
+    enclosed = transparent & ~exterior
+    seen_holes = np.zeros((h, w), dtype=bool)
+
+    for sy in range(h):
+        for sx in range(w):
+            if not enclosed[sy, sx] or seen_holes[sy, sx]:
+                continue
+
+            q = deque([(sx, sy)])
+            seen_holes[sy, sx] = True
+            hole = []
+
+            while q:
+                cx, cy = q.popleft()
+                hole.append((cx, cy))
+
+                for dx, dy in neighbors8:
+                    nx, ny = cx + dx, cy + dy
+
+                    if (
+                        0 <= nx < w
+                        and 0 <= ny < h
+                        and enclosed[ny, nx]
+                        and not seen_holes[ny, nx]
+                    ):
+                        seen_holes[ny, nx] = True
+                        q.append((nx, ny))
+
+            # Només microforats. No toquem espais anatòmics.
+            if len(hole) > 24:
+                continue
+
+            hole_set = set(hole)
+            shell = []
+
+            for px, py in hole:
+                for dx, dy in neighbors8:
+                    nx, ny = px + dx, py + dy
+
+                    if (
+                        0 <= nx < w
+                        and 0 <= ny < h
+                        and (nx, ny) not in hole_set
+                        and alpha[ny, nx] >= 220
+                    ):
+                        shell.append((nx, ny))
+
+            # Un forat fals ha d'estar realment envoltat d'ocell.
+            if len(shell) < max(6, len(hole)):
+                continue
+
+            shell_rgb = np.array([
+                out_rgb[py, px]
+                for px, py in shell
+            ])
+
+            replacement = np.median(
+                shell_rgb,
+                axis=0,
+            ).astype(np.uint8)
+
+            hy = np.array(
+                [py for px, py in hole],
+                dtype=np.int32,
+            )
+            hx = np.array(
+                [px for px, py in hole],
+                dtype=np.int32,
+            )
+
+            out_rgb[hy, hx] = replacement
+            alpha[hy, hx] = 255
+
     fg = alpha > 20
     ys, xs = np.where(fg)
 
@@ -263,7 +389,7 @@ def _magenta_chroma_cut(
     x1 = min(w, x1 + pad)
 
     rgba = np.dstack([
-        arr,
+        out_rgb,
         alpha,
     ]).astype(np.uint8)
 
