@@ -54,7 +54,7 @@ def _close(mask: np.ndarray, size: int) -> np.ndarray:
 
 
 def _detect_magenta_chroma(arr: np.ndarray) -> np.ndarray | None:
-    """Return the sampled chroma RGB when the border is a flat magenta ground."""
+    """Detect a dominant magenta chroma ground from the image border."""
     h, w, _ = arr.shape
     strip = max(8, min(24, min(h, w) // 24))
 
@@ -69,28 +69,46 @@ def _detect_magenta_chroma(arr: np.ndarray) -> np.ndarray | None:
     g = border[:, 1]
     b = border[:, 2]
 
-    # Prou permissiu perquè Gemini no ha de retornar necessàriament
-    # #FF00FF exacte, però continua excloent vermells/taronges/marrons
-    # de l'ocell: el magenta necessita vermell i blau clarament per
-    # sobre del verd.
+    # Detectem una família cromàtica magenta, no només #FF00FF exacte.
+    #
+    # El fons generat per Gemini pot variar lleugerament en luminància
+    # o saturació, però ha de conservar la propietat fonamental:
+    # vermell + blau clarament per sobre del verd.
     magenta_like = (
-        (r >= 150.0)
-        & (b >= 125.0)
-        & (g <= 155.0)
-        & (((r + b) * 0.5 - g) >= 45.0)
+        (r >= 135.0)
+        & (b >= 105.0)
+        & (g <= 175.0)
+        & ((r - g) >= 35.0)
+        & ((b - g) >= 20.0)
     )
 
-    if float(np.mean(magenta_like)) < 0.80:
+    chroma_ratio = float(np.mean(magenta_like))
+
+    # La major part del marc exterior ha de correspondre al croma.
+    # No exigim 80% perquè petites parts de l'ocell, antialiasing o
+    # variacions generades pel model no han de desactivar el mode.
+    if chroma_ratio < 0.60:
         return None
 
-    # No assumim que Gemini hagi respectat #FF00FF exactament:
-    # aprenem el color real a partir de les vores.
-    chroma = np.median(border[magenta_like], axis=0)
-    dist = np.sqrt(((border - chroma) ** 2).sum(axis=1))
+    chroma_pixels = border[magenta_like]
 
-    # Un croma real també ha de ser força uniforme.
-    # Això evita confondre un RAW antic de paper crema amb el nou mode.
-    if float(np.percentile(dist, 90)) > 28.0:
+    if len(chroma_pixels) < 100:
+        return None
+
+    # Aprenem el color real generat, no assumim #FF00FF exacte.
+    chroma = np.median(chroma_pixels, axis=0)
+
+    # IMPORTANT:
+    # mesurem la uniformitat NOMÉS sobre els píxels que ja tenen
+    # aparença de croma. Els píxels de l'ocell no han de penalitzar-la.
+    chroma_dist = np.sqrt(
+        ((chroma_pixels - chroma) ** 2).sum(axis=1)
+    )
+
+    # Gemini pot introduir una mica de variació tot i haver-li demanat
+    # un fons pla. Aquest límit continua sent prou estricte per evitar
+    # confondre els antics fons crema amb el croma.
+    if float(np.percentile(chroma_dist, 90)) > 45.0:
         return None
 
     return chroma.astype(np.float32)
@@ -238,8 +256,14 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     chroma = _detect_magenta_chroma(arr)
     if chroma is not None:
+        print(
+            "[cutout] magenta chroma detected:",
+            chroma.round().astype(int).tolist(),
+        )
         _magenta_chroma_cut(arr, dst, chroma)
         return
+
+    print("[cutout] magenta chroma not detected; using legacy cream cutout")
 
     h, w, _ = arr.shape
 
