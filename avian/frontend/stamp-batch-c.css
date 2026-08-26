@@ -371,3 +371,7 @@
 .tpl-ribbonbird .wv-texture{
   display:none;
 }
+
+/* Keep this as the final rule. stamp-batch-c.js registers these templates
+   only after the complete stylesheet has supplied its readiness marker. */
+:root{--avian-stamp-batch-c-ready:1}

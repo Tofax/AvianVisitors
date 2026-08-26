@@ -7,6 +7,22 @@
   var S = window.STAMPS;
   if (!S) return;
 
+  /* Batch C markup and CSS are one release unit. If the stylesheet is
+     missing or an older cached copy is still active, do not register markup
+     that the core stamp sheet cannot style. Unknown families then remain on
+     the complete geo issue supplied by stamps.js. The readiness marker is
+     the final rule in stamp-batch-c.css so a partial response cannot opt in. */
+  var batchCssReady = false;
+  try {
+    batchCssReady = window.getComputedStyle(document.documentElement)
+      .getPropertyValue('--avian-stamp-batch-c-ready').trim() === '1';
+  } catch (e) { }
+  if (!batchCssReady) {
+    document.documentElement.setAttribute('data-stamp-batch-c', 'css-missing');
+    return;
+  }
+  document.documentElement.setAttribute('data-stamp-batch-c', 'ready');
+
   /* The Triennale plate is generated from the real species cutout, not from
      a generic bird icon. A broad blur turns local plumage into three smooth
      ink regions; the original pixels are then brought back only for the eye,
