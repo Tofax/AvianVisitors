@@ -283,9 +283,9 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
 
     if panel == "waveshare_7in3e":
         if rotate not in (0, 90, 180, 270):
-            print(f"rotate must be 0, 90, 180 or 270, not {rotate}; using 90",
+            print(f"rotate must be 0, 90, 180 or 270, not {rotate}; using 270",
                   file=sys.stderr)
-            rotate = 90
+            rotate = 270
 
         lib = os.path.expanduser(waveshare_lib or
                                  "~/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib")
@@ -308,7 +308,7 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
     # Original Pimoroni Inky backend
     if rotate not in (90, 270):
         print(f"rotate must be 90 or 270, not {rotate}; using 90", file=sys.stderr)
-        rotate = 90
+        rotate = 270
 
     if panel == "el133uf1":
         from inky.inky_el133uf1 import Inky
