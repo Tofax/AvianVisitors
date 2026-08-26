@@ -172,6 +172,64 @@ def _magenta_chroma_cut(
     # Ocell segur -> totalment opac.
     alpha[dist >= feather_tol] = 255
 
+    # ------------------------------------------------------------------
+    # NETEJA DE MICROARTEFACTES DESENGANXATS
+    # ------------------------------------------------------------------
+    # En mode croma pot quedar algun puntet residual (per exemple prop de
+    # la cua) que forma un component minúscul separat del cos principal.
+    # El component principal es conserva sempre; els microcomponents molt
+    # petits i desconnectats s'eliminen.
+    fg = alpha > 40
+    seen = np.zeros((h, w), dtype=bool)
+    components = []
+
+    for sy in range(h):
+        for sx in range(w):
+            if not fg[sy, sx] or seen[sy, sx]:
+                continue
+
+            q = deque([(sx, sy)])
+            seen[sy, sx] = True
+            comp = []
+
+            while q:
+                cx, cy = q.popleft()
+                comp.append((cx, cy))
+
+                for nx, ny in (
+                        (cx - 1, cy),
+                        (cx + 1, cy),
+                        (cx, cy - 1),
+                        (cx, cy + 1),
+                        (cx - 1, cy - 1),
+                        (cx + 1, cy - 1),
+                        (cx - 1, cy + 1),
+                        (cx + 1, cy + 1),
+                ):
+                    if (
+                        0 <= nx < w
+                        and 0 <= ny < h
+                        and fg[ny, nx]
+                        and not seen[ny, nx]
+                    ):
+                        seen[ny, nx] = True
+                        q.append((nx, ny))
+
+            components.append(comp)
+
+    if components:
+        main = max(components, key=len)
+
+        for comp in components:
+            if comp is main:
+                continue
+
+            # Elimina només microcomponents clarament residuals.
+            if len(comp) <= 24:
+                cy = np.array([p[1] for p in comp], dtype=np.int32)
+                cx = np.array([p[0] for p in comp], dtype=np.int32)
+                alpha[cy, cx] = 0
+
     fg = alpha > 40
     ys, xs = np.where(fg)
 
