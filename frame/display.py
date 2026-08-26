@@ -25,7 +25,7 @@ import time
 import urllib.request
 from datetime import datetime
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 try:
     import tomllib
@@ -356,6 +356,14 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
 
         if buf.size != (dev.width, dev.height):
             buf = buf.resize((dev.width, dev.height), Image.LANCZOS)
+
+        buf = buf.filter(
+            ImageFilter.UnsharpMask(
+                radius=0.7,
+                percent=60,
+                threshold=3,
+            )
+        )
 
         # Convertim nosaltres mateixos als 6 colors físics de la Waveshare.
         # Sense Floyd-Steinberg: evita els punts de color al voltant de text
