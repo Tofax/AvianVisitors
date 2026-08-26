@@ -325,6 +325,8 @@ def _magenta_chroma_cut(
             if len(hole) > 24:
                 continue
 
+            ultra_tiny_hole = len(hole) <= 4
+
             hole_set = set(hole)
             shell = []
 
@@ -341,8 +343,14 @@ def _magenta_chroma_cut(
                         shell.append((nx, ny))
 
             # Un forat fals ha d'estar realment envoltat d'ocell.
-            if len(shell) < max(6, len(hole)):
-                continue
+            # Per als forats ultraminúsculs som una mica més permissius:
+            # si estan tancats i tenen una vora mínima fiable, els omplim.
+            if ultra_tiny_hole:
+                if len(shell) < 3:
+                    continue
+            else:
+                if len(shell) < max(6, len(hole)):
+                    continue
 
             shell_rgb = np.array([
                 out_rgb[py, px]
