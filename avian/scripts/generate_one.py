@@ -53,6 +53,151 @@ def _close(mask: np.ndarray, size: int) -> np.ndarray:
     ) > 127
 
 
+def _detect_magenta_chroma(arr: np.ndarray) -> np.ndarray | None:
+    """Return the sampled chroma RGB when the border is a flat magenta ground."""
+    h, w, _ = arr.shape
+    strip = max(8, min(24, min(h, w) // 24))
+
+    border = np.concatenate([
+        arr[:strip, :, :].reshape(-1, 3),
+        arr[-strip:, :, :].reshape(-1, 3),
+        arr[:, :strip, :].reshape(-1, 3),
+        arr[:, -strip:, :].reshape(-1, 3),
+    ]).astype(np.float32)
+
+    r = border[:, 0]
+    g = border[:, 1]
+    b = border[:, 2]
+
+    # Prou permissiu perquè Gemini no ha de retornar necessàriament
+    # #FF00FF exacte, però continua excloent vermells/taronges/marrons
+    # de l'ocell: el magenta necessita vermell i blau clarament per
+    # sobre del verd.
+    magenta_like = (
+        (r >= 150.0)
+        & (b >= 125.0)
+        & (g <= 155.0)
+        & (((r + b) * 0.5 - g) >= 45.0)
+    )
+
+    if float(np.mean(magenta_like)) < 0.80:
+        return None
+
+    # No assumim que Gemini hagi respectat #FF00FF exactament:
+    # aprenem el color real a partir de les vores.
+    chroma = np.median(border[magenta_like], axis=0)
+    dist = np.sqrt(((border - chroma) ** 2).sum(axis=1))
+
+    # Un croma real també ha de ser força uniforme.
+    # Això evita confondre un RAW antic de paper crema amb el nou mode.
+    if float(np.percentile(dist, 90)) > 28.0:
+        return None
+
+    return chroma.astype(np.float32)
+
+
+def _magenta_chroma_cut(
+    arr: np.ndarray,
+    dst: Path,
+    chroma: np.ndarray,
+) -> None:
+    """Remove a sampled magenta chroma globally, including enclosed gaps."""
+    h, w, _ = arr.shape
+    rgb = arr.astype(np.float32)
+
+    dist = np.sqrt(
+        ((rgb - chroma) ** 2).sum(axis=2)
+    )
+
+    # Mesurem la variació real del croma a les vores.
+    strip = max(8, min(24, min(h, w) // 24))
+
+    border_dist = np.concatenate([
+        dist[:strip, :].ravel(),
+        dist[-strip:, :].ravel(),
+        dist[:, :strip].ravel(),
+        dist[:, -strip:].ravel(),
+    ])
+
+    clear_tol = float(
+        max(
+            14.0,
+            min(
+                34.0,
+                np.percentile(border_dist, 99) + 8.0,
+            ),
+        )
+    )
+
+    # Franja estreta de transició per conservar antialiasing a la vora.
+    feather_tol = clear_tol + 26.0
+
+    # IMPORTANT:
+    # aquí NO fem flood-fill.
+    #
+    # Eliminem el croma globalment, de manera que també desapareix
+    # el magenta que queda completament tancat entre potes, dits,
+    # plomes, ales o cua.
+    alpha = np.clip(
+        (
+            (dist - clear_tol)
+            / max(1.0, feather_tol - clear_tol)
+            * 255.0
+        ),
+        0.0,
+        255.0,
+    ).astype(np.uint8)
+
+    # Fons segur -> totalment transparent.
+    alpha[dist <= clear_tol] = 0
+
+    # Ocell segur -> totalment opac.
+    alpha[dist >= feather_tol] = 255
+
+    fg = alpha > 40
+    ys, xs = np.where(fg)
+
+    if not len(ys):
+        raise RuntimeError(
+            "magenta chroma cut produced an empty image"
+        )
+
+    y0 = ys.min()
+    y1 = ys.max() + 1
+    x0 = xs.min()
+    x1 = xs.max() + 1
+
+    pad = round(
+        0.03 * max(y1 - y0, x1 - x0)
+    )
+
+    y0 = max(0, y0 - pad)
+    x0 = max(0, x0 - pad)
+    y1 = min(h, y1 + pad)
+    x1 = min(w, x1 + pad)
+
+    rgba = np.dstack([
+        arr,
+        alpha,
+    ]).astype(np.uint8)
+
+    Image.fromarray(
+        rgba[y0:y1, x0:x1],
+        "RGBA",
+    ).save(dst)
+
+    if CUTOUT_DEBUG:
+        debug_dir = dst.parent / "debug"
+        debug_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        Image.fromarray(alpha).save(
+            debug_dir / f"{dst.stem}-chroma-alpha.png"
+        )
+
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import pregen  # noqa: E402  (reuses gen_one + the reference machinery)
@@ -79,20 +224,22 @@ def write_state(**kw) -> None:
 
 
 def chroma_cut(src: Path, dst: Path) -> None:
-    """Instant cutout for a cream-ground render.
+    """Instant cutout using direct magenta keying or the legacy cream flood.
 
-    Only paper connected to the image border becomes transparent.
+    New renders use a flat magenta chroma ground. When that ground is detected
+    on the image border, every matching pixel is removed globally, including
+    enclosed background between legs, toes, wings or tail feathers.
 
-    The flood uses an adaptive paper model plus a narrow guard band around
-    clearly non-paper pixels. Bright low-saturation paper remains passable so
-    paper gradients and grain do not isolate large background regions.
-
-    After the flood, only the main bird component and genuinely nearby
-    detached pieces are retained. The final alpha is fully opaque in the bird
-    interior and feathered only along the outer silhouette.
+    Older cream-ground RAW files keep using the validated adaptive flood-fill
+    path below, so existing illustrations remain re-cuttable without Gemini.
     """
     im = Image.open(src).convert("RGB")
     arr = np.asarray(im)
+
+    chroma = _detect_magenta_chroma(arr)
+    if chroma is not None:
+        _magenta_chroma_cut(arr, dst, chroma)
+        return
 
     h, w, _ = arr.shape
 
