@@ -278,6 +278,57 @@ def configure_panel_geometry(panel):
 
 
 # --- hardware ---------------------------------------------------------------
+def quantize_waveshare6(img):
+    """Quantize for Waveshare Spectra 6.
+
+    - Preserve bird detail with Floyd-Steinberg dithering
+    - Keep near-white background clean
+    - Preserve true black from the source
+    """
+    rgb = img.convert("RGB")
+
+    pal = Image.new("P", (1, 1))
+    palette = [
+        0, 0, 0,          # black
+        255, 255, 255,    # white
+        255, 255, 0,      # yellow
+        255, 0, 0,        # red
+        0, 0, 0,          # unused slot 4
+        0, 0, 255,        # blue
+        0, 255, 0,        # green
+    ]
+    palette += [0, 0, 0] * (256 - 7)
+    pal.putpalette(palette)
+
+    out = rgb.quantize(
+        palette=pal,
+        dither=Image.Dither.FLOYDSTEINBERG,
+    ).convert("RGB")
+
+    src = rgb.load()
+    dst = out.load()
+
+    w, h = rgb.size
+
+    for y in range(h):
+        for x in range(w):
+            r, g, b = src[x, y]
+
+            vmax = max(r, g, b)
+            vmin = min(r, g, b)
+            chroma = vmax - vmin
+            lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+            # Fons molt clar i neutre -> blanc pur
+            if chroma <= 20 and lum >= 235:
+                dst[x, y] = (255, 255, 255)
+
+            # Negre real de l'origen -> negre pur
+            elif lum <= 45:
+                dst[x, y] = (0, 0, 0)
+
+    return out
+
 def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
     """Rotate and push an image to the configured e-ink panel."""
 
@@ -302,10 +353,16 @@ def push_panel(img, rotate, saturation, panel="", waveshare_lib=""):
         dev.init()
 
         buf = img.rotate(rotate, expand=True) if rotate else img.copy()
+
         if buf.size != (dev.width, dev.height):
             buf = buf.resize((dev.width, dev.height), Image.LANCZOS)
 
-        dev.display(dev.getbuffer(buf.convert("RGB")))
+        # Convertim nosaltres mateixos als 6 colors físics de la Waveshare.
+        # Sense Floyd-Steinberg: evita els punts de color al voltant de text
+        # i il·lustracions.
+        buf = quantize_waveshare6(buf)
+
+        dev.display(dev.getbuffer(buf))
         dev.sleep()
         return
 
