@@ -22,9 +22,17 @@ Generate a {pose} {com_name} ({sci_name}) in the style of an Edo-period Japanese
 
 Confident sumi-e ink linework with soft watercolor washes. Earthy, restrained palette: burnt umber, ochre, indigo, vermillion, muted greens. The body should look like flat painted paper - not a textured surface, not shaded volume. If the species has subtle plumage variation (streaking, mottling, fine barring), ABSTRACT it into 2-3 broad zones rather than rendering it literally. Eye, beak, and feet drawn with crisp ink - these are the only places where confident dark line is appropriate.
 
-The bird sits on a CONSISTENT WARM CREAM tonal background - like aged Japanese mulberry paper, a soft warm buff cream color. The cream ground fills the entire frame as the background and is identical across every print for visual consistency. This is the only background element: NO branch, NO twig, NO perch, NO leaves, NO foliage, NO substrate, NO scenery, NO sky, NO moon, NO water - only the bird floating against the cream paper ground. The perch is purely implied by toe posture - it is NEVER rendered. NO border or frame, NO text or signature.
+The bird is isolated against a CONSISTENT PURE MAGENTA CHROMA BACKGROUND (#FF00FF).
 
-Composition: the bird occupies one-third to one-half of the frame. Leave generous negative space (just the cream ground) around it. The image should feel sparse and confident, not packed with detail.
+The BACKGROUND ONLY must be completely flat and uniform across the entire frame, edge to edge. Every background pixel should be the same pure magenta color (#FF00FF), with NO gradient, NO tonal variation, NO lighting variation, NO paper texture, NO watercolor wash, NO grain, NO vignette, NO glow, and NO shadow.
+
+This flat-background requirement applies ONLY to the background. Do NOT flatten or simplify the bird because of the chroma background. The bird must retain the Edo-period kachō-e painting style described above, including its intended flat painted color zones, watercolor washes, ink work, natural tonal variation, and species-specific colors.
+
+Keep a clean, clearly defined boundary between the bird and the magenta background. Do NOT allow magenta color spill, reflected magenta light, magenta halos, or magenta tinting on the bird's feathers, beak, legs, feet, or outline.
+
+The magenta ground is the ONLY background element: NO branch, NO twig, NO perch, NO leaves, NO foliage, NO substrate, NO scenery, NO sky, NO moon, NO water. The perch is purely implied by toe posture - it is NEVER rendered. NO border or frame, NO text or signature.
+
+Composition: the bird occupies one-third to one-half of the frame. Leave generous negative space (just the solid magenta chroma background) around it. The image should feel sparse and confident, not packed with detail.
 
 The ENTIRE bird must fit within the image frame: head, both wings (fully extended for flight pose), full tail, both legs, both feet, beak. Do NOT crop the wings, tail, legs, or any body part at the edge of the frame. Leave generous padding on all sides.
 
@@ -57,4 +65,12 @@ Treat IMAGE 1 for anatomy and color information ONLY. Treat IMAGE 3 for style ON
 
 ### Output
 
-Render at high resolution on a fully transparent background. Cut the bird out cleanly. No shadow, no paper texture, no caption.
+Render at high resolution with an OPAQUE background.
+
+Do NOT use transparency or an alpha background.
+
+The background must be pure solid magenta (#FF00FF), completely uniform from edge to edge.
+
+The bird itself must retain its intended painted appearance and natural color variation.
+
+Do not cast any shadow onto the background. No paper texture, no caption, no border, no additional objects.
