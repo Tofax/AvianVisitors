@@ -1102,6 +1102,17 @@ def chroma_cut(src: Path, dst: Path) -> None:
     # al foreground fiable.
     clean |= closing_added & repair_support
 
+    # Closing 5x5 calculat sobre la mateixa màscara original. No s'aplica
+    # globalment: només s'utilitza més avall per detectar microcomponents
+    # addicionals que el closing 3x3 no ha pogut capturar.
+    closed5 = np.asarray(
+        clean_img
+        .filter(ImageFilter.MaxFilter(5))
+        .filter(ImageFilter.MinFilter(5))
+    ) > 127
+
+    closing5_added = closed5 & ~clean
+
     # ------------------------------------------------------------------
     # REPARACIÓ EXTRA 5x5 NOMÉS PER COMPONENTS MOLT PETITS
     # ------------------------------------------------------------------
@@ -1117,7 +1128,6 @@ def chroma_cut(src: Path, dst: Path) -> None:
 
     closing5_candidates = (
         closing5_added
-        & ~closing_added
         & repair_support5
     )
 
