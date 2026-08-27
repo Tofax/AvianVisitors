@@ -240,8 +240,20 @@ const RESTARTABLE_UNITS = [
     'icecast2',
 ];
 
+function restartable_units_for_state(): array {
+    $state = avian_admin_state();
+    if (!empty($state['valid']) && empty($state['required'])) {
+        return RESTARTABLE_UNITS;
+    }
+    return array_values(array_filter(
+        RESTARTABLE_UNITS,
+        static fn(string $unit): bool => $unit !== 'icecast2'
+    ));
+}
+
 function services_status(): array {
     $out = [];
+    $restartableUnits = restartable_units_for_state();
     foreach (ALLOWED_UNITS as $u) {
         $state = trim(shellout('systemctl is-active ' . escapeshellarg($u)));
         // Skip units that systemd doesn't know about at all (e.g. php8.2-fpm
@@ -256,7 +268,7 @@ function services_status(): array {
             'active'  => $state,
             'enabled' => $enabled,
             'since'   => $since ?: null,
-            'restartable' => in_array($u, RESTARTABLE_UNITS, true),
+            'restartable' => in_array($u, $restartableUnits, true),
         ];
     }
     return $out;
@@ -313,9 +325,10 @@ switch ($action) {
     case 'restart': {
         avian_require_json_action();
         $unit = (string)($_GET['unit'] ?? '');
-        if (!in_array($unit, RESTARTABLE_UNITS, true)) {
+        $restartableUnits = restartable_units_for_state();
+        if (!in_array($unit, $restartableUnits, true)) {
             http_response_code(400);
-            echo json_encode(['error' => 'unit is status-only', 'allowed' => RESTARTABLE_UNITS]);
+            echo json_encode(['error' => 'unit is status-only', 'allowed' => $restartableUnits]);
             break;
         }
         $rc = 0;

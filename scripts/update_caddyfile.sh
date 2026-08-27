@@ -194,6 +194,293 @@ fi
 fpm_sock=$(find /run/php -maxdepth 1 -type s -name 'php*-fpm.sock' -print 2>/dev/null | sort | head -n 1 || true)
 fpm_sock=${fpm_sock:-/run/php/php-fpm.sock}
 
+case "${AVIAN_CLOSE_STREAMS:-0}" in
+  0|1) ;;
+  *) echo "Invalid live audio cutoff request" >&2; exit 1 ;;
+esac
+
+icecast_guard_dir=/etc/systemd/system/icecast2.service.d
+icecast_guard=$icecast_guard_dir/zz-avian-lan-auth.conf
+icecast_transition=$auth_dir/icecast-start-blocked
+icecast_legacy_restore=$auth_dir/icecast-restore-on-unlock
+ICECAST_PHASE=''
+ICECAST_RESTORE=''
+ICECAST_LEGACY=0
+icecast_restore_needed=0
+
+install_icecast_start_guard() {
+  local helper=/usr/local/sbin/avian-admin-control temp
+  [ -f "$helper" ] && [ ! -L "$helper" ] \
+    && [ "$(stat -c '%u:%g:%a:%h' -- "$helper")" = '0:0:755:1' ] \
+    || return 1
+  if [ -e "$icecast_guard_dir" ] || [ -L "$icecast_guard_dir" ]; then
+    [ -d "$icecast_guard_dir" ] && [ ! -L "$icecast_guard_dir" ] \
+      && [ "$(stat -c '%u:%g:%a' -- "$icecast_guard_dir")" = '0:0:755' ] \
+      || return 1
+  else
+    install -d -o root -g root -m 0755 "$icecast_guard_dir" || return 1
+  fi
+  temp=$(mktemp "$icecast_guard_dir/.zz-avian-lan-auth.XXXXXX") || return 1
+  if ! printf '%s\n' \
+      '# Managed by AvianVisitors. Live audio follows the authoritative LAN policy.' \
+      '[Service]' \
+      'ExecCondition=+/usr/local/sbin/avian-admin-control icecast-start-allowed' \
+      >"$temp" \
+    || ! chown root:root "$temp" \
+    || ! chmod 0644 "$temp" \
+    || ! sync -f "$temp" \
+    || ! mv -fT "$temp" "$icecast_guard" \
+    || ! sync -f "$icecast_guard" \
+    || ! sync -f "$icecast_guard_dir"; then
+    rm -f -- "$temp"
+    return 1
+  fi
+  systemctl daemon-reload >/dev/null 2>&1
+}
+
+icecast_transition_status() {
+  local before opened size raw version extra
+  ICECAST_PHASE=''
+  ICECAST_RESTORE=''
+  ICECAST_LEGACY=0
+  if [ ! -e "$icecast_transition" ] && [ ! -L "$icecast_transition" ]; then
+    return 2
+  fi
+  [ -f "$icecast_transition" ] && [ ! -L "$icecast_transition" ] \
+    && [ "$(stat -c '%u:%g:%a:%h' -- "$icecast_transition")" = '0:0:400:1' ] \
+    || return 3
+  before=$(stat -c '%d:%i' -- "$icecast_transition") || return 3
+  exec 7<"$icecast_transition"
+  opened=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' -- /proc/self/fd/7) || return 3
+  size=${opened##*:}
+  [ "$opened" = "$before:0:0:400:1:$size" ] \
+    && [ "$size" -ge 3 ] && [ "$size" -le 64 ] \
+    || return 3
+  raw=$(cat <&7)
+  [ "$size" -eq $(( ${#raw} + 1 )) ] \
+    && [ "$(stat -c '%d:%i' -- "$icecast_transition")" = "$before" ] \
+    || return 3
+  if [ "$raw" = v1 ]; then
+    ICECAST_PHASE=blocked
+    ICECAST_RESTORE=unknown
+    ICECAST_LEGACY=1
+    return 0
+  fi
+  IFS=$'\t' read -r version ICECAST_PHASE ICECAST_RESTORE extra <<<"$raw"
+  [ -z "${extra:-}" ] && [ "$version" = v2 ] \
+    && [ "$raw" = "$version"$'\t'"$ICECAST_PHASE"$'\t'"$ICECAST_RESTORE" ] \
+    || return 3
+  case "$ICECAST_PHASE:$ICECAST_RESTORE" in
+    blocked:yes|blocked:no|blocked:unknown|restoring:yes) ;;
+    *) return 3 ;;
+  esac
+}
+
+write_icecast_transition() {
+  local phase=$1 restore=$2 temp current_status=0
+  case "$phase:$restore" in
+    blocked:yes|blocked:no|blocked:unknown|restoring:yes) ;;
+    *) return 1 ;;
+  esac
+  icecast_transition_status || current_status=$?
+  if [ "$current_status" = 0 ] && [ "$ICECAST_LEGACY" = 0 ] \
+    && [ "$ICECAST_PHASE:$ICECAST_RESTORE" = "$phase:$restore" ]; then
+    return 0
+  fi
+  [ "$current_status" = 0 ] || [ "$current_status" = 2 ] || return 1
+  temp=$(mktemp "$auth_dir/.icecast-start-blocked.XXXXXX") || return 1
+  if ! printf 'v2\t%s\t%s\n' "$phase" "$restore" >"$temp" \
+    || ! chown root:root "$temp" \
+    || ! chmod 0400 "$temp" \
+    || ! sync -f "$temp" \
+    || ! mv -fT "$temp" "$icecast_transition" \
+    || ! sync -f "$icecast_transition" \
+    || ! sync -f "$auth_dir"; then
+    rm -f -- "$temp"
+    return 1
+  fi
+}
+
+clear_icecast_transition() {
+  local transition_status=0
+  icecast_transition_status || transition_status=$?
+  [ "$transition_status" = 2 ] && return 0
+  [ "$transition_status" = 0 ] || return 1
+  rm -f -- "$icecast_transition" && sync -f "$auth_dir"
+}
+
+legacy_restore_status() {
+  local content
+  if [ ! -e "$icecast_legacy_restore" ] && [ ! -L "$icecast_legacy_restore" ]; then
+    return 2
+  fi
+  [ -f "$icecast_legacy_restore" ] && [ ! -L "$icecast_legacy_restore" ] \
+    && [ "$(stat -c '%u:%g:%a:%h:%s' -- "$icecast_legacy_restore")" = '0:0:400:1:3' ] \
+    || return 3
+  content=$(cat -- "$icecast_legacy_restore") || return 3
+  [ "$content" = v1 ] || return 3
+}
+
+migrate_icecast_transition() {
+  local transition_status=0 restore_status=0
+  icecast_transition_status || transition_status=$?
+  legacy_restore_status || restore_status=$?
+  [ "$transition_status" = 0 ] || [ "$transition_status" = 2 ] || return 1
+  [ "$restore_status" = 0 ] || [ "$restore_status" = 2 ] || return 1
+  if [ "$restore_status" = 0 ]; then
+    case "$transition_status:${ICECAST_PHASE:-}:${ICECAST_RESTORE:-}" in
+      0:restoring:yes) ;;
+      *) write_icecast_transition blocked yes || return 1 ;;
+    esac
+    rm -f -- "$icecast_legacy_restore" && sync -f "$auth_dir" || return 1
+  elif [ "$transition_status" = 0 ] && [ "$ICECAST_LEGACY" = 1 ]; then
+    write_icecast_transition blocked unknown || return 1
+  fi
+}
+
+read_icecast_restore_intent() {
+  local state
+  state=$(systemctl is-active icecast2 2>/dev/null || true)
+  case "$state" in
+    active|activating|reloading|deactivating)
+      ICECAST_RESTORE_INTENT=yes
+      ;;
+    inactive|failed|unknown)
+      ICECAST_RESTORE_INTENT=no
+      ;;
+    '')
+      if systemctl cat icecast2 >/dev/null 2>&1; then
+        return 1
+      fi
+      ICECAST_RESTORE_INTENT=no
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+ensure_icecast_blocked() {
+  local transition_status=0
+  icecast_transition_status || transition_status=$?
+  if [ "$transition_status" = 2 ]; then
+    # Define restore intent at the start of the transition. Only then publish
+    # the durable start block, with that intent in the same atomic record.
+    read_icecast_restore_intent || return 1
+    write_icecast_transition blocked "$ICECAST_RESTORE_INTENT" || return 1
+    ICECAST_PHASE=blocked
+    ICECAST_RESTORE=$ICECAST_RESTORE_INTENT
+  elif [ "$transition_status" != 0 ]; then
+    return 1
+  fi
+  if [ "$ICECAST_PHASE" = restoring ]; then
+    write_icecast_transition blocked yes || return 1
+    ICECAST_PHASE=blocked
+    ICECAST_RESTORE=yes
+  fi
+  if [ "$ICECAST_RESTORE" = unknown ]; then
+    read_icecast_restore_intent || return 1
+    write_icecast_transition blocked "$ICECAST_RESTORE_INTENT" || return 1
+  fi
+}
+
+prepare_icecast_restore() {
+  local transition_status=0
+  icecast_restore_needed=0
+  icecast_transition_status || transition_status=$?
+  [ "$transition_status" = 2 ] && return 0
+  [ "$transition_status" = 0 ] || return 1
+  if [ "$ICECAST_PHASE:$ICECAST_RESTORE" = blocked:unknown ]; then
+    read_icecast_restore_intent || return 1
+    write_icecast_transition blocked "$ICECAST_RESTORE_INTENT" || return 1
+    ICECAST_RESTORE=$ICECAST_RESTORE_INTENT
+  fi
+  case "$ICECAST_PHASE:$ICECAST_RESTORE" in
+    blocked:yes)
+      write_icecast_transition restoring yes || return 1
+      icecast_restore_needed=1
+      ;;
+    restoring:yes)
+      icecast_restore_needed=1
+      ;;
+    blocked:no)
+      clear_icecast_transition || return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+finish_icecast_restore() {
+  [ "$icecast_restore_needed" = 1 ] || return 0
+  if ! timeout 20s systemctl start icecast2 \
+    || ! systemctl is-active --quiet icecast2; then
+    return 1
+  fi
+  clear_icecast_transition
+}
+
+icecast_processes_closed() {
+  local comm_file process_name
+  [ -r /proc/1/comm ] || return 1
+  for comm_file in /proc/[0-9]*/comm; do
+    [ -r "$comm_file" ] || continue
+    process_name=''
+    IFS= read -r process_name <"$comm_file" || continue
+    case "$process_name" in
+      icecast|icecast2) return 1 ;;
+    esac
+  done
+  return 0
+}
+
+icecast_backend_closed() {
+  local state pid_kind pid cgroup proc
+  state=$(systemctl is-active icecast2 2>/dev/null || true)
+  case "$state" in
+    inactive|failed|unknown) ;;
+    '')
+      systemctl cat icecast2 >/dev/null 2>&1 && return 1
+      ;;
+    *) return 1 ;;
+  esac
+  for pid_kind in MainPID ControlPID; do
+    pid=$(systemctl show -p "$pid_kind" --value icecast2 2>/dev/null || true)
+    [ -z "$pid" ] || [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    [ -z "$pid" ] || [ "$pid" = 0 ] || return 1
+  done
+  cgroup=$(systemctl show -p ControlGroup --value icecast2 2>/dev/null || true)
+  if [ -n "$cgroup" ] && [ "$cgroup" != / ]; then
+    [[ "$cgroup" =~ ^/[A-Za-z0-9_.@:/-]+$ ]] && [[ "$cgroup" != *..* ]] \
+      || return 1
+    if [ -e "/sys/fs/cgroup$cgroup" ]; then
+      [ -r "/sys/fs/cgroup$cgroup/cgroup.procs" ] || return 1
+      while IFS= read -r proc; do
+        [ -z "$proc" ] || [ "$proc" = 0 ] || return 1
+      done <"/sys/fs/cgroup$cgroup/cgroup.procs"
+    fi
+  fi
+  icecast_processes_closed
+}
+
+stop_icecast_backend() {
+  timeout 20s systemctl stop icecast2 >/dev/null 2>&1 || true
+  timeout 10s systemctl kill --kill-who=all --signal=KILL icecast2 \
+    >/dev/null 2>&1 || true
+  for _ in {1..20}; do
+    icecast_backend_closed && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+icecast_protection_check=0
+if [ "$AVIAN_REQUIRE_LAN_AUTH" = 1 ] \
+  && { [ "${AVIAN_CLOSE_STREAMS:-0}" = 1 ] || [ "$state_input" = "$auth_state" ]; }; then
+  icecast_protection_check=1
+fi
+icecast_restore_check=0
+if [ "$AVIAN_REQUIRE_LAN_AUTH" = 0 ] && [ "$state_input" = "$auth_state" ]; then
+  icecast_restore_check=1
+fi
+
 legacy_gate=''
 legacy_handles=''
 if [ "$AVIAN_REQUIRE_LAN_AUTH" = 1 ]; then
@@ -407,7 +694,7 @@ $legacy_handles
   # existing checkout during an update, including their source text.
   @unknownAvianApi {
     path /avian/api/*
-    not path /avian/api/archive.php /avian/api/birdnet-api.php /avian/api/birdnet-status.php /avian/api/config.php /avian/api/cutout.php /avian/api/export.php /avian/api/generate.php /avian/api/maintenance.php /avian/api/menu.php /avian/api/recording.php /avian/api/spectrogram.php /avian/api/wiki.php
+    not path /avian/api/archive.php /avian/api/birdnet-api.php /avian/api/birdnet-status.php /avian/api/birdweather.php /avian/api/config.php /avian/api/cutout.php /avian/api/export.php /avian/api/generate.php /avian/api/maintenance.php /avian/api/menu.php /avian/api/recording.php /avian/api/spectrogram.php /avian/api/wiki.php
   }
   handle @unknownAvianApi {
     respond 404
@@ -529,6 +816,21 @@ EOF
 
 caddy fmt --overwrite "$temp"
 caddy validate --config "$temp" --adapter caddyfile
+if ! install_icecast_start_guard; then
+  echo "Could not install the systemd live audio policy guard" >&2
+  exit 1
+fi
+if ! migrate_icecast_transition; then
+  echo "Live audio transition state is unsafe" >&2
+  exit 1
+fi
+if [ "$icecast_protection_check" = 1 ]; then
+  ensure_icecast_blocked \
+    || { echo "Could not preserve and block the live audio service state" >&2; exit 1; }
+elif [ "$icecast_restore_check" = 1 ]; then
+  prepare_icecast_restore \
+    || { echo "Live audio restore state is unsafe" >&2; exit 1; }
+fi
 caddy_was_active=0
 if systemctl is-active --quiet caddy; then
   caddy_was_active=1
@@ -585,46 +887,19 @@ if [ "$candidate_ready" != 1 ] || ! systemctl "$caddy_action" caddy; then
   fi
   exit 1
 fi
-case "${AVIAN_CLOSE_STREAMS:-0}" in
-  0|1) ;;
-  *) echo "Invalid live audio cutoff request" >&2; exit 1 ;;
-esac
-if [ "$AVIAN_REQUIRE_LAN_AUTH" = 1 ] \
-  && [ "${AVIAN_CLOSE_STREAMS:-0}" = 1 ]; then
+if [ "$icecast_protection_check" = 1 ]; then
   # A Caddy reload closes the route for new listeners, but older Caddy
   # versions can keep an established audio proxy alive. A failed unit can
-  # also retain a process in its cgroup. Cut that process even when systemd
-  # does not report the service active, then preserve the prior active state.
-  icecast_was_active=0
-  systemctl is-active --quiet icecast2 && icecast_was_active=1
-  icecast_restarted=0
-  if [ "$icecast_was_active" = 1 ] \
-    && timeout 20s systemctl try-restart icecast2; then
-    icecast_restarted=1
+  # also retain a process in its cgroup. Stop the backend without restarting
+  # it. The systemd condition keeps every later start blocked while protected.
+  if ! stop_icecast_backend; then
+    echo "Icecast could not be stopped; an older live audio connection may remain" >&2
+    exit 20
   fi
-  if [ "$icecast_restarted" = 0 ]; then
-    timeout 20s systemctl stop icecast2 >/dev/null 2>&1 || true
-    timeout 10s systemctl kill --kill-who=all --signal=KILL icecast2 \
-      >/dev/null 2>&1 || true
-    icecast_closed=0
-    for _ in {1..20}; do
-      if ! timeout 1s bash -c 'exec 3<>/dev/tcp/127.0.0.1/8000' \
-        >/dev/null 2>&1; then
-        icecast_closed=1
-        break
-      fi
-      sleep 0.1
-    done
-    if [ "$icecast_closed" != 1 ] \
-      || systemctl is-active --quiet icecast2; then
-      echo "Icecast could not be stopped; an older live audio connection may remain" >&2
-      exit 20
-    fi
-    if [ "$icecast_was_active" = 1 ] \
-      && ! timeout 20s systemctl start icecast2; then
-      echo "Icecast was stopped to close live audio but could not be started again" >&2
-      exit 21
-    fi
+elif [ "$icecast_restore_check" = 1 ]; then
+  if ! finish_icecast_restore; then
+    echo "Icecast could not be restored after LAN protection was disabled" >&2
+    exit 21
   fi
 fi
 rm -f "$rollback"

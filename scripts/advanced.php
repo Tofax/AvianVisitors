@@ -302,7 +302,7 @@ $newconfig = get_config();
         document.getElementById("predictionCount").innerHTML = parseInt(Math.max(10, (this.value * <?php echo $count; ?>)/100));
       }
       </script>
-      <p>If a Human is predicted anywhere among the top <span id="predictionCount"><?php echo intval(max(10, ($newconfig['PRIVACY_THRESHOLD'] * $count)/100)); ?></span> predictions, the sample will be considered of human origin and no data will be collected. Start with 1% and move up as needed.</p>
+      <p>If a Human is predicted anywhere among the top <span id="predictionCount"><?php echo intval(max(10, ($newconfig['PRIVACY_THRESHOLD'] * $count)/100)); ?></span> predictions, detections in that analysis window and the adjacent windows are suppressed locally. This does not redact the source recording. If BirdWeather full-recording audio uploads are on, that recording may still contain speech. Start with 1% and move up as needed.</p>
       </td></tr></table><br>
       
       <table class="settingstable"><tr><td>

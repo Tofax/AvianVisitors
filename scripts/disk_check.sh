@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-set -x
-
 source /etc/birdnet/birdnet.conf
+if [ "${BIRDNET_DISK_DEBUG:-0}" = 1 ]; then
+  set -x
+fi
 used="$(df -h ${EXTRACTED} | tail -n1 | awk '{print $5}')"
 purge_threshold="${PURGE_THRESHOLD:-95}"
 

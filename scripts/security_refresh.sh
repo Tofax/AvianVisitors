@@ -10,6 +10,23 @@ LC_ALL=C
 export LC_ALL
 umask 077
 
+remove_exact_legacy_file() {
+  local path=$1
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    [ -f "$path" ] && [ ! -L "$path" ] || return 1
+    rm -f -- "$path"
+    [ ! -e "$path" ] && [ ! -L "$path" ] || return 1
+  fi
+}
+
+remove_legacy_firstrun() {
+  local path=$1
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    [ ! -d "$path" ] || return 1
+    rm -f -- "$path"
+  fi
+}
+
 [ "${EUID:-$(id -u)}" -eq 0 ] || { echo "security refresh must run as root" >&2; exit 1; }
 
 conf_value() {
@@ -82,6 +99,48 @@ if [ ! -d "$legacy_state_dir" ] || [ -L "$legacy_state_dir" ] \
   || [ "$(readlink -f -- "$legacy_state_dir")" != "$legacy_state_dir" ]; then
   echo "Unsafe runtime directory: $legacy_state_dir" >&2
   exit 1
+fi
+
+# Older installers copied every non-comment config assignment, including API
+# credentials, into this unused mode-0644 file. Remove only this exact obsolete
+# path. A legacy link is unlinked without following it; a directory is unsafe
+# and left untouched.
+legacy_firstrun=$legacy_state_dir/firstrun.ini
+remove_legacy_firstrun "$legacy_firstrun" \
+  || { echo "Unsafe legacy first-run config copy: $legacy_firstrun" >&2; exit 1; }
+
+# Pre-redaction diagnostic archives included the full BirdWeather token, and an
+# interrupted run could leave the same config plus token-bearing service logs
+# under logs/. Remove the exact disposable archive and config copy. Keep any
+# other legacy logs recoverable, but close their directory to group and other;
+# the restricted mode is re-applied after the checkout-wide permission pass.
+legacy_log_archive=$repo_dir/logs.tar.gz
+remove_exact_legacy_file "$legacy_log_archive" \
+  || { echo "Unsafe legacy diagnostic archive: $legacy_log_archive" >&2; exit 1; }
+legacy_log_dir=$repo_dir/logs
+legacy_log_quarantine=0
+if [ -e "$legacy_log_dir" ] || [ -L "$legacy_log_dir" ]; then
+  if [ ! -d "$legacy_log_dir" ] || [ -L "$legacy_log_dir" ] \
+    || [ "$(readlink -f -- "$legacy_log_dir")" != "$legacy_log_dir" ]; then
+    echo "Unsafe legacy diagnostic directory: $legacy_log_dir" >&2
+    exit 1
+  fi
+  # Pin the validated directory while removing the exact child. This prevents
+  # a station-side rename from redirecting root through a replacement link.
+  exec {legacy_log_fd}<"$legacy_log_dir" \
+    || { echo "Could not open legacy diagnostic directory" >&2; exit 1; }
+  legacy_log_fd_path=/proc/$$/fd/$legacy_log_fd
+  if [ ! -d "$legacy_log_fd_path" ] \
+    || [ "$(readlink -f -- "$legacy_log_fd_path")" != "$legacy_log_dir" ]; then
+    exec {legacy_log_fd}<&-
+    echo "Unsafe legacy diagnostic directory: $legacy_log_dir" >&2
+    exit 1
+  fi
+  legacy_log_config=$legacy_log_fd_path/birdnet.conf
+  remove_exact_legacy_file "$legacy_log_config" \
+    || { exec {legacy_log_fd}<&-; echo "Unsafe legacy diagnostic config: $legacy_log_dir/birdnet.conf" >&2; exit 1; }
+  exec {legacy_log_fd}<&-
+  legacy_log_quarantine=1
 fi
 
 legacy_state_file_is_safe() {
@@ -207,6 +266,25 @@ chown -hR "$birdnet_user:$birdnet_group" "$repo_dir"
 chmod -R u+rwX,g+rX,o-w "$repo_dir"
 find "$repo_dir" -xdev -type d -exec chmod g-w {} +
 find "$repo_dir" -xdev -type f -exec chmod g-w {} +
+
+if [ "$legacy_log_quarantine" = 1 ]; then
+  if [ ! -d "$legacy_log_dir" ] || [ -L "$legacy_log_dir" ] \
+    || [ "$(readlink -f -- "$legacy_log_dir")" != "$legacy_log_dir" ]; then
+    echo "Unsafe legacy diagnostic directory: $legacy_log_dir" >&2
+    exit 1
+  fi
+  exec {legacy_log_fd}<"$legacy_log_dir" \
+    || { echo "Could not reopen legacy diagnostic directory" >&2; exit 1; }
+  legacy_log_fd_path=/proc/$$/fd/$legacy_log_fd
+  if [ ! -d "$legacy_log_fd_path" ] \
+    || [ "$(readlink -f -- "$legacy_log_fd_path")" != "$legacy_log_dir" ]; then
+    exec {legacy_log_fd}<&-
+    echo "Unsafe legacy diagnostic directory: $legacy_log_dir" >&2
+    exit 1
+  fi
+  chmod 0700 -- "$legacy_log_fd_path"
+  exec {legacy_log_fd}<&-
+fi
 
 chown "$birdnet_user:$birdnet_group" "$conf_path"
 chmod 0640 "$conf_path"

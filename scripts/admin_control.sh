@@ -196,6 +196,15 @@ valid_config_value() {
       [[ "$value" =~ ^[0-9]{1,2}$ ]] && [ "$value" -ge 50 ] && [ "$value" -le 99 ]
       ;;
     FULL_DISK) [ "$value" = purge ] || [ "$value" = keep ] ;;
+    BIRDWEATHER_ID)
+      [ -z "$value" ] || { [ "${#value}" -le 160 ] && [[ "$value" =~ ^[A-Za-z0-9._~-]+$ ]]; }
+      ;;
+    BIRDWEATHER_ENABLED|BIRDWEATHER_UPLOAD_AUDIO)
+      [ "$value" = 0 ] || [ "$value" = 1 ]
+      ;;
+    PRIVACY_THRESHOLD)
+      [[ "$value" =~ ^[0-3]$ ]]
+      ;;
     CADDY_PWD)
       [ "$password_config_write" = 1 ] \
         && { [ -z "$value" ] || [[ "$value" =~ ^[A-Za-z0-9]{1,64}$ ]]; }
@@ -326,6 +335,61 @@ commit_auth_state() {
 write_auth_state() {
   prepare_auth_state "$@"
   commit_auth_state "$@" || fail "could not commit admin state"
+}
+
+REQUIRED_RECOVERY_STATUS=''
+prepare_recovery_auth_state() {
+  local required=$1 epoch=$2 verifier=$3 caddy_gid
+  { [ "$required" = 0 ] || [ "$required" = 1 ]; } || return 1
+  [[ "$epoch" =~ ^(0|[1-9][0-9]{0,9})$ ]] \
+    && [ "$epoch" -le "$AUTH_EPOCH_MAX" ] \
+    || return 1
+  if [ "$verifier" != - ]; then
+    [[ "$verifier" =~ ^\$2y\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
+  fi
+  caddy_gid=$(getent group caddy | awk -F: 'NR == 1 { print $3 }')
+  [ -n "$caddy_gid" ] || return 1
+  state_temp=$(mktemp "$AUTH_DIR/.admin-auth.state.XXXXXX") || return 1
+  printf 'v1\t%s\t%s\t%s\n' "$required" "$epoch" "$verifier" >"$state_temp" \
+    && chown root:"$caddy_gid" "$state_temp" \
+    && chmod 0640 "$state_temp" \
+    && sync -f "$state_temp"
+}
+
+reconcile_required_policy() {
+  local epoch=$1 verifier=$2 refresh_status=0
+  REQUIRED_RECOVERY_STATUS=state
+  rm -f -- "${state_temp:-}"
+  state_temp=''
+  if ! prepare_recovery_auth_state 1 "$epoch" "$verifier" \
+    || ! commit_auth_state 1 "$epoch" "$verifier"; then
+    return 0
+  fi
+  AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null 2>&1 \
+    || refresh_status=$?
+  REQUIRED_RECOVERY_STATUS=$refresh_status
+  if [ "$refresh_status" = 0 ]; then
+    if ! read_auth_state \
+      || [ "$AUTH_REQUIRED:$AUTH_EPOCH:$AUTH_VERIFIER" != "1:$epoch:$verifier" ]; then
+      REQUIRED_RECOVERY_STATUS=state
+    fi
+  fi
+  return 0
+}
+
+fail_required_recovery() {
+  local context=$1
+  case "$REQUIRED_RECOVERY_STATUS" in
+    0)
+      fail "$context; the required state, Caddy barrier, Icecast start block, and live audio cutoff were restored and verified; LAN password protection remains enabled"
+      ;;
+    20)
+      fail "$context; the required state, Caddy barrier, and Icecast start block were restored, but live audio cutoff could not be verified; over SSH run sudo systemctl stop icecast2, then run sudo /usr/local/sbin/avian-caddy-refresh and verify the service is inactive and /stream returns 404"
+      ;;
+    *)
+      fail "$context; the saved state requires a password, but Caddy, the Icecast start block, and live audio cutoff could not be verified; over SSH run sudo /usr/local/sbin/avian-caddy-refresh and sudo systemctl stop icecast2, then verify the service is inactive and /stream returns 404"
+      ;;
+  esac
 }
 
 auth_marker_status() {
@@ -584,10 +648,65 @@ case "$action" in
     [ "$#" -eq 1 ] || fail "unexpected arguments"
     printf '{"ok":true,"version":%s}\n' "$CONTROL_VERSION"
     ;;
+  icecast-start-allowed)
+    [ "$#" -eq 1 ] || fail "live audio start check takes no arguments"
+    transition=$AUTH_DIR/icecast-start-blocked
+    if [ -e "$transition" ] || [ -L "$transition" ]; then
+      [ -f "$transition" ] && [ ! -L "$transition" ] \
+        && [ "$(stat -c '%u:%g:%a:%h' -- "$transition")" = '0:0:400:1' ] \
+        || fail "live audio start guard state is unsafe"
+      transition_before=$(stat -c '%d:%i' -- "$transition") \
+        || fail "live audio start guard state is unsafe"
+      exec 6<"$transition"
+      transition_opened=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' -- /proc/self/fd/6) \
+        || fail "live audio start guard state is unsafe"
+      transition_size=${transition_opened##*:}
+      [ "$transition_opened" = "$transition_before:0:0:400:1:$transition_size" ] \
+        && [ "$transition_size" -ge 3 ] && [ "$transition_size" -le 64 ] \
+        || fail "live audio start guard state is unsafe"
+      transition_raw=$(cat <&6)
+      [ "$transition_size" -eq $(( ${#transition_raw} + 1 )) ] \
+        && [ "$(stat -c '%d:%i' -- "$transition")" = "$transition_before" ] \
+        || fail "live audio start guard state is unsafe"
+      if [ "$transition_raw" = v1 ]; then
+        fail "live audio is disabled while LAN password protection is changing or enabled"
+      fi
+      IFS=$'\t' read -r transition_version transition_phase transition_restore transition_extra \
+        <<<"$transition_raw"
+      [ -z "${transition_extra:-}" ] \
+        && [ "$transition_version" = v2 ] \
+        && [ "$transition_raw" = "$transition_version"$'\t'"$transition_phase"$'\t'"$transition_restore" ] \
+        || fail "live audio start guard state is unsafe"
+      case "$transition_phase:$transition_restore" in
+        restoring:yes) ;;
+        blocked:yes|blocked:no|blocked:unknown)
+          fail "live audio is disabled while LAN password protection is changing or enabled"
+          ;;
+        *) fail "live audio start guard state is unsafe" ;;
+      esac
+    fi
+    auth_marker_status \
+      || fail "admin credential initialization is incomplete; live audio remains disabled"
+    read_auth_state \
+      || fail "admin credential state is unsafe or malformed; live audio remains disabled"
+    [ "$AUTH_REQUIRED" = 0 ] \
+      || fail "live audio is disabled while LAN password protection is enabled"
+    printf '{"ok":true,"allowed":true}\n'
+    ;;
   restart)
     [ "$#" -eq 2 ] || fail "restart requires one unit"
     restartable_unit "$2" || fail "unit is status-only"
-    if /bin/systemctl restart "$2"; then
+    if [ "$2" = icecast2 ]; then
+      lock_auth_state
+      auth_marker_status \
+        || fail "admin credential initialization is incomplete; Icecast restart remains blocked"
+      read_auth_state \
+        || fail "admin credential state is unsafe or malformed; Icecast restart remains blocked"
+      [ "$AUTH_REQUIRED" = 0 ] \
+        || fail "Icecast restart is unavailable while LAN password protection is enabled; turn off Require password on local network first"
+    fi
+    if /bin/systemctl restart "$2" \
+      && { [ "$2" != icecast2 ] || /bin/systemctl is-active --quiet icecast2; }; then
       printf '{"ok":true,"unit":"%s"}\n' "$(json_escape "$2")"
     else
       fail "service restart failed"
@@ -691,15 +810,19 @@ case "$action" in
       refresh_status=0
       if [ "$old_policy" = 1 ]; then
         AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+        case "$refresh_status" in
+          0) ;;
+          20) fail "LAN auth remains enabled, but an older live audio connection may remain; over SSH run sudo systemctl stop icecast2 and verify the service is inactive" ;;
+          *) fail "Caddy auth refresh failed; LAN password protection remains authoritative" ;;
+        esac
       else
         "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+        case "$refresh_status" in
+          0) ;;
+          21) fail "LAN auth remains disabled, but Icecast could not be restored; inspect the service over SSH" ;;
+          *) fail "Caddy auth refresh failed; the current access policy remains authoritative" ;;
+        esac
       fi
-      case "$refresh_status" in
-        0) ;;
-        20) fail "LAN auth remains enabled, but an older live audio connection may remain; over SSH run sudo systemctl restart icecast2" ;;
-        21) fail "LAN auth remains enabled and live audio was closed, but Icecast could not be started again; over SSH run sudo systemctl restart icecast2" ;;
-        *) fail "Caddy auth refresh failed; the current access policy remains authoritative" ;;
-      esac
       printf '{"ok":true,"lan_auth":%s,"changed":false}\n' "$2"
       exit 0
     fi
@@ -712,20 +835,30 @@ case "$action" in
       AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
         "$CADDY_REFRESH" >/dev/null || refresh_status=$?
       case "$refresh_status" in
-        0|20|21) ;;
-        *) fail "Caddy auth refresh failed; setting was not changed" ;;
+        0|20) ;;
+        *)
+          restore_status=0
+          "$CADDY_REFRESH" >/dev/null || restore_status=$?
+          case "$restore_status" in
+            0)
+              fail "Caddy auth refresh failed; setting was not changed; the prior access policy and live audio state were restored and verified"
+              ;;
+            21)
+              fail "Caddy auth refresh failed; setting was not changed; the prior access policy was restored, but live audio could not be restored; retry, or inspect Icecast over SSH"
+              ;;
+            *)
+              fail "Caddy auth refresh failed; setting was not changed, but the prior access policy and live audio state could not be verified; over SSH run sudo /usr/local/sbin/avian-caddy-refresh, then verify Icecast and the Caddy route"
+              ;;
+          esac
+          ;;
       esac
       if ! commit_auth_state 1 "$new_epoch" "$old_verifier"; then
         rollback_epoch=$((old_epoch + 2))
-        write_auth_state "$old_policy" "$rollback_epoch" "$old_verifier"
-        "$CADDY_REFRESH" >/dev/null 2>&1 || true
-        fail "admin state commit failed; the prior Caddy policy was restored"
+        reconcile_required_policy "$rollback_epoch" "$old_verifier"
+        fail_required_recovery "admin state commit failed"
       fi
       if [ "$refresh_status" = 20 ]; then
         fail "LAN auth was enabled, but an older live audio connection may remain; access remains locked"
-      fi
-      if [ "$refresh_status" = 21 ]; then
-        fail "LAN auth was enabled and live audio was closed, but Icecast could not be started again"
       fi
     else
       [ "$old_epoch" -le $((AUTH_EPOCH_MAX - 2)) ] \
@@ -736,9 +869,11 @@ case "$action" in
       "$CADDY_REFRESH" >/dev/null || refresh_status=$?
       if [ "$refresh_status" != 0 ]; then
         rollback_epoch=$((old_epoch + 2))
-        write_auth_state 1 "$rollback_epoch" "$old_verifier"
-        "$CADDY_REFRESH" >/dev/null 2>&1 || true
-        fail "Caddy auth refresh failed; protected access was restored"
+        reconcile_required_policy "$rollback_epoch" "$old_verifier"
+        if [ "$refresh_status" = 21 ]; then
+          fail_required_recovery "Icecast could not be restored"
+        fi
+        fail_required_recovery "LAN password protection could not be disabled"
       fi
     fi
     printf '{"ok":true,"lan_auth":%s,"changed":true}\n' "$2"

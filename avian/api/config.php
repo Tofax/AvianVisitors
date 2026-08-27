@@ -43,6 +43,12 @@ $ALLOWED = [
     'LATITUDE'           => ['type' => 'float', 'min' => -90,  'max' => 90, 'restart' => true],
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
+    // BirdWeather writes use the dedicated facade, which verifies a new token
+    // remotely before this root-owned writer is allowed to persist it.
+    'BIRDWEATHER_ID'     => ['type' => 'secret', 'maxlen' => 160, 'managed_by' => 'birdweather'],
+    'BIRDWEATHER_ENABLED' => ['type' => 'int', 'min' => 0, 'max' => 1, 'managed_by' => 'birdweather'],
+    'BIRDWEATHER_UPLOAD_AUDIO' => ['type' => 'int', 'min' => 0, 'max' => 1, 'managed_by' => 'birdweather'],
+    'PRIVACY_THRESHOLD'  => ['type' => 'int', 'min' => 0, 'max' => 3, 'managed_by' => 'birdweather'],
     // Secrets: writable like any setting, but NEVER echoed back on GET -
     // the response carries only a set/unset flag. Consumed by the
     // illustration pipeline (generate.php passes them by env).
@@ -122,6 +128,27 @@ function admin_control_needs_ssh_recovery(string $error): bool {
         || stripos($error, 'cannot initialize the admin credential') !== false;
 }
 
+function admin_control_audio_remediation(
+    string $error,
+    bool $passwordAction,
+    array $adminState
+): ?string {
+    if (!str_contains($error, 'live audio') && !str_contains($error, 'Icecast')) {
+        return null;
+    }
+    $protected = empty($adminState['valid']) || !empty($adminState['required']);
+    if (!$protected && str_contains($error, 'restored and verified')) {
+        return null;
+    }
+    if (!$protected) {
+        return 'Over SSH, inspect Icecast with sudo systemctl status icecast2, start it with sudo systemctl start icecast2 if appropriate, then verify /stream works from the local network.';
+    }
+    if ($passwordAction) {
+        return 'Retry the same password. If the warning remains, over SSH run sudo systemctl stop icecast2, confirm it is inactive, then verify /stream returns 404.';
+    }
+    return 'Over SSH, reboot the station, then verify /stream returns 404.';
+}
+
 function admin_state_revision(array $state): string {
     return (!empty($state['valid']) ? 'valid' : 'invalid') . ':'
         . (!empty($state['required']) ? '1' : '0') . ':'
@@ -196,6 +223,10 @@ if ($method === 'POST') {
         if ($k === 'preserve' || $k === 'lan_admin_auth' || $k === 'admin_password') continue;
         if (!isset($ALLOWED[$k])) { $errors[$k] = 'unknown'; continue; }
         $spec = $ALLOWED[$k];
+        if (($spec['managed_by'] ?? '') === 'birdweather') {
+            $errors[$k] = 'use BirdWeather settings';
+            continue;
+        }
         if ($spec['type'] === 'float') {
             if (!is_int($v) && !is_float($v)) { $errors[$k] = 'not a number'; continue; }
             $v = (float)$v;
@@ -274,16 +305,19 @@ if ($method === 'POST') {
         $newPassword = '';
         if (empty($passwordUpdate['ok'])) {
             $error = (string)($passwordUpdate['error'] ?? 'password change failed');
-            $reauth = admin_state_revision(avian_admin_state()) !== $beforeRevision;
+            $finalAdminState = avian_admin_state();
+            $reauth = admin_state_revision($finalAdminState) !== $beforeRevision;
             http_response_code(500);
             echo json_encode([
                 'error' => $error,
                 'recovery' => admin_control_needs_ssh_recovery($error),
                 'reauth' => $reauth,
-                'remediation' => (str_contains($error, 'live audio')
-                    || str_contains($error, 'Icecast'))
-                    ? 'Retry the same password. If the warning remains, over SSH run sudo systemctl restart icecast2, then verify /stream returns 404.'
-                    : ($reauth
+                'remediation' => admin_control_audio_remediation(
+                    $error,
+                    true,
+                    $finalAdminState
+                )
+                    ?? ($reauth
                         ? 'Unlock with your current password. If that fails, reset it from SSH.'
                         : null),
             ]);
@@ -320,15 +354,17 @@ if ($method === 'POST') {
         $password = '';
         if (empty($policyUpdate['ok'])) {
             $error = (string)($policyUpdate['error'] ?? 'access setting failed');
+            $finalAdminState = avian_admin_state();
             http_response_code(500);
             echo json_encode([
                 'error' => $error,
                 'recovery' => admin_control_needs_ssh_recovery($error),
-                'reauth' => admin_state_revision(avian_admin_state()) !== $beforeRevision,
-                'remediation' => (str_contains($error, 'live audio')
-                    || str_contains($error, 'Icecast'))
-                    ? 'Over SSH, reboot the station, then verify /stream returns 404.'
-                    : null,
+                'reauth' => admin_state_revision($finalAdminState) !== $beforeRevision,
+                'remediation' => admin_control_audio_remediation(
+                    $error,
+                    false,
+                    $finalAdminState
+                ),
             ]);
             exit;
         }
