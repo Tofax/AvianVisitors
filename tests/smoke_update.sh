@@ -23,6 +23,8 @@ case_log=$test_root/current.log
 official=https://github.com/Twarner491/AvianVisitors.git
 rm -rf "$test_root"
 mkdir -p "$test_root" /etc/birdnet /usr/local/sbin
+id caddy >/dev/null 2>&1 \
+  || useradd --system --no-create-home --shell /usr/sbin/nologin caddy
 
 cp /source/scripts/update_birdnet.sh /usr/local/sbin/avian-update-control
 cat >/usr/local/sbin/avian-service-refresh <<'EOF'
@@ -143,6 +145,11 @@ EOF
 BIRDNET_USER=$station_user
 AUTOMATIC_UPDATE=1
 EOF
+  mkdir -p /var/lib/avian-visitors
+  auth_verifier='$2y$14$FJs8skDlFXw6UEyzPutTQuQBPcFdy0iyGDrL3silEC/X6CwX7aOhi'
+  printf 'v1\t1\t27\t%s\n' "$auth_verifier" \
+    >/var/lib/avian-visitors/admin-auth.state
+  auth_state_before=$(sha256sum /var/lib/avian-visitors/admin-auth.state)
   rm -f "$test_root/refresh.called" "$test_root/refresh.fail"
 }
 
@@ -166,6 +173,8 @@ expect_success 'clean fast-forward'
 [ "$(as_station "$station_user" "$station_home" git -C "$repo_dir" rev-parse HEAD)" = "$release_two" ] \
   || fail 'clean update did not fast-forward to origin'
 [ -e "$test_root/refresh.called" ] || fail 'clean update omitted service refresh'
+[ "$(sha256sum /var/lib/avian-visitors/admin-auth.state)" = "$auth_state_before" ] \
+  || fail 'clean update changed root-owned admin auth state'
 
 setup_case automatic release-one
 cat >/etc/birdnet/birdnet.conf <<EOF

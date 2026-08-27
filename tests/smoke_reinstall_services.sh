@@ -28,19 +28,16 @@ id caddy >/dev/null 2>&1 \
   || useradd -M -d /var/lib/caddy -s /usr/sbin/nologin caddy
 
 cp /source/scripts/reinstall_services.sh "$repo/scripts/reinstall_services.sh"
-for helper in update_birdnet maintenance_control archive_control admin_control; do
+for helper in update_birdnet maintenance_control archive_control; do
   cat >"$repo/scripts/$helper.sh" <<EOF
 #!/usr/bin/env bash
 echo $helper
 EOF
 done
+cp /source/scripts/admin_control.sh "$repo/scripts/admin_control.sh"
 cp /source/scripts/link_webroot.sh "$repo/scripts/link_webroot.sh"
 cp /source/scripts/livestream.sh "$repo/scripts/livestream.sh"
-cat >"$repo/scripts/update_caddyfile.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'called\n' >>/tmp/avian-service-refresh-smoke/caddy.called
-EOF
+cp /source/scripts/update_caddyfile.sh "$repo/scripts/update_caddyfile.sh"
 cp /source/scripts/security_refresh.sh "$repo/scripts/security_refresh.sh"
 cat >"$repo/scripts/example.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -78,7 +75,9 @@ BIRDNET_USER=$station_user
 EXTRACTED=$webroot
 REC_CARD=plughw:CARD=Device
 RTSP_STREAM=
+export CADDY_PWD="FirstHopLegacy12!" # accepted legacy form
 EOF
+printf '<?php echo "legacy"; ?>\n' >"$webroot/index.php"
 printf '%s\n' 'caddy ALL=(ALL) NOPASSWD: ALL' \
   >/etc/sudoers.d/010_caddy-nopasswd
 printf 'cron sentinel\n' >/etc/crontab
@@ -86,7 +85,7 @@ printf 'keep local bin\n' >/usr/local/bin/avian-refresh-unknown
 chown root:root /usr/local/bin
 chmod 0755 /usr/local/bin
 
-cat >/usr/local/bin/systemctl <<'EOF'
+cat >/usr/bin/systemctl <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>/tmp/avian-service-refresh-smoke/systemctl.log
 case "${1:-}" in
@@ -121,7 +120,7 @@ printf '%s\n' "$*" >>/tmp/avian-service-refresh-smoke/mktemp.log
 exec /usr/bin/mktemp "$@"
 EOF
 chmod 0755 \
-  /usr/local/bin/systemctl /usr/local/bin/apt /usr/local/bin/pgrep \
+  /usr/bin/systemctl /usr/local/bin/apt /usr/local/bin/pgrep \
   /usr/local/bin/mktemp
 
 previous_refresh=/source/tests/testdata/reinstall_services_16c7217d.sh
@@ -161,7 +160,7 @@ exec 8>&-
 # own post-update refresh.
 exec 9<>/run/lock/avian-update.lock
 flock -n 9 || fail 'could not hold inherited update lock for test'
-AVIAN_UPDATE_LOCK_FD=9 /usr/local/sbin/avian-service-refresh --legacy-migration \
+AVIAN_UPDATE_LOCK_FD=9 /usr/local/sbin/avian-service-refresh \
   >"$test_root/refresh.log" 2>&1 || fail 'inherited-lock service refresh failed'
 flock -u 9
 exec 9>&-
@@ -193,6 +192,63 @@ grep -q 'Bird recording is not yet confirmed recovered' "$test_root/refresh.log"
 grep -q 'Reboot the station, then check birdnet_recording.service' \
   "$test_root/refresh.log" \
   || fail 'first-hop PulseAudio warning lacked reboot guidance'
+
+# The same first invocation must migrate the exported legacy password into
+# root-owned verifier state, scrub every plaintext assignment, and render the
+# real candidate Caddy policy. This is not deferred to a second refresh.
+auth_dir=/var/lib/avian-visitors
+auth_state=$auth_dir/admin-auth.state
+auth_lock=$auth_dir/admin-auth.lock
+auth_rate=$auth_dir/admin-auth.rate
+auth_marker=$auth_dir/admin-auth.initialized
+[ "$(cut -f1-3 "$auth_state")" = $'v1\t0\t0' ] \
+  || fail 'first-hop migration created the wrong admin auth state'
+auth_verifier=$(cut -f4 "$auth_state")
+php -r 'exit(password_verify("FirstHopLegacy12!", $argv[1]) ? 0 : 1);' \
+  "$auth_verifier" \
+  || fail 'first-hop migration did not preserve the legacy credential'
+[ "$(stat -c '%U:%G:%a:%h' "$auth_state")" = root:caddy:640:1 ] \
+  || fail 'first-hop admin auth state metadata is unsafe'
+[ "$(stat -c '%U:%G:%a:%h' "$auth_lock")" = root:root:600:1 ] \
+  || fail 'first-hop admin auth lock metadata is unsafe'
+[ "$(stat -c '%U:%G:%a:%h' "$auth_rate")" = root:caddy:660:1 ] \
+  || fail 'first-hop admin rate state metadata is unsafe'
+[ "$(stat -c '%U:%G:%a:%h:%s' "$auth_marker")" = root:root:400:1:3 ] \
+  || fail 'first-hop migration marker metadata is unsafe'
+grep -Fxq 'CADDY_PWD=""' /etc/birdnet/birdnet.conf \
+  || fail 'first-hop migration did not install the scrubbed password assignment'
+if grep -Fq 'FirstHopLegacy12!' /etc/birdnet/birdnet.conf \
+  || grep -Eq '^[[:space:]]*export[[:space:]]+CADDY_PWD=' /etc/birdnet/birdnet.conf; then
+  fail 'first-hop migration left the exported plaintext password in config'
+fi
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null \
+  || fail 'first-hop Caddy policy did not validate'
+[ "$(stat -c '%U:%G:%a' /etc/caddy/Caddyfile)" = root:caddy:640 ] \
+  || fail 'first-hop Caddy policy contains a verifier with unsafe metadata'
+grep -Fq "$auth_verifier" /etc/caddy/Caddyfile \
+  || fail 'first-hop Caddy policy did not use the migrated verifier'
+grep -Fq 'FirstHopLegacy12!' /etc/caddy/Caddyfile \
+  && fail 'first-hop Caddy policy exposed the plaintext password'
+
+caddy run --config /etc/caddy/Caddyfile --adapter caddyfile \
+  >"$test_root/caddy.log" 2>&1 &
+caddy_pid=$!
+for _ in {1..50}; do
+  if curl -sS --max-time 1 -o /dev/null http://127.0.0.1/ 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+kill -0 "$caddy_pid" 2>/dev/null \
+  || { cat "$test_root/caddy.log" >&2; fail 'first-hop Caddy policy did not start'; }
+[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1/index.php)" = 401 ] \
+  || fail 'first-hop Caddy render did not protect the legacy surface'
+[ "$(curl -sS -u 'birdnet:FirstHopLegacy12!' -o /dev/null -w '%{http_code}' \
+  http://127.0.0.1/index.php)" = 502 ] \
+  || fail 'first-hop Caddy render rejected the migrated credential'
+kill "$caddy_pid"
+wait "$caddy_pid" 2>/dev/null || true
+
 if /usr/local/bin/livestream.sh --check; then
   fail 'direct ALSA condition allowed the live stream to start'
 fi
@@ -263,8 +319,8 @@ for helper in \
 done
 [ "$(stat -c '%U:%G:%a' /usr/local/bin)" = root:root:755 ] \
   || fail '/usr/local/bin permissions changed'
-[ "$(grep -c '^called$' "$test_root/caddy.called")" -eq 2 ] \
-  || fail 'root-owned Caddy refresh was not idempotently invoked'
+[ "$(grep -c '^reload caddy$' "$test_root/systemctl.log")" -eq 2 ] \
+  || fail 'real root-owned Caddy refresh was not idempotently invoked'
 if [ ! -L /usr/local/bin/example.sh ] \
   || [ "$(readlink /usr/local/bin/example.sh)" != "$repo/scripts/example.sh" ]; then
   fail 'tracked script symlink was not refreshed'

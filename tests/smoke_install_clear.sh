@@ -81,6 +81,8 @@ mkdir -p "$test_bin" "$repo/scripts" "$repo/avian/frontend" \
   "$repo/homepage/images" "$repo/model" "$repo/templates" "$repo/.git" /etc/birdnet
 
 id bird >/dev/null 2>&1 || useradd -m bird
+id caddy >/dev/null 2>&1 \
+  || useradd --system --no-create-home --shell /usr/sbin/nologin caddy
 
 cp /source/scripts/install_services.sh "$repo/scripts/install_services.sh"
 cp /source/scripts/clear_all_data.sh "$repo/scripts/clear_all_data.sh"
