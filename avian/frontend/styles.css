@@ -8,6 +8,7 @@
     --ink-soft: #908576;
     --accent:   #4a3f31;   /* warm dark grey - matches ink-2, no longer red */
     --accent-2: #1a1612;   /* near-black ink - same hue as the title text */
+    --danger:   #9b3f37;   /* restrained destructive action */
     --hairline: rgba(26,22,18,0.14);  /* faint divider lines + chart gridlines */
     --pill:     #fcfcfb;              /* active-toggle sliding pill */
     /* Depth shadow recipes - replace flat 1px borders */
@@ -33,6 +34,7 @@
     --ink-soft: #837c70;   /* muted text */
     --accent:   #d8d2c6;   /* light warm - pills read light-on-dark */
     --accent-2: #ece8e1;
+    --danger:   #dc8b81;
     --hairline: rgba(236,232,225,0.20);  /* faint light divider on charcoal */
     --pill:     #3a3e48;                 /* raised, clearly lighter than the track */
     --edge:    inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.4);
@@ -514,14 +516,23 @@
     font: 9px/1.35 ui-monospace, Menlo, monospace;
   }
   .lock-err { color: var(--accent); }
-  .menu-lock {
-    width: 100%; margin-top: 10px; padding: 8px 10px;
-    border: 0; border-radius: 7px; cursor: pointer;
-    background: transparent; color: var(--ink-soft);
-    font: 9px ui-monospace, Menlo, monospace;
-    letter-spacing: 0.08em; text-transform: uppercase;
+  .menu-footer {
+    display: flex; align-items: center; gap: 12px;
+    margin: 14px 4px 0;
   }
-  .menu-lock:hover, .menu-lock:focus-visible { color: var(--ink); background: var(--paper-2); }
+  .menu-lock {
+    flex: 0 0 auto; min-height: 24px; margin-left: auto; padding: 5px 6px;
+    border: 0; border-radius: 5px; cursor: pointer;
+    background: transparent; color: var(--danger);
+    font: 9px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.06em; text-transform: lowercase;
+  }
+  .menu-lock[hidden] { display: none; }
+  .menu-lock:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+  .menu-lock:focus-visible {
+    outline: 2px solid var(--danger);
+    outline-offset: 1px;
+  }
   .menu-lock:disabled { opacity: 0.5; cursor: wait; }
   .live-policy-note {
     margin: 4px 4px 10px; color: var(--ink-soft);
@@ -536,6 +547,7 @@
     color: var(--ink-soft);
     letter-spacing: 0.04em;
   }
+  .menu-footer .built-by { margin: 0; }
   .built-by a {
     color: inherit;
     text-decoration: underline;
@@ -635,10 +647,38 @@
     outline: 2px solid var(--ink);
     outline-offset: 3px;
   }
-  .settings-access > h2 {
+  .settings-access > h2,
+  .settings-sharing > h2 {
     margin: 0 10px 4px; color: var(--ink-soft);
     font: 9px ui-monospace, Menlo, monospace;
     letter-spacing: 0.13em; text-transform: uppercase;
+  }
+  .access-copy {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .settings-info {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0; border: 0; border-radius: 999px;
+    background: transparent; color: var(--ink-soft); cursor: help;
+  }
+  .settings-info svg { width: 14px; height: 14px; display: block; }
+  .settings-info:focus-visible {
+    outline: 2px solid var(--ink-soft);
+    outline-offset: 1px;
+  }
+  .settings-tip {
+    position: absolute; z-index: 8; top: calc(100% + 7px); left: -8px;
+    width: min(300px, calc(100vw - 64px)); padding: 8px 10px;
+    border-radius: 6px; background: var(--paper); color: var(--ink-2);
+    box-shadow: var(--edge-lg); pointer-events: none;
+    font: 9px/1.5 ui-monospace, Menlo, monospace; letter-spacing: 0.02em;
+    text-align: left; text-transform: none;
+    opacity: 0; visibility: hidden; transform: translateY(-2px);
+    transition: opacity 140ms cubic-bezier(.23,1,.32,1), transform 140ms cubic-bezier(.23,1,.32,1), visibility 0s linear 140ms;
+  }
+  .access-copy[data-tip-open="true"] .settings-tip {
+    opacity: 1; visibility: visible; transform: translateY(0);
+    transition-delay: 0s;
   }
   .lan-auth-control { padding-bottom: 8px; }
   .lan-auth-confirm {
@@ -657,7 +697,7 @@
     background: var(--paper); color: var(--ink); box-shadow: var(--recess);
     font: 12px ui-monospace, Menlo, monospace;
   }
-  .lan-auth-warning, .lan-auth-status {
+  .lan-auth-status {
     margin: 7px 10px 0; color: var(--ink-soft);
     font: 8.5px/1.5 ui-monospace, Menlo, monospace;
   }
@@ -681,7 +721,7 @@
   }
   .password-change-form input:focus-visible,
   .lan-auth-confirm input:focus-visible {
-    outline: 2px solid var(--ink);
+    outline: 2px solid var(--ink-soft);
     outline-offset: 2px;
   }
   .password-change-form > div { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -713,6 +753,74 @@
   .password-change-control .chip:disabled {
     opacity: 0.42; cursor: not-allowed;
   }
+
+  .birdweather-head-actions {
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .birdweather-disclosure {
+    min-height: 24px; padding: 4px 5px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--ink-2); cursor: pointer;
+    font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.05em;
+  }
+  .birdweather-disclosure:hover { background: var(--paper-2); }
+  .birdweather-disclosure:focus-visible {
+    outline: 2px solid var(--ink-soft); outline-offset: 1px;
+  }
+  .birdweather-details {
+    display: grid; gap: 4px; margin: 2px 6px 0; padding: 10px;
+    border-radius: 8px; background: var(--paper-2); box-shadow: var(--recess);
+  }
+  .birdweather-details[hidden] { display: none; }
+  .birdweather-unavailable {
+    margin: 1px 10px 7px; color: var(--ink-soft);
+    font: 8.5px/1.45 ui-monospace, Menlo, monospace;
+  }
+  .birdweather-token {
+    display: grid; gap: 5px; padding: 2px 4px 7px;
+    color: var(--ink); font: 10px ui-monospace, Menlo, monospace;
+  }
+  .birdweather-token input {
+    width: 100%; min-width: 0; padding: 8px 9px; border: 0; border-radius: 6px;
+    outline: 0; background: var(--paper); color: var(--ink); box-shadow: var(--recess);
+    font: 11px ui-monospace, Menlo, monospace;
+  }
+  .birdweather-token input::placeholder { color: var(--ink-soft); }
+  .birdweather-token input:focus-visible {
+    box-shadow: var(--recess), 0 0 0 2px var(--ink-soft);
+  }
+  .birdweather-details .menu-row { padding-left: 4px; padding-right: 4px; }
+  .birdweather-details .access-copy { flex-wrap: wrap; }
+  .birdweather-details .access-copy > .hint { flex-basis: 100%; }
+  .birdweather-privacy button { min-width: 28px; padding-left: 8px; padding-right: 8px; }
+  .birdweather-station,
+  .birdweather-status {
+    min-height: 14px; margin: 4px; color: var(--ink-2);
+    font: 9px/1.45 ui-monospace, Menlo, monospace;
+  }
+  .birdweather-station a,
+  .birdweather-actions a {
+    color: var(--ink-2); text-underline-offset: 2px;
+  }
+  .birdweather-actions {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 2px 4px;
+  }
+  .birdweather-actions a {
+    margin-left: auto; font: 8.5px/1.35 ui-monospace, Menlo, monospace;
+  }
+  .birdweather-actions .chip {
+    min-height: 27px; border: 0; border-radius: 4px; padding: 7px 10px;
+    background: var(--paper); color: var(--ink); box-shadow: var(--raised); cursor: pointer;
+    font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.08em;
+  }
+  .birdweather-actions .chip:active { box-shadow: var(--recess); }
+  .birdweather-actions .chip:focus-visible {
+    outline: 2px solid var(--ink-soft); outline-offset: 2px;
+  }
+  .birdweather-actions .chip:disabled,
+  .birdweather-details button:disabled,
+  .birdweather-details input:disabled { opacity: 0.45; cursor: wait; }
+  .birdweather-forget { color: var(--danger) !important; }
+  .birdweather-status.err { color: var(--danger); }
 
   /* Slider - title row (label + value badge with breathing room) and
      a track row underneath. Value sits at the far right with a wide
@@ -3519,11 +3627,18 @@ body.av-local #dd-items  { display: block; }
    input always starts empty with a state-carrying placeholder. */
 .admin-settings input.secret {
   background: var(--paper-2); border: 0; border-radius: 8px;
+  outline: 0;
   box-shadow: var(--recess); color: var(--ink);
   font: 11px ui-monospace, "SF Mono", Menlo, monospace;
   padding: 9px 12px; width: min(300px, 46vw);
 }
 .admin-settings input.secret::placeholder { color: var(--ink-soft); }
+.admin-settings input.secret:focus {
+  box-shadow: var(--recess);
+}
+.admin-settings input.secret:focus-visible {
+  box-shadow: var(--recess), 0 0 0 2px var(--ink-soft);
+}
 .station-coords {
   font: 11px ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--ink-soft); letter-spacing: 0.06em;

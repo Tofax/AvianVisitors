@@ -70,7 +70,7 @@
         if (btns[i].getAttribute('aria-current') === 'true') { cur = i; break; }
       }
       btns[(cur + 1) % btns.length].click();
-    });
+    }, true);
   }
 
   // ---- Slider ----
@@ -4013,6 +4013,20 @@
     });
     queueAtlasOverflowState();
   }
+  // Settings hides the view strip while its full-screen panel is open. If a
+  // background refresh lands then, the Atlas has no measurable width and the
+  // packer correctly defers. Repack once the panel releases the strip so the
+  // deferred wall cannot remain in its centered CSS fallback.
+  var atlasVisibilityPackFrame = 0;
+  function queueVisibleAtlasPack() {
+    if (atlasVisibilityPackFrame) cancelAnimationFrame(atlasVisibilityPackFrame);
+    atlasVisibilityPackFrame = requestAnimationFrame(function () {
+      atlasVisibilityPackFrame = 0;
+      if (document.body.classList.contains('admin-on')) return;
+      var grid = document.getElementById('atlasGrid');
+      if (grid) packAtlasGrids(grid);
+    });
+  }
   function animateAtlasFlip(root, before, options) {
     options = options || {};
     if (!root || !before || matchMedia('(prefers-reduced-motion:reduce)').matches) return;
@@ -4903,6 +4917,7 @@
   var items = document.getElementById('dd-items');
   var lockHint = document.getElementById('lockHint');
   var lockTransport = document.getElementById('lockTransport');
+  var adminLock = document.getElementById('adminLock');
   var resetLiveAudioTransientState = null;
   var stopLiveAudioNow = null;
   var adminAccessState = 'checking';
@@ -5185,7 +5200,9 @@
   });
 
   function showAdminLocked(message, recovery) {
-    if (adminSect) pendingAdminSection = adminSect;
+    var wasAdminOn = document.body.classList.contains('admin-on');
+    var previousAdminSect = adminSect;
+    if (previousAdminSect) pendingAdminSection = previousAdminSect;
     if (!pendingAdminSection && typeof readAdminHash === 'function') {
       pendingAdminSection = readAdminHash();
     }
@@ -5206,11 +5223,17 @@
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
     if (adminBody) adminBody.replaceChildren();
     if (adminEl) adminEl.setAttribute('aria-hidden', 'true');
+    if (settingsInfoCleanup) settingsInfoCleanup();
     document.body.classList.remove('admin-on');
     adminSect = null;
     items.classList.remove('show');
     items.replaceChildren();
+    if (adminLock) {
+      adminLock.hidden = true;
+      adminLock.disabled = false;
+    }
     locked.style.display = '';
+    if (wasAdminOn) queueVisibleAtlasPack();
     lockHint.textContent = recovery
       ? 'Admin password is missing or invalid. Over SSH, run sudo /usr/local/sbin/avian-admin-control password-reset.'
       : (message || 'Your admin session expired. Unlock to continue.');
@@ -5637,21 +5660,21 @@
       : (adminAuthMeta.lan_policy
         ? '<p class="live-policy-note">Live audio is unavailable while local password protection is on.</p>'
         : '');
-    var lockHtml = adminAuthMeta.required
-      ? '<button type="button" class="menu-lock" id="adminLock">lock admin controls</button>'
-      : '';
-    items.innerHTML = liveAudioHtml + '<div class="menu-links">' + linksHtml + '</div>' + lockHtml;
+    items.innerHTML = liveAudioHtml + '<div class="menu-links">' + linksHtml + '</div>';
 
-    var adminLock = document.getElementById('adminLock');
-    if (adminLock) adminLock.addEventListener('click', function () {
-      adminLock.disabled = true;
-      lockAdminSession().then(function () {
-        showAdminLocked('Admin controls locked.', false);
-        signalAdminLock('Admin controls locked.');
-      }).catch(function () {
-        adminLock.disabled = false;
-      });
-    });
+    if (adminLock) {
+      adminLock.hidden = !adminAuthMeta.required;
+      adminLock.disabled = false;
+      adminLock.onclick = function () {
+        adminLock.disabled = true;
+        lockAdminSession().then(function () {
+          showAdminLocked('Admin controls locked.', false);
+          signalAdminLock('Admin controls locked.');
+        }).catch(function () {
+          adminLock.disabled = false;
+        });
+      };
+    }
 
     if (pendingAdminSection) {
       var destination = pendingAdminSection;
@@ -5981,6 +6004,88 @@
       + '  <div class="seg" data-key="' + key + '"><i class="seg-pill" aria-hidden="true"></i>' + btns + '</div>'
       + '</div>';
   }
+  function settingsInfoMarkup(id, label, details) {
+    return ''
+      + '<button type="button" class="settings-info" data-settings-info'
+      + ' aria-label="' + label + '" aria-describedby="' + id + '"'
+      + ' aria-controls="' + id + '" aria-expanded="false">'
+      + '  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.1v4M8 4.75h.01" stroke-linecap="round"/></svg>'
+      + '  <span class="settings-tip" id="' + id + '" role="tooltip">' + details + '</span>'
+      + '</button>';
+  }
+  var settingsInfoCleanup = null;
+  function wireSettingsInfo(scope) {
+    if (settingsInfoCleanup) settingsInfoCleanup();
+    var buttons = [].slice.call(scope.querySelectorAll('[data-settings-info]'));
+    function setOpen(button, open) {
+      if (!button) return;
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var wrapper = button.closest('.access-copy');
+      if (wrapper) wrapper.setAttribute('data-tip-open', open ? 'true' : 'false');
+    }
+    function closeAll(except) {
+      buttons.forEach(function (button) {
+        if (button !== except) {
+          button.__tipPinned = false;
+          setOpen(button, false);
+        }
+      });
+    }
+    buttons.forEach(function (button) {
+      button.__tipPinned = false;
+      button.__tipSuppressed = false;
+      button.addEventListener('pointerenter', function () {
+        if (!button.__tipSuppressed) setOpen(button, true);
+      });
+      button.addEventListener('pointerleave', function () {
+        button.__tipSuppressed = false;
+        if (!button.__tipPinned && document.activeElement !== button) setOpen(button, false);
+      });
+      button.addEventListener('focus', function () {
+        button.__tipSuppressed = false;
+        closeAll(button);
+        setOpen(button, true);
+      });
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeAll(button);
+        button.__tipPinned = !button.__tipPinned;
+        button.__tipSuppressed = !button.__tipPinned;
+        setOpen(button, button.__tipPinned);
+      });
+      button.addEventListener('focusout', function () {
+        setTimeout(function () {
+          var wrapper = button.closest('.access-copy');
+          if (!wrapper || !wrapper.contains(document.activeElement)) {
+            button.__tipPinned = false;
+            setOpen(button, false);
+          }
+        }, 0);
+      });
+    });
+    function outside(event) {
+      if (!event.target.closest('[data-settings-info]')) closeAll(null);
+    }
+    function escape(event) {
+      if (event.key !== 'Escape') return;
+      var open = buttons.find(function (button) {
+        return button.getAttribute('aria-expanded') === 'true';
+      });
+      if (!open) return;
+      event.stopPropagation();
+      open.__tipPinned = false;
+      open.__tipSuppressed = true;
+      setOpen(open, false);
+    }
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', escape, true);
+    settingsInfoCleanup = function () {
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('keydown', escape, true);
+      settingsInfoCleanup = null;
+    };
+  }
   // Client-side theme switcher row. Reuses the .seg look but is tagged
   // data-theme-seg so wireSettingsControls skips it - it applies instantly
   // and is NOT part of the Pi config save flow.
@@ -6029,13 +6134,17 @@
       : configured
       ? 'lock Settings, System, Logs, and Tools on direct local connections'
       : 'From SSH, run: sudo /usr/local/sbin/avian-admin-control password-reset';
+    var details = hint + '. Collage, Atlas, Stats, and recordings stay public. '
+      + 'Live audio is unavailable while this setting is on. On plain HTTP, this blocks casual access '
+      + 'but does not protect your password from a hostile network.';
     return ''
       + '<div class="lan-auth-control" data-lan-auth-control>'
       + '  <div class="menu-row">'
-      + '    <div><span class="label">Require password on local network</span>'
-      + '      <span class="hint" id="lanAuthHint">' + hint + '</span></div>'
+      + '    <div class="access-copy"><span class="label">Require password on local network</span>'
+      + settingsInfoMarkup('lanAuthTip', 'About local password protection', details)
+      + '    </div>'
       + '    <button type="button" class="switch" role="switch" data-lan-auth'
-      + '      aria-label="Require password on local network" aria-describedby="lanAuthHint"'
+      + '      aria-label="Require password on local network" aria-describedby="lanAuthTip"'
       + '      aria-checked="' + (on ? 'true' : 'false') + '"'
       + ((!configured && !on) ? ' disabled' : '') + '></button>'
       + '  </div>'
@@ -6048,14 +6157,13 @@
       + '      <button type="submit" class="chip">turn on</button>'
       + '      <button type="button" class="chip" data-lan-auth-cancel>cancel</button></div>'
       + '  </form>'
-      + '  <p class="lan-auth-warning">Collage, Atlas, Stats, and recordings stay public. Live audio is unavailable while this setting is on. On plain HTTP, this blocks casual access but does not protect your password from a hostile network.</p>'
       + '  <p class="lan-auth-status" data-lan-auth-status role="status" aria-live="polite" aria-atomic="true"></p>'
       + '</div>';
   }
 
   function passwordChangeRow(security) {
     security = security || {};
-    if (!security.password_configured) return '';
+    if (!security.lan_admin_auth || !security.password_configured) return '';
     return ''
       + '<div class="password-change-control" data-password-change>'
       + '  <button type="button" class="chip" data-password-change-open>change admin password</button>'
@@ -6069,6 +6177,283 @@
       + '  </form>'
       + '  <p class="lan-auth-status" data-password-change-status role="status" aria-live="polite" aria-atomic="true"></p>'
       + '</div>';
+  }
+
+  function birdweatherRow(state) {
+    state = state || {};
+    var available = state.ok !== false;
+    var enabled = available && !!state.enabled;
+    var configured = available && !!state.token_configured;
+    var privacy = parseInt(state.privacy_threshold, 10);
+    if (!isFinite(privacy) || privacy < 0 || privacy > 3) privacy = 0;
+    if (!configured && privacy === 0) privacy = 1;
+    var privacyButtons = [0, 1, 2, 3].map(function (level) {
+      return '<button type="button" data-v="' + level + '" aria-current="'
+        + (level === privacy ? 'true' : 'false') + '">' + level + '</button>';
+    }).join('');
+    var sharingDetails = 'BirdWeather receives each bird name, confidence, time, and your station coordinates. '
+      + 'Audio is separate and stays off for a new station unless you turn it on.';
+    var audioDetails = 'This sends the complete recording BirdNET analyzed, not only the detected call. '
+      + 'It may contain people or other nearby sounds.';
+    var privacyDetails = 'Higher levels check more BirdNET candidates for human sounds and suppress detections in and next to matching windows. '
+      + 'This does not redact the full recording, so audio uploads may still contain people.';
+    return ''
+      + '<div class="birdweather-control" data-birdweather-control data-token-configured="' + (configured ? 'true' : 'false') + '">'
+      + '  <div class="menu-row birdweather-head">'
+      + '    <div class="access-copy"><span class="label">Share detections with BirdWeather</span>'
+      + settingsInfoMarkup('birdweatherTip', 'About BirdWeather sharing', sharingDetails)
+      + '    </div>'
+      + '    <div class="birdweather-head-actions">'
+      + '      <button type="button" class="birdweather-disclosure" data-birdweather-disclosure aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>details</button>'
+      + '      <button type="button" class="switch" role="switch" data-birdweather-toggle'
+      + '        aria-label="Share detections with BirdWeather" aria-describedby="birdweatherTip"'
+      + '        aria-checked="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '></button>'
+      + '    </div>'
+      + '  </div>'
+      + (available ? '' : '  <p class="birdweather-unavailable" role="status">BirdWeather controls are unavailable on this station.</p>')
+      + '  <form class="birdweather-details" data-birdweather-details' + (enabled ? '' : ' hidden') + '>'
+      + '    <label class="birdweather-token">Station token'
+      + '      <input type="password" data-birdweather-token autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="160"'
+      + '        placeholder="' + (configured ? 'saved, paste to replace' : 'paste station token') + '">'
+      + '    </label>'
+      + '    <div class="menu-row">'
+      + '      <div class="access-copy"><span class="label">Upload analyzed recordings</span>'
+      + settingsInfoMarkup('birdweatherAudioTip', 'About BirdWeather audio uploads', audioDetails)
+      + '      </div>'
+      + '      <button type="button" class="switch" role="switch" data-birdweather-audio'
+      + '        aria-label="Upload analyzed recordings" aria-describedby="birdweatherAudioTip"'
+      + '        aria-checked="' + (state.upload_audio ? 'true' : 'false') + '"></button>'
+      + '    </div>'
+      + '    <div class="menu-row">'
+      + '      <div class="access-copy"><span class="label">Human-sound filter</span>'
+      + settingsInfoMarkup('birdweatherPrivacyTip', 'About the local human-sound filter', privacyDetails)
+      + '        <span class="hint">higher checks more candidates before sharing</span>'
+      + '      </div>'
+      + '      <div class="seg birdweather-privacy" data-birdweather-privacy><i class="seg-pill" aria-hidden="true"></i>' + privacyButtons + '</div>'
+      + '    </div>'
+      + '    <div class="birdweather-station" data-birdweather-station></div>'
+      + '    <div class="birdweather-actions">'
+      + '      <button type="submit" class="chip" data-birdweather-save>save settings</button>'
+      + '      <button type="button" class="chip birdweather-forget" data-birdweather-forget' + (configured && !enabled ? '' : ' hidden') + '>forget token</button>'
+      + '      <a href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">BirdWeather privacy and station settings</a>'
+      + '    </div>'
+      + '    <p class="birdweather-status" data-birdweather-status role="status" aria-live="polite" aria-atomic="true"></p>'
+      + '  </form>'
+      + '</div>';
+  }
+
+  function wireBirdweatherControl(scope, initialState) {
+    var control = scope.querySelector('[data-birdweather-control]');
+    if (!control || !initialState || initialState.ok === false) return;
+    var state = initialState;
+    var mainSwitch = control.querySelector('[data-birdweather-toggle]');
+    var disclosure = control.querySelector('[data-birdweather-disclosure]');
+    var details = control.querySelector('[data-birdweather-details]');
+    var tokenInput = control.querySelector('[data-birdweather-token]');
+    var audioSwitch = control.querySelector('[data-birdweather-audio]');
+    var privacy = control.querySelector('[data-birdweather-privacy]');
+    var station = control.querySelector('[data-birdweather-station]');
+    var status = control.querySelector('[data-birdweather-status]');
+    var save = control.querySelector('[data-birdweather-save]');
+    var forget = control.querySelector('[data-birdweather-forget]');
+    var probeSequence = 0;
+    var busy = false;
+    var draftEnable = false;
+
+    function note(message, error) {
+      status.textContent = message || '';
+      status.classList.toggle('err', !!error);
+    }
+    function selectedPrivacy() {
+      var selected = privacy.querySelector('button[aria-current="true"]');
+      return selected ? +selected.dataset.v : 1;
+    }
+    function setBusy(next) {
+      busy = next;
+      [mainSwitch, disclosure, tokenInput, audioSwitch, save, forget].forEach(function (element) {
+        if (element) element.disabled = next;
+      });
+      privacy.querySelectorAll('button').forEach(function (button) { button.disabled = next; });
+    }
+    function showStation(remote) {
+      station.replaceChildren();
+      if (!state.token_configured) {
+        station.textContent = 'Paste the station token from BirdWeather.';
+        return;
+      }
+      remote = remote || state.station;
+      if (!remote) {
+        station.textContent = state.configuration_valid === false
+          ? 'The saved token is invalid. Paste a replacement.'
+          : 'Open details to check the public station page.';
+        return;
+      }
+      if (remote.state === 'connected' && Number.isInteger(+remote.station_id) && +remote.station_id > 0) {
+        var link = document.createElement('a');
+        link.href = 'https://app.birdweather.com/stations/' + (+remote.station_id);
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = 'View station #' + (+remote.station_id) + ' on BirdWeather';
+        station.appendChild(link);
+      } else if (remote.state === 'connected') {
+        station.textContent = 'Connected. The public station page appears after the first report.';
+      } else if (remote.state === 'invalid') {
+        station.textContent = 'BirdWeather rejected the saved token. Paste a replacement.';
+      } else {
+        station.textContent = 'BirdWeather could not be reached.';
+      }
+    }
+    function openDetails(open, checkStation) {
+      details.hidden = !open;
+      disclosure.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && checkStation) probeStation();
+    }
+    function applyState(next) {
+      probeSequence += 1;
+      draftEnable = false;
+      state = next || state;
+      mainSwitch.setAttribute('aria-checked', state.enabled ? 'true' : 'false');
+      audioSwitch.setAttribute('aria-checked', state.upload_audio ? 'true' : 'false');
+      control.setAttribute('data-token-configured', state.token_configured ? 'true' : 'false');
+      tokenInput.placeholder = state.token_configured ? 'saved, paste to replace' : 'paste station token';
+      forget.hidden = !state.token_configured || !!state.enabled;
+      showStation(state.station);
+    }
+    function probeStation() {
+      if (!state.token_configured) { showStation(null); return; }
+      var mine = ++probeSequence;
+      station.textContent = 'Checking BirdWeather...';
+      adminFetch('./avian/api/birdweather.php?probe=1', {
+        credentials: 'same-origin', cache: 'no-store',
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) throw new Error(body.error || 'station lookup failed');
+          return body;
+        });
+      }).then(function (body) {
+        if (mine !== probeSequence) return;
+        state.station = body.station;
+        state.configuration_valid = body.configuration_valid;
+        showStation(body.station);
+      }).catch(function (error) {
+        if (mine !== probeSequence || adminAuthCancelled(error)) return;
+        showStation({ state: 'unavailable' });
+      });
+    }
+    function post(payload, priorEnabled) {
+      if (busy) return Promise.resolve(false);
+      probeSequence += 1;
+      var requestBody = JSON.stringify(payload);
+      if (Object.prototype.hasOwnProperty.call(payload, 'token')) payload.token = '';
+      tokenInput.value = '';
+      setBusy(true);
+      note('saving...', false);
+      return adminFetch('./avian/api/birdweather.php', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+        body: requestBody,
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) {
+            var error = new Error(body.error || 'BirdWeather setting failed');
+            error.saved = !!body.saved;
+            error.settings = body.settings || null;
+            throw error;
+          }
+          return body;
+        });
+      }).then(function (body) {
+        requestBody = '';
+        applyState(body);
+        note('saved', false);
+        return true;
+      }).catch(function (error) {
+        requestBody = '';
+        if (adminAuthCancelled(error)) return false;
+        if (error.saved && error.settings) {
+          applyState(error.settings);
+        } else if (typeof priorEnabled === 'boolean') {
+          mainSwitch.setAttribute('aria-checked', priorEnabled ? 'true' : 'false');
+        }
+        note(error.message || 'BirdWeather setting failed', true);
+        return false;
+      }).then(function (ok) {
+        setBusy(false);
+        return ok;
+      });
+    }
+
+    disclosure.addEventListener('click', function () {
+      openDetails(details.hidden, details.hidden);
+    });
+    mainSwitch.addEventListener('click', function () {
+      if (busy) return;
+      var prior = mainSwitch.getAttribute('aria-checked') === 'true';
+      var desired = !prior;
+      if (desired) {
+        draftEnable = true;
+        openDetails(true, false);
+        if (!state.token_configured || state.configuration_valid === false) {
+          note(state.token_configured
+            ? 'Paste a valid station token, then save settings.'
+            : 'Add the station token, then save settings.', false);
+          tokenInput.focus();
+          return;
+        }
+      } else {
+        draftEnable = false;
+      }
+      post({
+        enabled: desired,
+        upload_audio: audioSwitch.getAttribute('aria-checked') === 'true',
+        privacy_threshold: selectedPrivacy(),
+      }, prior).then(function (ok) {
+        if (ok && !desired) openDetails(false, false);
+        else if (ok && desired) probeStation();
+      });
+    });
+    audioSwitch.addEventListener('click', function () {
+      audioSwitch.setAttribute('aria-checked',
+        audioSwitch.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+      note('Save settings to apply this change.', false);
+    });
+    privacy.querySelectorAll('button').forEach(function (button) {
+      button.addEventListener('click', function () {
+        privacy.querySelectorAll('button').forEach(function (candidate) {
+          candidate.setAttribute('aria-current', candidate === button ? 'true' : 'false');
+        });
+        syncPill(privacy);
+        note('Save settings to apply this change.', false);
+      });
+    });
+    details.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var value = tokenInput.value.trim();
+      var payload = {
+        enabled: draftEnable || mainSwitch.getAttribute('aria-checked') === 'true',
+        upload_audio: audioSwitch.getAttribute('aria-checked') === 'true',
+        privacy_threshold: selectedPrivacy(),
+      };
+      if (payload.enabled && !state.token_configured && !value) {
+        note('Add the station token, then save settings.', true);
+        tokenInput.focus();
+        return;
+      }
+      if (value) payload.token = value;
+      value = '';
+      post(payload).then(function (ok) { if (ok && !state.station) probeStation(); });
+    });
+    forget.addEventListener('click', function () {
+      if (!confirm('Forget the saved BirdWeather station token? Sharing must stay off until a new token is added.')) return;
+      post({
+        enabled: false,
+        upload_audio: false,
+        privacy_threshold: selectedPrivacy(),
+        forget_token: true,
+      }, false);
+    });
+    applyState(state);
+    if (state.enabled) probeStation();
   }
 
   function wireLanAuthControl(scope, security) {
@@ -6286,7 +6671,7 @@
   }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-atlas-always-all]):not([data-lan-auth])').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-atlas-always-all]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -6306,7 +6691,7 @@
       // the analyzer, and a drag fires input a hundred times.
       sl.addEventListener('change', function () { queueSave(300); });
     });
-    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-labels-seg])').forEach(function (seg) {
+    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-labels-seg]):not([data-birdweather-privacy])').forEach(function (seg) {
       seg.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
           seg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
@@ -7600,7 +7985,10 @@
       }
       return;
     }
-    if (adminSect === 'settings' && section !== 'settings') discardPendingSettings();
+    if (adminSect === 'settings' && section !== 'settings') {
+      discardPendingSettings();
+      if (settingsInfoCleanup) settingsInfoCleanup();
+    }
     adminViewGeneration += 1;
     document.body.classList.add('admin-on');
     adminEl.setAttribute('aria-hidden', 'false');
@@ -7613,12 +8001,18 @@
     else if (section === 'tools') renderAdminTools();
   }
   function closeAdmin() {
-    if (adminSect === 'settings') discardPendingSettings();
+    var wasAdminOn = document.body.classList.contains('admin-on');
+    var previousAdminSect = adminSect;
+    if (previousAdminSect === 'settings') {
+      discardPendingSettings();
+      if (settingsInfoCleanup) settingsInfoCleanup();
+    }
     adminViewGeneration += 1;
     document.body.classList.remove('admin-on');
     adminEl.setAttribute('aria-hidden', 'true');
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
     adminSect = null;
+    if (wasAdminOn) queueVisibleAtlasPack();
   }
 
   // One quiet glyph per metric, drawn on the same 24-grid and stroke weight as
@@ -7849,6 +8243,7 @@
   }
 
   function renderAdminSettings() {
+    if (settingsInfoCleanup) settingsInfoCleanup();
     adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading settings...</p>';
     Promise.all([
       adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
@@ -7857,10 +8252,20 @@
         if (adminAuthCancelled(error)) throw error;
         return null;
       }),
+      adminFetch('./avian/api/birdweather.php', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            return r.ok && body.ok ? body : { ok: false };
+          });
+        }).catch(function (error) {
+          if (adminAuthCancelled(error)) throw error;
+          return { ok: false };
+        }),
     ])
       .then(function (parts) {
         var cfg = parts[0];
         var gen = parts[1] || {};
+        var birdweather = parts[2] || { ok: false };
         var v = cfg.values || {};
         var sec = cfg.secrets || {};
         var security = cfg.security || {};
@@ -7901,6 +8306,9 @@
           + stationRow(v)
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'for regional species filters', sec.EBIRD_API_KEY)
+          + '</section><section class="settings-sharing">'
+          + '<h2>Sharing</h2>'
+          + birdweatherRow(birdweather)
           + '</section><section>'
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
@@ -7933,6 +8341,8 @@
         wireSettingsControls(adminBody);
         wireLanAuthControl(adminBody, security);
         wirePasswordChange(adminBody);
+        wireBirdweatherControl(adminBody, birdweather);
+        wireSettingsInfo(adminBody);
         if (pendingAdminNotice) {
           var noticeTarget = adminBody.querySelector('[data-lan-auth-status]');
           if (noticeTarget) {
