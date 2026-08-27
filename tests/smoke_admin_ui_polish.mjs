@@ -68,6 +68,8 @@ assert.match(birdweatherOff, /type="password" data-birdweather-token/, 'BirdWeat
 assert.doesNotMatch(birdweatherOff, /data-birdweather-token[^>]*\svalue=/, 'BirdWeather never puts a saved token in the DOM');
 assert.match(birdweatherOff, /data-v="1" aria-current="true"/, 'a fresh station starts at local privacy level one');
 assert.match(birdweatherOff, /does not redact the full recording/, 'privacy disclosure distinguishes filtering from audio redaction');
+assert.match(birdweatherOff, /data-birdweather-details-shell data-open="false" data-settled="false" aria-hidden="true" hidden inert/,
+  'the closed details disclosure starts noninteractive and out of layout');
 const birdweatherUnavailable = markupContext.birdweatherRow({ ok: false });
 assert.match(birdweatherUnavailable, /data-birdweather-disclosure[^>]* disabled/, 'unavailable BirdWeather Details action is disabled');
 assert.match(birdweatherUnavailable, /class="birdweather-unavailable"[^>]*>BirdWeather controls are unavailable/,
@@ -106,8 +108,14 @@ function birdweatherHarness(initialState, fetcher) {
 
   const mainSwitch = node({ 'aria-checked': initialState.enabled ? 'true' : 'false' });
   const disclosure = node({ 'aria-expanded': initialState.enabled ? 'true' : 'false' });
+  const detailsShell = node({
+    'data-open': initialState.enabled ? 'true' : 'false',
+    'data-settled': initialState.enabled ? 'true' : 'false',
+    'aria-hidden': initialState.enabled ? 'false' : 'true',
+  });
+  detailsShell.hidden = !initialState.enabled;
+  detailsShell.inert = !initialState.enabled;
   const details = node();
-  details.hidden = !initialState.enabled;
   const tokenInput = node();
   const audioSwitch = node({ 'aria-checked': initialState.upload_audio ? 'true' : 'false' });
   const privacyButtons = [0, 1, 2, 3].map((level) => {
@@ -127,6 +135,7 @@ function birdweatherHarness(initialState, fetcher) {
   const selectors = {
     '[data-birdweather-toggle]': mainSwitch,
     '[data-birdweather-disclosure]': disclosure,
+    '[data-birdweather-details-shell]': detailsShell,
     '[data-birdweather-details]': details,
     '[data-birdweather-token]': tokenInput,
     '[data-birdweather-audio]': audioSwitch,
@@ -139,17 +148,24 @@ function birdweatherHarness(initialState, fetcher) {
   const control = node();
   control.querySelector = (selector) => selectors[selector] || null;
   const scope = { querySelector(selector) { return selector === '[data-birdweather-control]' ? control : null; } };
+  let pillSyncs = 0;
   const context = {
     adminFetch: fetcher,
     adminAuthCancelled() { return false; },
     confirm() { return true; },
-    syncPill() {},
+    syncPill() { pillSyncs += 1; },
+    requestAnimationFrame(callback) { callback(); return 1; },
+    clearTimeout() {},
+    setTimeout(callback) { callback(); return 1; },
     document: { createElement() { return node(); } },
   };
   vm.createContext(context);
   vm.runInContext(functionSource('wireBirdweatherControl'), context);
   context.wireBirdweatherControl(scope, initialState);
-  return { mainSwitch, details, tokenInput, station, status, forget };
+  return {
+    mainSwitch, disclosure, detailsShell, details, tokenInput, station, status, forget,
+    pillSyncs() { return pillSyncs; },
+  };
 }
 
 function jsonResponse(status, body) {
@@ -180,7 +196,13 @@ const firstToken = birdweatherHarness({
 firstToken.mainSwitch.dispatch('click');
 assert.equal(firstToken.mainSwitch.getAttribute('aria-checked'), 'false',
   'opening the first-token draft does not claim sharing is enabled');
-assert.equal(firstToken.details.hidden, false, 'the first-token draft still expands');
+assert.equal(firstToken.detailsShell.hidden, false, 'the first-token draft still expands');
+assert.equal(firstToken.detailsShell.getAttribute('data-open'), 'true',
+  'the first-token disclosure enters its visible state');
+assert.equal(firstToken.detailsShell.getAttribute('data-settled'), 'true',
+  'the open disclosure releases overflow after its transition');
+assert.ok(firstToken.pillSyncs() >= 2,
+  'opening hidden BirdWeather details synchronizes the human-filter pill after layout');
 firstToken.tokenInput.value = 'unverified-token';
 firstToken.details.dispatch('submit');
 await flushPromises();
@@ -252,7 +274,7 @@ assert.equal(disableAndForget.mainSwitch.getAttribute('aria-checked'), 'true',
 await flushPromises();
 assert.equal(disableAndForget.mainSwitch.getAttribute('aria-checked'), 'false',
   'the switch turns off after the disable succeeds');
-assert.equal(disableAndForget.details.hidden, true, 'successful disable closes details');
+assert.equal(disableAndForget.detailsShell.hidden, true, 'successful disable closes details');
 assert.equal(disableAndForget.forget.hidden, false, 'disabled configured station offers explicit token removal');
 disableAndForget.forget.dispatch('click');
 await flushPromises();
@@ -278,6 +300,24 @@ assert.doesNotMatch(css, /\.access-copy:hover \.settings-tip/,
   'hover cannot independently reopen a tooltip after Escape');
 assert.match(css, /\.menu-lock\s*\{[\s\S]*min-height:\s*24px/,
   'the footer lock action keeps a usable target height');
+assert.match(css, /\.birdweather-details-shell\s*\{[\s\S]*grid-template-rows:\s*1fr[\s\S]*210ms cubic-bezier\(\.23,1,\.32,1\)/,
+  'BirdWeather details use a short ease-out disclosure transition');
+assert.match(css, /\.birdweather-details-shell\[data-open="false"\]\s*\{[\s\S]*grid-template-rows:\s*0fr/,
+  'the closed disclosure collapses without leaving a tall empty card');
+assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*\.birdweather-details-shell/,
+  'the disclosure respects reduced-motion preferences');
+assert.match(css, /prefers-reduced-motion:\s*reduce[\s\S]*\.birdweather-details-shell\[data-open="true"\]\s*\{\s*overflow:\s*visible/,
+  'reduced-motion details expose tooltips immediately without waiting for a transition timer');
+assert.match(css, /\.birdweather-details-shell\[data-settled="false"\]\s*\{\s*overflow:\s*hidden/,
+  'the disclosure clips during motion but releases expanded tooltips afterward');
+assert.match(css, /\.birdweather-details-shell\[data-settled="false"\]\s+\.seg-pill\s*\{\s*transition:\s*none/,
+  'the first-open privacy pill does not animate from its hidden zero-width measurement');
+assert.doesNotMatch(apt, /<h2>Access<\/h2>|<h2>Sharing<\/h2>/,
+  'Settings no longer introduces unmatched Access or Sharing headings');
+assert.match(apt, /birdweatherRow\(birdweather\)[\s\S]{0,240}settingsToggle\('preserve',[\s\S]{0,240}settingsSegmented\('FULL_DISK'/,
+  'BirdWeather sharing, recording preservation, and disk behavior share one section');
+assert.match(apt, /<section class="settings-retention">[\s\S]{0,160}birdweatherRow\(birdweather\)/,
+  'the combined retention section has one deliberate grouping hook');
 
 function tooltipHarness() {
   const buttonListeners = {};
@@ -444,7 +484,7 @@ gateSelectors.forEach(function (selector) {
     'gate off and gate on must not select or reposition the Atlas');
 });
 
-assert.match(html, /styles\.css\?v=r175/, 'the polished CSS has a fresh cache key');
-assert.match(html, /apt\.js\?v=r195/, 'the polished behavior has a fresh cache key');
+assert.match(html, /styles\.css\?v=r176/, 'the polished CSS has a fresh cache key');
+assert.match(html, /apt\.js\?v=r196/, 'the polished behavior has a fresh cache key');
 
 console.log('admin UI polish smoke: ok');

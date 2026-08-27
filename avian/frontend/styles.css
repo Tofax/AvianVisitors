@@ -647,12 +647,6 @@
     outline: 2px solid var(--ink);
     outline-offset: 3px;
   }
-  .settings-access > h2,
-  .settings-sharing > h2 {
-    margin: 0 10px 4px; color: var(--ink-soft);
-    font: 9px ui-monospace, Menlo, monospace;
-    letter-spacing: 0.13em; text-transform: uppercase;
-  }
   .access-copy {
     position: relative; display: inline-flex; align-items: center; gap: 6px;
   }
@@ -766,21 +760,35 @@
   .birdweather-disclosure:focus-visible {
     outline: 2px solid var(--ink-soft); outline-offset: 1px;
   }
+  .birdweather-details-shell {
+    display: grid; grid-template-rows: 1fr; overflow: visible; opacity: 1;
+    transform: translateY(0);
+    transition: grid-template-rows 210ms cubic-bezier(.23,1,.32,1),
+                opacity 150ms cubic-bezier(.23,1,.32,1),
+                transform 210ms cubic-bezier(.23,1,.32,1);
+  }
+  .birdweather-details-shell[data-open="false"] {
+    grid-template-rows: 0fr; opacity: 0; transform: translateY(-3px);
+    transition-duration: 160ms, 120ms, 160ms;
+  }
+  .birdweather-details-shell[data-settled="false"] { overflow: hidden; }
+  .birdweather-details-shell[data-settled="false"] .seg-pill { transition: none; }
+  .birdweather-details-shell[hidden] { display: none; }
   .birdweather-details {
-    display: grid; gap: 4px; margin: 2px 6px 0; padding: 10px;
+    min-height: 0; overflow: visible; display: grid; gap: 2px;
+    margin: 2px 6px 0; padding: 7px 8px 6px;
     border-radius: 8px; background: var(--paper-2); box-shadow: var(--recess);
   }
-  .birdweather-details[hidden] { display: none; }
   .birdweather-unavailable {
     margin: 1px 10px 7px; color: var(--ink-soft);
     font: 8.5px/1.45 ui-monospace, Menlo, monospace;
   }
   .birdweather-token {
-    display: grid; gap: 5px; padding: 2px 4px 7px;
+    display: grid; gap: 4px; padding: 1px 3px 4px;
     color: var(--ink); font: 10px ui-monospace, Menlo, monospace;
   }
   .birdweather-token input {
-    width: 100%; min-width: 0; padding: 8px 9px; border: 0; border-radius: 6px;
+    width: 100%; min-width: 0; padding: 7px 8px; border: 0; border-radius: 6px;
     outline: 0; background: var(--paper); color: var(--ink); box-shadow: var(--recess);
     font: 11px ui-monospace, Menlo, monospace;
   }
@@ -788,13 +796,13 @@
   .birdweather-token input:focus-visible {
     box-shadow: var(--recess), 0 0 0 2px var(--ink-soft);
   }
-  .birdweather-details .menu-row { padding-left: 4px; padding-right: 4px; }
+  .birdweather-details .menu-row { padding: 6px 3px; }
   .birdweather-details .access-copy { flex-wrap: wrap; }
   .birdweather-details .access-copy > .hint { flex-basis: 100%; }
   .birdweather-privacy button { min-width: 28px; padding-left: 8px; padding-right: 8px; }
   .birdweather-station,
   .birdweather-status {
-    min-height: 14px; margin: 4px; color: var(--ink-2);
+    min-height: 12px; margin: 2px 3px; color: var(--ink-2);
     font: 9px/1.45 ui-monospace, Menlo, monospace;
   }
   .birdweather-station a,
@@ -802,13 +810,14 @@
     color: var(--ink-2); text-underline-offset: 2px;
   }
   .birdweather-actions {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 2px 4px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 8px 3px 1px;
   }
   .birdweather-actions a {
     margin-left: auto; font: 8.5px/1.35 ui-monospace, Menlo, monospace;
   }
   .birdweather-actions .chip {
-    min-height: 27px; border: 0; border-radius: 4px; padding: 7px 10px;
+    min-height: 26px; border: 0; border-radius: 4px; padding: 6px 10px;
     background: var(--paper); color: var(--ink); box-shadow: var(--raised); cursor: pointer;
     font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.08em;
   }
@@ -821,6 +830,17 @@
   .birdweather-details input:disabled { opacity: 0.45; cursor: wait; }
   .birdweather-forget { color: var(--danger) !important; }
   .birdweather-status.err { color: var(--danger); }
+  .birdweather-status:empty { min-height: 0; margin-block: 0; }
+  .settings-retention > .birdweather-control + .menu-row {
+    margin-top: 8px; box-shadow: inset 0 1px 0 rgba(26,22,18,0.06);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .birdweather-details-shell {
+      transition: none; transform: none;
+    }
+    .birdweather-details-shell[data-open="true"] { overflow: visible; }
+    .birdweather-details-shell .seg-pill { transition: none; }
+  }
 
   /* Slider - title row (label + value badge with breathing room) and
      a track row underneath. Value sits at the far right with a wide

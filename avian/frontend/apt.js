@@ -6204,14 +6204,15 @@
       + settingsInfoMarkup('birdweatherTip', 'About BirdWeather sharing', sharingDetails)
       + '    </div>'
       + '    <div class="birdweather-head-actions">'
-      + '      <button type="button" class="birdweather-disclosure" data-birdweather-disclosure aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>details</button>'
+      + '      <button type="button" class="birdweather-disclosure" data-birdweather-disclosure aria-controls="birdweatherDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>details</button>'
       + '      <button type="button" class="switch" role="switch" data-birdweather-toggle'
       + '        aria-label="Share detections with BirdWeather" aria-describedby="birdweatherTip"'
       + '        aria-checked="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '></button>'
       + '    </div>'
       + '  </div>'
       + (available ? '' : '  <p class="birdweather-unavailable" role="status">BirdWeather controls are unavailable on this station.</p>')
-      + '  <form class="birdweather-details" data-birdweather-details' + (enabled ? '' : ' hidden') + '>'
+      + '  <div id="birdweatherDetails" class="birdweather-details-shell" data-birdweather-details-shell data-open="' + (enabled ? 'true' : 'false') + '" data-settled="' + (enabled ? 'true' : 'false') + '" aria-hidden="' + (enabled ? 'false' : 'true') + '"' + (enabled ? '' : ' hidden inert') + '>'
+      + '  <form class="birdweather-details" data-birdweather-details>'
       + '    <label class="birdweather-token">Station token'
       + '      <input type="password" data-birdweather-token autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="160"'
       + '        placeholder="' + (configured ? 'saved, paste to replace' : 'paste station token') + '">'
@@ -6239,6 +6240,7 @@
       + '    </div>'
       + '    <p class="birdweather-status" data-birdweather-status role="status" aria-live="polite" aria-atomic="true"></p>'
       + '  </form>'
+      + '  </div>'
       + '</div>';
   }
 
@@ -6248,6 +6250,7 @@
     var state = initialState;
     var mainSwitch = control.querySelector('[data-birdweather-toggle]');
     var disclosure = control.querySelector('[data-birdweather-disclosure]');
+    var detailsShell = control.querySelector('[data-birdweather-details-shell]');
     var details = control.querySelector('[data-birdweather-details]');
     var tokenInput = control.querySelector('[data-birdweather-token]');
     var audioSwitch = control.querySelector('[data-birdweather-audio]');
@@ -6259,6 +6262,7 @@
     var probeSequence = 0;
     var busy = false;
     var draftEnable = false;
+    var detailsTransitionTimer = 0;
 
     function note(message, error) {
       status.textContent = message || '';
@@ -6278,7 +6282,7 @@
     function showStation(remote) {
       station.replaceChildren();
       if (!state.token_configured) {
-        station.textContent = 'Paste the station token from BirdWeather.';
+        station.textContent = 'Create a BirdWeather station, then paste its token here.';
         return;
       }
       remote = remote || state.station;
@@ -6303,11 +6307,52 @@
         station.textContent = 'BirdWeather could not be reached.';
       }
     }
+    function detailsAreOpen() {
+      return detailsShell.getAttribute('data-open') === 'true';
+    }
+    function syncPrivacyPill() {
+      requestAnimationFrame(function () {
+        syncPill(privacy);
+        requestAnimationFrame(function () { syncPill(privacy); });
+      });
+    }
+    function finishDetailsOpen() {
+      if (!detailsAreOpen()) return;
+      detailsShell.setAttribute('data-settled', 'true');
+      syncPrivacyPill();
+    }
+    function finishDetailsClose() {
+      if (detailsAreOpen()) return;
+      detailsShell.hidden = true;
+      detailsShell.setAttribute('data-settled', 'false');
+    }
     function openDetails(open, checkStation) {
-      details.hidden = !open;
+      clearTimeout(detailsTransitionTimer);
+      detailsShell.setAttribute('data-settled', 'false');
+      if (open) {
+        detailsShell.hidden = false;
+        detailsShell.inert = false;
+        detailsShell.setAttribute('aria-hidden', 'false');
+        void detailsShell.offsetHeight;
+        detailsShell.setAttribute('data-open', 'true');
+        syncPrivacyPill();
+        detailsTransitionTimer = setTimeout(finishDetailsOpen, 230);
+      } else {
+        detailsShell.setAttribute('data-open', 'false');
+        detailsShell.setAttribute('aria-hidden', 'true');
+        detailsShell.inert = true;
+        detailsTransitionTimer = setTimeout(finishDetailsClose, 180);
+      }
       disclosure.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (open && checkStation) probeStation();
     }
+    detailsShell.addEventListener('transitionend', function (event) {
+      if (event.target === detailsShell && event.propertyName === 'grid-template-rows') {
+        clearTimeout(detailsTransitionTimer);
+        if (detailsAreOpen()) finishDetailsOpen();
+        else finishDetailsClose();
+      }
+    });
     function applyState(next) {
       probeSequence += 1;
       draftEnable = false;
@@ -6384,7 +6429,8 @@
     }
 
     disclosure.addEventListener('click', function () {
-      openDetails(details.hidden, details.hidden);
+      var open = !detailsAreOpen();
+      openDetails(open, open);
     });
     mainSwitch.addEventListener('click', function () {
       if (busy) return;
@@ -8293,8 +8339,7 @@
           + themeRow()
           + labelsRow()
           + atlasAlwaysAllRow()
-          + '</section><section class="settings-access">'
-          + '<h2>Access</h2>'
+          + '</section><section>'
           + lanAuthRow(security)
           + passwordChangeRow(security)
           + '</section><section>'
@@ -8306,10 +8351,8 @@
           + stationRow(v)
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'for regional species filters', sec.EBIRD_API_KEY)
-          + '</section><section class="settings-sharing">'
-          + '<h2>Sharing</h2>'
+          + '</section><section class="settings-retention">'
           + birdweatherRow(birdweather)
-          + '</section><section>'
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
             { v: 'keep', label: 'keep' },
