@@ -15,12 +15,20 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/admin-auth.php';
-avian_require_admin();
+
+$what = (string)($_GET['what'] ?? '');
+$grant = (string)($_GET['grant'] ?? '');
+if ($grant !== '') {
+    if (!avian_consume_admin_download_grant($_SERVER, $what, $grant)) {
+        avian_api_fail(401, 'download authorization expired');
+    }
+} else {
+    avian_require_admin();
+}
 
 $BIRDNETPI_DIR = dirname(__DIR__, 2);
 $DB_PATH   = "$BIRDNETPI_DIR/scripts/birds.db";
 $EXTRACTED = dirname($BIRDNETPI_DIR) . '/BirdSongs/Extracted';
-$what = $_GET['what'] ?? '';
 
 if ($what === 'detections') {
     if (!file_exists($DB_PATH)) {

@@ -10,9 +10,9 @@
 //   restart   - POST &unit=<name>: restart a single service (whitelisted)
 //   diag      - everything in one go (system + services + recent logs)
 //
-// Direct requests on the station's private address are available without a
-// password. Forwarded and public-host requests verify BirdNET-Pi's configured
-// admin password here.
+// Direct requests on the station's private address may be available without a
+// password. The station owner can require the configured admin password there
+// too. Forwarded and public-host requests always require it.
 //
 // Every sudo call passes -n so it can never sit waiting for a password:
 // php-fpm has no tty to answer one, and the request would just hang until
@@ -209,7 +209,7 @@ function read_conf_summary(string $p): array {
     return ['readable' => true, 'values' => $vals];
 }
 
-// Whitelisted units we'll surface in the system page + allow restart on.
+// Whitelisted units surfaced in the system page and logs.
 // Includes both 8.2 and 8.4 php-fpm so older Debian + Trixie both report
 // the right unit name; missing units come back as "inactive (not-found)".
 const ALLOWED_UNITS = [
@@ -225,6 +225,19 @@ const ALLOWED_UNITS = [
     'php8.4-fpm',
     'php8.3-fpm',
     'php8.2-fpm',
+];
+
+// Never synchronously restart the web server or PHP worker from the request
+// they are serving. These remain visible for status and logs only.
+const RESTARTABLE_UNITS = [
+    'birdnet_recording',
+    'birdnet_analysis',
+    'birdnet_log',
+    'birdnet_stats',
+    'spectrogram_viewer',
+    'livestream',
+    'chart_viewer',
+    'icecast2',
 ];
 
 function services_status(): array {
@@ -243,6 +256,7 @@ function services_status(): array {
             'active'  => $state,
             'enabled' => $enabled,
             'since'   => $since ?: null,
+            'restartable' => in_array($u, RESTARTABLE_UNITS, true),
         ];
     }
     return $out;
@@ -299,9 +313,9 @@ switch ($action) {
     case 'restart': {
         avian_require_json_action();
         $unit = (string)($_GET['unit'] ?? '');
-        if (!in_array($unit, ALLOWED_UNITS, true)) {
+        if (!in_array($unit, RESTARTABLE_UNITS, true)) {
             http_response_code(400);
-            echo json_encode(['error' => 'unit not allowed', 'allowed' => ALLOWED_UNITS]);
+            echo json_encode(['error' => 'unit is status-only', 'allowed' => RESTARTABLE_UNITS]);
             break;
         }
         $rc = 0;

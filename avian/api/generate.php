@@ -16,7 +16,8 @@
 //
 // Uses the Gemini key saved via the settings panel (GEMINI_API_KEY in
 // birdnet.conf). Direct private-address requests are available without a
-// password; forwarded and public-host requests require the station password.
+// password unless the owner enables the LAN admin gate. Forwarded and
+// public-host requests always require the station password.
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
