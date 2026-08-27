@@ -13,14 +13,14 @@
 function systemTheme(){try{return window.matchMedia&&window.matchMedia(q).matches?'dark':'light';}catch(e){return'light';}}
 function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
 var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemTheme());})();</script>
-<link rel="stylesheet" href="./styles.css?v=r167">
+<link rel="stylesheet" href="./styles.css?v=r171">
   <link rel="stylesheet" href="./stamps.css?v=r355">
   <link rel="stylesheet" href="./stamp-batch-root.css?v=r254">
   <link rel="stylesheet" href="./stamp-batch-a.css?v=r257">
     <link rel="stylesheet" href="./stamp-batch-b.css?v=r319">
   <link rel="stylesheet" href="./stamp-batch-c.css?v=r230">
 </head>
-<body class="av-local">
+<body>
 <!-- Pill in the top-left slot, only visible on admin overlays
      (body.admin-on); CSS in styles.css hides it everywhere else.
      href="/" returns to the collage view via a full reload, which is
@@ -54,10 +54,12 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     <div class="menu-sheet">
   <div id="dd-locked">
     <form class="lock-row" id="unlockForm">
-      <input id="lockPass" type="password" placeholder="password" autocomplete="current-password">
-      <button type="submit" aria-label="unlock">→</button>
+      <label class="sr-only" for="lockPass">Admin password</label>
+      <input id="lockPass" type="password" placeholder="admin password" autocomplete="current-password" aria-describedby="lockHint lockTransport">
+      <button type="submit" aria-label="Unlock admin controls">→</button>
     </form>
-    <p class="lock-hint" id="lockHint">enter password to unlock tools.</p>
+    <p class="lock-hint" id="lockHint" role="status" aria-live="polite" aria-atomic="true">unlock Settings, System, Logs, and Tools.</p>
+    <p class="lock-transport" id="lockTransport" hidden>Plain HTTP does not protect this password from other devices on the network.</p>
   </div>
   <nav class="menu-items" id="dd-items"></nav>
   <p class="built-by">built by <a href="https://theodore.net" target="_blank" rel="noopener">teddy</a> · <a href="https://github.com/Twarner491/AvianVisitors" target="_blank" rel="noopener">github</a></p>
@@ -315,10 +317,8 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 </nav>
 
 
-<!-- AvianVisitors: empty admin-screen stub. The live JS expects this
-     element to exist (openAdmin/closeAdmin call setAttribute on it).
-     Menu items navigate to BirdNET-Pi's stock pages instead of opening
-     in-app admin views, so this stays empty. -->
+<!-- Native Settings, System, Logs, and Tools views render here. The live JS
+     clears this workspace whenever the admin session locks or changes. -->
 <section class="admin-screen" id="adminScreen" aria-hidden="true">
   <div class="admin-frame">
     <header class="admin-title"><h1 id="adminTitle"></h1></header>
@@ -385,6 +385,6 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r235"></script>
-<script src="./apt.js?v=r181"></script>
+<script src="./apt.js?v=r191"></script>
 </body>
 </html>

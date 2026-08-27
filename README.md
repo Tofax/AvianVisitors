@@ -58,6 +58,18 @@ Stock BirdNET-Pi pages still render, but privileged legacy controls are not enab
 
 Optional Google Drive backups are set up under **Tools → Your data → Drive archive**. Local cleanup stays unavailable until an archive run has been verified.
 
+### Local admin access
+
+The local-network password gate is off by default. To enable it, open **Settings → Access**, confirm the change, and enter the station admin password. Collage, Stats, Atlas, public recordings, and bird postcards remain available without signing in. Live audio closes while the gate is required.
+
+If no password is configured, or the state is missing or invalid, recover it from an SSH session:
+
+```bash
+sudo /usr/local/sbin/avian-admin-control password-reset
+```
+
+The command prompts privately for a new password. Return to **Settings → Access** after it finishes.
+
 ### Updating an existing station
 
 For the first v1 update, keep the existing checkout and run:

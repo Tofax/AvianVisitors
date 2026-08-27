@@ -4902,7 +4902,38 @@
   var locked = document.getElementById('dd-locked');
   var items = document.getElementById('dd-items');
   var lockHint = document.getElementById('lockHint');
+  var lockTransport = document.getElementById('lockTransport');
   var resetLiveAudioTransientState = null;
+  var stopLiveAudioNow = null;
+  var adminAccessState = 'checking';
+  var pendingAdminSection = null;
+  var adminAuthMeta = { required: false, lan_policy: false, password_configured: false };
+  var ADMIN_IDLE_MS = 30 * 60 * 1000;
+  var ADMIN_ACTIVITY_PING_MS = 60 * 1000;
+  var ADMIN_ACTIVITY_PUBLISH_MS = 1000;
+  var ADMIN_ACTIVITY_KEY = 'avian:admin-activity';
+  var ADMIN_LOCK_KEY = 'avian:admin-lock';
+  var ADMIN_SESSION_KEY = 'avian:admin-session';
+  var adminIdleTimer = null;
+  var adminLastActivityAt = 0;
+  var adminLastActivityPingAt = 0;
+  var adminLastActivityPublishedAt = 0;
+  var adminActivityPublishTimer = null;
+  var adminAutoLocking = false;
+  var adminAuthGeneration = 0;
+  var adminViewGeneration = 0;
+  var adminUnlockProbeGeneration = 0;
+  var pendingAdminNotice = null;
+  var adminChannel = null;
+
+  try {
+    if (window.BroadcastChannel) adminChannel = new BroadcastChannel('avian-admin-auth');
+  } catch (e) {}
+
+  if (lockTransport) {
+    var loopbackPreview = /^(localhost|127(?:[.]\d{1,3}){3}|\[?::1\]?)$/i.test(location.hostname);
+    lockTransport.hidden = location.protocol === 'https:' || loopbackPreview;
+  }
 
   var SHEET_R = 14;            // the sheet's resting corner, from styles.css
   // Reversing mid-flight should cost the travel that is left, not the
@@ -5153,48 +5184,388 @@
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
-  // A direct LAN request opens immediately. A public or forwarded request
-  // returns 401 until the station password establishes its private session.
+  function showAdminLocked(message, recovery) {
+    if (adminSect) pendingAdminSection = adminSect;
+    if (!pendingAdminSection && typeof readAdminHash === 'function') {
+      pendingAdminSection = readAdminHash();
+    }
+    if (stopLiveAudioNow) stopLiveAudioNow();
+    lockVisibleGenerateForAuth();
+    adminAccessState = 'locked';
+    adminUnlockProbeGeneration += 1;
+    adminAuthGeneration += 1;
+    adminViewGeneration += 1;
+    if (adminIdleTimer) { clearTimeout(adminIdleTimer); adminIdleTimer = null; }
+    if (adminActivityPublishTimer) {
+      clearTimeout(adminActivityPublishTimer);
+      adminActivityPublishTimer = null;
+    }
+    discardPendingSettings();
+    document.body.classList.remove('av-local');
+    document.body.classList.add('av-forwarded');
+    if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
+    if (adminBody) adminBody.replaceChildren();
+    if (adminEl) adminEl.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('admin-on');
+    adminSect = null;
+    items.classList.remove('show');
+    items.replaceChildren();
+    locked.style.display = '';
+    lockHint.textContent = recovery
+      ? 'Admin password is missing or invalid. Over SSH, run sudo /usr/local/sbin/avian-admin-control password-reset.'
+      : (message || 'Your admin session expired. Unlock to continue.');
+    lockHint.classList.toggle('lock-err', true);
+    if (pendingAdminSection) {
+      openDd();
+      setTimeout(function () { focusEl(document.getElementById('lockPass')); }, 0);
+    }
+  }
+
+  function AdminAuthCancelled(reason) {
+    this.name = 'AdminAuthCancelled';
+    this.message = reason || 'admin authentication changed';
+    this.adminAuthCancelled = true;
+  }
+  AdminAuthCancelled.prototype = Object.create(Error.prototype);
+  AdminAuthCancelled.prototype.constructor = AdminAuthCancelled;
+  function adminAuthCancelled(error) {
+    return !!(error && error.adminAuthCancelled);
+  }
+  function cancelledAdminRequest(reason) {
+    return Promise.reject(new AdminAuthCancelled(reason));
+  }
+
+  function guardAdminResponse(response, authGeneration, viewGeneration) {
+    ['json', 'text', 'blob', 'arrayBuffer', 'formData'].forEach(function (method) {
+      if (typeof response[method] !== 'function') return;
+      var original = response[method].bind(response);
+      try {
+        response[method] = function () {
+          return original().then(function (body) {
+            if (authGeneration !== adminAuthGeneration
+              || viewGeneration !== adminViewGeneration) {
+              throw new AdminAuthCancelled('stale admin response body');
+            }
+            return body;
+          });
+        };
+      } catch (e) {}
+    });
+    return response;
+  }
+
+  function signalAdminLock(message) {
+    var event = { type: 'lock', at: Date.now(), message: message || 'Admin controls locked.' };
+    try { localStorage.setItem(ADMIN_LOCK_KEY, JSON.stringify(event)); } catch (e) {}
+    if (adminChannel) {
+      try { adminChannel.postMessage(event); } catch (e) {}
+    }
+  }
+
+  function writeAdminActivity(at) {
+    at = Math.min(Date.now(), Math.max(0, at || Date.now()));
+    adminLastActivityAt = Math.max(adminLastActivityAt, at);
+    adminLastActivityPublishedAt = Date.now();
+    try { localStorage.setItem(ADMIN_ACTIVITY_KEY, String(at)); } catch (e) {}
+    if (adminChannel) {
+      try { adminChannel.postMessage({ type: 'activity', at: at }); } catch (e) {}
+    }
+  }
+
+  function publishAdminActivity(at, immediate) {
+    var now = Date.now();
+    at = Math.min(now, Math.max(0, at || now));
+    adminLastActivityAt = Math.max(adminLastActivityAt, at);
+    var remaining = ADMIN_ACTIVITY_PUBLISH_MS - (now - adminLastActivityPublishedAt);
+    if (immediate || remaining <= 0) {
+      if (adminActivityPublishTimer) clearTimeout(adminActivityPublishTimer);
+      adminActivityPublishTimer = null;
+      writeAdminActivity(adminLastActivityAt);
+      return;
+    }
+    if (!adminActivityPublishTimer) {
+      adminActivityPublishTimer = setTimeout(function () {
+        adminActivityPublishTimer = null;
+        writeAdminActivity(adminLastActivityAt);
+      }, remaining);
+    }
+  }
+
+  function signalAdminSessionReplacement() {
+    var event = { type: 'session-replaced', at: Date.now() };
+    try { localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(event)); } catch (e) {}
+    if (adminChannel) {
+      try { adminChannel.postMessage(event); } catch (e) {}
+    }
+  }
+
+  function sessionReplaced(notice) {
+    if (notice) pendingAdminNotice = { message: notice, error: true };
+    publishAdminActivity(Date.now(), true);
+    signalAdminSessionReplacement();
+    showAdminLocked('Updating admin session...', false);
+    tryAutoUnlock();
+  }
+
+  function sharedAdminActivity() {
+    var stored = 0;
+    try { stored = parseInt(localStorage.getItem(ADMIN_ACTIVITY_KEY) || '0', 10) || 0; } catch (e) {}
+    if (stored > Date.now() + 60000 || stored < 0) stored = 0;
+    return Math.max(adminLastActivityAt, stored);
+  }
+
+  function receiveAdminAuthEvent(event) {
+    var data = event && event.data ? event.data : event;
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'activity' && Number.isFinite(data.at)
+      && data.at >= 0 && data.at <= Date.now() + 60000) {
+      adminLastActivityAt = Math.max(adminLastActivityAt, data.at);
+      scheduleAdminIdleLock();
+    } else if (data.type === 'lock') {
+      showAdminLocked(data.message || 'Admin controls locked in another tab.', false);
+      // A stale request from another tab can report its old session after a
+      // policy or password change has already installed a fresh shared cookie.
+      // Recheck the server. A real logout stays locked because that probe is 401.
+      tryAutoUnlock();
+    } else if (data.type === 'session-replaced') {
+      showAdminLocked('Admin session changed in another tab.', false);
+      tryAutoUnlock();
+    }
+  }
+  if (adminChannel) adminChannel.addEventListener('message', receiveAdminAuthEvent);
+  window.addEventListener('storage', function (event) {
+    if (event.key === ADMIN_ACTIVITY_KEY) {
+      var at = parseInt(event.newValue || '0', 10) || 0;
+      receiveAdminAuthEvent({ type: 'activity', at: at });
+    } else if (event.key === ADMIN_LOCK_KEY && event.newValue) {
+      try { receiveAdminAuthEvent(JSON.parse(event.newValue)); } catch (e) {}
+    } else if (event.key === ADMIN_SESSION_KEY && event.newValue) {
+      try { receiveAdminAuthEvent(JSON.parse(event.newValue)); } catch (e) {}
+    }
+  });
+
+  function adminFetch(url, options) {
+    options = options || {};
+    if (!options.credentials) options.credentials = 'same-origin';
+    if (!options.cache) options.cache = 'no-store';
+    var requestGeneration = adminAuthGeneration;
+    var requestViewGeneration = adminViewGeneration;
+    if (adminAccessState === 'locked') return cancelledAdminRequest('admin controls are locked');
+    return fetch(url, options).then(function (response) {
+      if (requestGeneration !== adminAuthGeneration
+        || requestViewGeneration !== adminViewGeneration) {
+        return cancelledAdminRequest('stale admin response');
+      }
+      if (response.status !== 401) {
+        return guardAdminResponse(response, requestGeneration, requestViewGeneration);
+      }
+      return response.clone().json().catch(function () { return {}; }).then(function (body) {
+        if (requestGeneration !== adminAuthGeneration
+          || requestViewGeneration !== adminViewGeneration) {
+          return cancelledAdminRequest('stale admin error response');
+        }
+        showAdminLocked('Your admin session expired. Unlock to continue.', !!body.recovery);
+        signalAdminLock('Admin session expired. Unlock to continue.');
+        tryAutoUnlock();
+        return cancelledAdminRequest('admin session expired');
+      });
+    }, function (error) {
+      if (requestGeneration !== adminAuthGeneration
+        || requestViewGeneration !== adminViewGeneration) {
+        return cancelledAdminRequest('stale admin response');
+      }
+      throw error;
+    });
+  }
+
+  function pingAdminActivity() {
+    var now = Date.now();
+    if (adminAccessState !== 'unlocked' || !adminAuthMeta.required
+      || now - adminLastActivityPingAt < ADMIN_ACTIVITY_PING_MS) return;
+    adminLastActivityPingAt = now;
+    adminFetch('./avian/api/menu.php?action=activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+      body: '{}',
+    }).then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+    }).catch(function (error) {
+      if (!adminAuthCancelled(error)) adminLastActivityPingAt = 0;
+    });
+  }
+
+  function lockAdminSession() {
+    return fetch('./avian/api/menu.php?action=lock', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+      body: '{}',
+    }).then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response;
+    });
+  }
+
+  function idleLockAdminSession() {
+    return fetch('./avian/api/menu.php?action=idle-lock', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+      body: '{}',
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok || !body.ok) throw new Error(body.error || ('HTTP ' + response.status));
+        return body;
+      });
+    });
+  }
+
+  function scheduleAdminIdleLock() {
+    if (adminIdleTimer) clearTimeout(adminIdleTimer);
+    adminIdleTimer = null;
+    if (adminAccessState !== 'unlocked' || !adminAuthMeta.required) return;
+    adminLastActivityAt = sharedAdminActivity();
+    var remaining = ADMIN_IDLE_MS - (Date.now() - adminLastActivityAt);
+    if (remaining <= 0) {
+      if (adminAutoLocking) return;
+      adminAutoLocking = true;
+      var idleAuthGeneration = adminAuthGeneration;
+      var idleViewGeneration = adminViewGeneration;
+      idleLockAdminSession().then(function (result) {
+        if (idleAuthGeneration !== adminAuthGeneration
+          || idleViewGeneration !== adminViewGeneration) {
+          tryAutoUnlock();
+          return;
+        }
+        if (!result.locked) {
+          adminLastActivityAt = Date.now() - ADMIN_IDLE_MS + Math.max(1, result.remaining) * 1000;
+          scheduleAdminIdleLock();
+          return;
+        }
+        var message = 'Admin controls locked after 30 minutes of inactivity.';
+        showAdminLocked(message, !!result.recovery);
+        signalAdminLock(message);
+      }).catch(function () {
+        if (idleAuthGeneration !== adminAuthGeneration
+          || idleViewGeneration !== adminViewGeneration) {
+          tryAutoUnlock();
+          return;
+        }
+        showAdminLocked('Admin controls are hidden because the session status could not be checked. Unlock to continue.', false);
+      }).then(function () { adminAutoLocking = false; });
+      return;
+    }
+    adminIdleTimer = setTimeout(scheduleAdminIdleLock, remaining);
+  }
+
+  function noteAdminActivity(event) {
+    if (!event.isTrusted || adminAccessState !== 'unlocked' || !adminAuthMeta.required) return;
+    if (!shell.contains(event.target) && !(adminEl && adminEl.contains(event.target))) return;
+    publishAdminActivity(Date.now());
+    pingAdminActivity();
+    scheduleAdminIdleLock();
+  }
+  document.addEventListener('pointerdown', noteAdminActivity, true);
+  document.addEventListener('keydown', noteAdminActivity, true);
+  document.addEventListener('touchstart', noteAdminActivity, { capture: true, passive: true });
+  document.addEventListener('wheel', noteAdminActivity, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) {
+      adminLastActivityAt = sharedAdminActivity();
+      scheduleAdminIdleLock();
+    }
+  });
+  window.addEventListener('pageshow', function () {
+    adminLastActivityAt = sharedAdminActivity();
+    scheduleAdminIdleLock();
+  });
+  function adminJson(url) {
+    return adminFetch(url).then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.json();
+    });
+  }
+
+  // The first request decides whether this browser needs the station password.
+  // Until it resolves, the drawer remains in its neutral locked state.
   function tryAutoUnlock() {
-    fetch('./avian/api/menu.php', { credentials: 'same-origin' }).then(function (r) {
+    var probeGeneration = ++adminUnlockProbeGeneration;
+    return fetch('./avian/api/menu.php', { credentials: 'same-origin' }).then(function (r) {
+      if (probeGeneration !== adminUnlockProbeGeneration) return;
       if (r.status === 200) {
         return r.json().then(function (j) {
-          renderMenu(j.items || []);
+          if (probeGeneration !== adminUnlockProbeGeneration) return;
+          renderMenu(j.items || [], j.auth || {});
           // Notification dot on the menu button itself when something
           // inside is waiting (instant cutouts awaiting their upgrade).
           menuBtn.classList.toggle('has-dot', (j.chroma || 0) > 0);
         });
       }
       if (r.status === 401) {
-        document.body.classList.remove('av-local');
-        document.body.classList.add('av-forwarded');
-        locked.style.display = '';
-        items.classList.remove('show');
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (probeGeneration !== adminUnlockProbeGeneration) return;
+          showAdminLocked('Unlock Settings, System, Logs, and Tools.', !!j.recovery);
+        });
       }
     }).catch(function () { });
   }
   tryAutoUnlock();
 
+  function adminPasswordBytes(value) {
+    if (typeof value !== 'string' || /[\u0000-\u001f\u007f]/.test(value)
+      || typeof TextEncoder !== 'function') return null;
+    var bytes = new TextEncoder().encode(value);
+    return bytes.length >= 1 && bytes.length <= 64 ? bytes : null;
+  }
+
+  function adminBasicAuthorization(value) {
+    var passwordBytes = adminPasswordBytes(value);
+    if (!passwordBytes) return null;
+    var prefix = new TextEncoder().encode('birdnet:');
+    var binary = '';
+    prefix.forEach(function (byte) { binary += String.fromCharCode(byte); });
+    passwordBytes.forEach(function (byte) { binary += String.fromCharCode(byte); });
+    return 'Basic ' + btoa(binary);
+  }
+
   document.getElementById('unlockForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    // BirdNET-Pi's upstream Caddyfile basicauth user is `birdnet`.
-    // If your install changed it (custom Caddyfile), set window.AV_AUTH_USER
-    // before this script loads - e.g. an inline <script> in index.html.
-    var u = (window.AV_AUTH_USER || 'birdnet');
-    var p = document.getElementById('lockPass').value;
-    var hdr = 'Basic ' + btoa(u + ':' + p);
+    var passInput = document.getElementById('lockPass');
+    var p = passInput.value;
+    var hdr = adminBasicAuthorization(p);
+    if (!hdr) {
+      passInput.value = '';
+      lockHint.textContent = 'Password must use 1 to 64 UTF-8 bytes without control characters.';
+      lockHint.classList.add('lock-err');
+      passInput.focus();
+      return;
+    }
+    passInput.value = '';
+    p = '';
     // The password is sent once. The API returns a password-bound HttpOnly
     // session for later Settings, System, Logs, and Tools requests.
     fetch('./avian/api/menu.php', {
       method: 'POST',
-      headers: { 'Authorization': hdr },
+      headers: { 'Authorization': hdr, 'X-Avian-Credential': '1' },
       credentials: 'same-origin',
     }).then(function (r) {
       if (r.status === 200) {
-        return r.json().then(function (j) { renderMenu(j.items || []); });
+        return r.json().then(function (j) {
+          lockHint.classList.remove('lock-err');
+          lockHint.textContent = 'unlock Settings, System, Logs, and Tools.';
+          publishAdminActivity(Date.now(), true);
+          renderMenu(j.items || [], j.auth || {});
+        });
       } else if (r.status === 401) {
-        lockHint.textContent = 'wrong password.';
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          lockHint.textContent = body.recovery
+            ? 'Admin password is missing or invalid. Over SSH, run sudo /usr/local/sbin/avian-admin-control password-reset.'
+            : 'Wrong password.';
+          lockHint.classList.add('lock-err');
+          passInput.focus();
+        });
+      } else if (r.status === 429) {
+        lockHint.textContent = 'Too many attempts. Try again shortly.';
         lockHint.classList.add('lock-err');
+        passInput.focus();
       } else {
         lockHint.textContent = 'auth unavailable.';
         lockHint.classList.add('lock-err');
@@ -5211,7 +5582,16 @@
   //   - small ADVANCED TOOLS grid for the rest of BirdNET-Pi (still
   //     opens externally; rebuilding all of these in our design is on
   //     the follow-up list)
-  function renderMenu(menu) {
+  function renderMenu(menu, auth) {
+    adminUnlockProbeGeneration += 1;
+    adminAccessState = 'unlocked';
+    adminAuthMeta = auth || {};
+    adminLastActivityAt = sharedAdminActivity() || Date.now();
+    scheduleAdminIdleLock();
+    resumeVisibleGenerateAfterAuth();
+    if (adminAuthMeta.lan_policy && stopLiveAudioNow) stopLiveAudioNow();
+    document.body.classList.toggle('av-local', !adminAuthMeta.required);
+    document.body.classList.toggle('av-forwarded', !!adminAuthMeta.required);
     locked.style.display = 'none';
     items.classList.add('show');
     var audioHost = location.hostname.toLowerCase();
@@ -5240,6 +5620,7 @@
       var dot = it.dot ? '<i class="notif-dot"></i>' : '';
       return '<a' + cls + ' href="' + it.href + '"' + attrs + '><span>' + label + dot + '</span></a>';
     }).join('');
+    if (adminAuthMeta.lan_policy) localAudio = false;
     var liveAudioHtml = localAudio ?
       '<div class="live-audio" id="liveAudio" data-on="false" data-state="idle">'
       + '  <div class="pulse"></div>'
@@ -5253,8 +5634,30 @@
       // real time. No separate toggle.
       + '<canvas class="live-spectro" id="liveSpectro" width="600" height="120" aria-label="live spectrogram"></canvas>'
       + '<div class="live-status" id="liveStatus" role="status" aria-live="polite" aria-atomic="true"></div>'
+      : (adminAuthMeta.lan_policy
+        ? '<p class="live-policy-note">Live audio is unavailable while local password protection is on.</p>'
+        : '');
+    var lockHtml = adminAuthMeta.required
+      ? '<button type="button" class="menu-lock" id="adminLock">lock admin controls</button>'
       : '';
-    items.innerHTML = liveAudioHtml + '<div class="menu-links">' + linksHtml + '</div>';
+    items.innerHTML = liveAudioHtml + '<div class="menu-links">' + linksHtml + '</div>' + lockHtml;
+
+    var adminLock = document.getElementById('adminLock');
+    if (adminLock) adminLock.addEventListener('click', function () {
+      adminLock.disabled = true;
+      lockAdminSession().then(function () {
+        showAdminLocked('Admin controls locked.', false);
+        signalAdminLock('Admin controls locked.');
+      }).catch(function () {
+        adminLock.disabled = false;
+      });
+    });
+
+    if (pendingAdminSection) {
+      var destination = pendingAdminSection;
+      pendingAdminSection = null;
+      setTimeout(function () { openAdmin(destination); }, 0);
+    }
 
     // Clicking a nav link (settings / system / logs / tools) collapses the
     // menu back into the button - it has opened (or navigated to) its page,
@@ -5267,6 +5670,7 @@
     });
     if (!localAudio) {
       resetLiveAudioTransientState = function () {};
+      stopLiveAudioNow = null;
       return;
     }
 
@@ -5351,6 +5755,7 @@
     resetLiveAudioTransientState = function () {
       if (liveState === 'connecting' || liveState === 'error') stopAudio();
     };
+    stopLiveAudioNow = stopAudio;
     function attachSpectrogram() {
       if (!liveEl) return;
       if (!audioCtx) {
@@ -5464,7 +5869,7 @@
     });
   }
 
-  // Pending changes (key -> value), saved on click of the Save button.
+  // Pending changes (key -> value), written by the serialized autosave queue.
   var pending = {};
 
   function setSaveState(msg, cls) {
@@ -5475,6 +5880,18 @@
   // so the delay is long enough that a slider being dragged or a key being
   // typed settles into one write rather than a burst of them.
   var autoSaveT = null;
+  var settingsSaveBusy = false;
+  function discardPendingSettings() {
+    if (autoSaveT) clearTimeout(autoSaveT);
+    autoSaveT = null;
+    pending = {};
+    setSaveState('');
+  }
+  function restoreSubmittedSettings(submitted) {
+    Object.keys(submitted).forEach(function (key) {
+      if (!Object.prototype.hasOwnProperty.call(pending, key)) pending[key] = submitted[key];
+    });
+  }
   function queueSave(delay) {
     if (!Object.keys(pending).length) return;
     setSaveState('saving...');
@@ -5602,9 +6019,274 @@
       + '    aria-checked="' + (on ? 'true' : 'false') + '" data-atlas-always-all></button>'
       + '</div>';
   }
+  function lanAuthRow(security) {
+    security = security || {};
+    var on = !!security.lan_admin_auth;
+    var configured = !!security.password_configured;
+    var reconciliationNeeded = !!security.policy_reconciliation_needed;
+    var hint = reconciliationNeeded
+      ? 'the loaded access policy differs from this saved setting'
+      : configured
+      ? 'lock Settings, System, Logs, and Tools on direct local connections'
+      : 'From SSH, run: sudo /usr/local/sbin/avian-admin-control password-reset';
+    return ''
+      + '<div class="lan-auth-control" data-lan-auth-control>'
+      + '  <div class="menu-row">'
+      + '    <div><span class="label">Require password on local network</span>'
+      + '      <span class="hint" id="lanAuthHint">' + hint + '</span></div>'
+      + '    <button type="button" class="switch" role="switch" data-lan-auth'
+      + '      aria-label="Require password on local network" aria-describedby="lanAuthHint"'
+      + '      aria-checked="' + (on ? 'true' : 'false') + '"'
+      + ((!configured && !on) ? ' disabled' : '') + '></button>'
+      + '  </div>'
+      + (reconciliationNeeded
+        ? '  <button type="button" class="chip lan-auth-reconcile" data-lan-auth-reconcile>reapply saved access setting</button>'
+        : '')
+      + '  <form class="lan-auth-confirm" data-lan-auth-confirm hidden>'
+      + '    <label for="lanAuthPassword">Confirm your admin password</label>'
+      + '    <div><input id="lanAuthPassword" type="password" autocomplete="current-password">'
+      + '      <button type="submit" class="chip">turn on</button>'
+      + '      <button type="button" class="chip" data-lan-auth-cancel>cancel</button></div>'
+      + '  </form>'
+      + '  <p class="lan-auth-warning">Collage, Atlas, Stats, and recordings stay public. Live audio is unavailable while this setting is on. On plain HTTP, this blocks casual access but does not protect your password from a hostile network.</p>'
+      + '  <p class="lan-auth-status" data-lan-auth-status role="status" aria-live="polite" aria-atomic="true"></p>'
+      + '</div>';
+  }
+
+  function passwordChangeRow(security) {
+    security = security || {};
+    if (!security.password_configured) return '';
+    return ''
+      + '<div class="password-change-control" data-password-change>'
+      + '  <button type="button" class="chip" data-password-change-open>change admin password</button>'
+      + '  <form class="password-change-form" data-password-change-form hidden>'
+      + '    <span class="hint">New password: 12 to 64 letters or numbers.</span>'
+      + '    <label>Current password<input type="password" data-password-current autocomplete="current-password" minlength="1" maxlength="64" required></label>'
+      + '    <label>New password<input type="password" data-password-new autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+      + '    <label>Confirm new password<input type="password" data-password-confirm autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+      + '    <div><button type="submit" class="chip">change password</button>'
+      + '      <button type="button" class="chip" data-password-change-cancel>cancel</button></div>'
+      + '  </form>'
+      + '  <p class="lan-auth-status" data-password-change-status role="status" aria-live="polite" aria-atomic="true"></p>'
+      + '</div>';
+  }
+
+  function wireLanAuthControl(scope, security) {
+    var control = scope.querySelector('[data-lan-auth-control]');
+    if (!control) return;
+    var sw = control.querySelector('[data-lan-auth]');
+    var form = control.querySelector('[data-lan-auth-confirm]');
+    var password = control.querySelector('#lanAuthPassword');
+    var status = control.querySelector('[data-lan-auth-status]');
+    var cancel = control.querySelector('[data-lan-auth-cancel]');
+    var reconcile = control.querySelector('[data-lan-auth-reconcile]');
+    var submit = form.querySelector('[type="submit"]');
+    var desired = true;
+
+    function note(message, error) {
+      status.textContent = message || '';
+      status.classList.toggle('err', !!error);
+    }
+    function save(enabled, authorization) {
+      if (enabled && stopLiveAudioNow) stopLiveAudioNow();
+      sw.disabled = true;
+      note('saving...', false);
+      var headers = { 'Content-Type': 'application/json', 'X-Avian-Action': '1' };
+      if (authorization) {
+        headers.Authorization = authorization;
+        headers['X-Avian-Credential'] = '1';
+      }
+      return fetch('./avian/api/config.php', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: headers,
+        body: JSON.stringify({ lan_admin_auth: enabled }),
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) {
+            var error = new Error(body.error || 'access setting failed');
+            error.status = response.status;
+            error.recovery = !!body.recovery;
+            error.reauth = !!body.reauth;
+            error.remediation = body.remediation || '';
+            throw error;
+          }
+          return body;
+        });
+      }).then(function () {
+        sessionReplaced();
+      }).catch(function (error) {
+        if (error.recovery) {
+          showAdminLocked('', true);
+          return;
+        }
+        if (error.reauth) {
+          sessionReplaced([error.message, error.remediation].filter(Boolean).join(' '));
+          return;
+        }
+        sw.disabled = false;
+        note([
+          error.status === 401 ? 'Wrong password.' : (error.message || 'access setting failed'),
+          error.remediation,
+        ].filter(Boolean).join(' '), true);
+        form.hidden = false;
+        password.focus();
+        if (error.status >= 500) tryAutoUnlock();
+      });
+    }
+
+    sw.addEventListener('click', function () {
+      var on = sw.getAttribute('aria-checked') === 'true';
+      if (on) {
+        if (!confirm('Turn off local admin password? Anyone on this network will be able to open Settings, System, Logs, and Tools.')) return;
+        desired = false;
+        submit.textContent = 'turn off';
+        form.hidden = false;
+        note('', false);
+        password.focus();
+      } else {
+        desired = true;
+        submit.textContent = 'turn on';
+        form.hidden = false;
+        note('', false);
+        password.focus();
+      }
+    });
+    if (reconcile) reconcile.addEventListener('click', function () {
+      desired = sw.getAttribute('aria-checked') === 'true';
+      submit.textContent = 'reapply';
+      form.hidden = false;
+      note('Confirm your password to reapply the saved setting.', false);
+      password.focus();
+    });
+    cancel.addEventListener('click', function () {
+      password.value = '';
+      form.hidden = true;
+      note('', false);
+      sw.focus();
+    });
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var value = password.value;
+      var authorization = adminBasicAuthorization(value);
+      if (!authorization) {
+        note('Password must use 1 to 64 UTF-8 bytes without control characters.', true);
+        password.focus();
+        return;
+      }
+      password.value = '';
+      value = '';
+      save(desired, authorization);
+      authorization = '';
+    });
+  }
+
+  function wirePasswordChange(scope) {
+    var control = scope.querySelector('[data-password-change]');
+    if (!control) return;
+    var open = control.querySelector('[data-password-change-open]');
+    var form = control.querySelector('[data-password-change-form]');
+    var current = control.querySelector('[data-password-current]');
+    var next = control.querySelector('[data-password-new]');
+    var confirmNext = control.querySelector('[data-password-confirm]');
+    var cancel = control.querySelector('[data-password-change-cancel]');
+    var status = control.querySelector('[data-password-change-status]');
+    function note(message, error) {
+      status.textContent = message || '';
+      status.classList.toggle('err', !!error);
+    }
+    function clear() {
+      current.value = '';
+      next.value = '';
+      confirmNext.value = '';
+    }
+    open.addEventListener('click', function () {
+      form.hidden = false;
+      open.hidden = true;
+      note('', false);
+      current.focus();
+    });
+    cancel.addEventListener('click', function () {
+      clear();
+      form.hidden = true;
+      open.hidden = false;
+      note('', false);
+      open.focus();
+    });
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var currentValue = current.value;
+      var nextValue = next.value;
+      var authorization = adminBasicAuthorization(currentValue);
+      if (!authorization) {
+        note('Current password must use 1 to 64 UTF-8 bytes without control characters.', true);
+        current.focus();
+        return;
+      }
+      if (!/^[A-Za-z0-9]{12,64}$/.test(nextValue)) {
+        note('New password must use 12 to 64 letters or numbers.', true);
+        next.focus();
+        return;
+      }
+      if (nextValue !== confirmNext.value) {
+        note('New passwords do not match.', true);
+        confirmNext.focus();
+        return;
+      }
+      var requestBody = JSON.stringify({ admin_password: nextValue });
+      clear();
+      currentValue = '';
+      nextValue = '';
+      note('changing password...', false);
+      Array.prototype.forEach.call(form.elements, function (element) { element.disabled = true; });
+      fetch('./avian/api/config.php', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Avian-Action': '1',
+          'X-Avian-Credential': '1',
+          'Authorization': authorization,
+        },
+        body: requestBody,
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) {
+            var error = new Error(body.error || 'password change failed');
+            error.status = response.status;
+            error.recovery = !!body.recovery;
+            error.reauth = !!body.reauth;
+            error.remediation = body.remediation || '';
+            throw error;
+          }
+          return body;
+        });
+      }).then(function () {
+        sessionReplaced();
+      }).catch(function (error) {
+        if (error.recovery) {
+          showAdminLocked('', true);
+          return;
+        }
+        if (error.reauth) {
+          sessionReplaced([error.message, error.remediation].filter(Boolean).join(' '));
+          return;
+        }
+        Array.prototype.forEach.call(form.elements, function (element) { element.disabled = false; });
+        note([
+          error.status === 401 ? 'Current password is incorrect.' : (error.message || 'password change failed'),
+          error.remediation,
+        ].filter(Boolean).join(' '), true);
+        current.focus();
+        if (error.status >= 500) tryAutoUnlock();
+      }).then(function () {
+        Array.prototype.forEach.call(form.elements, function (element) { element.disabled = false; });
+        requestBody = '';
+        authorization = '';
+      });
+    });
+  }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-atlas-always-all])').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-atlas-always-all]):not([data-lan-auth])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -5649,9 +6331,15 @@
 
   function saveSettings() {
     if (Object.keys(pending).length === 0) return;
-    var body = JSON.stringify(pending);
+    if (settingsSaveBusy) { queueSave(300); return; }
+    if (autoSaveT) clearTimeout(autoSaveT);
+    autoSaveT = null;
+    var submitted = pending;
+    pending = {};
+    var body = JSON.stringify(submitted);
+    settingsSaveBusy = true;
     setSaveState('saving...');
-    fetch('./avian/api/config.php', {
+    return adminFetch('./avian/api/config.php', {
       method: 'POST', body: body,
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
@@ -5659,14 +6347,22 @@
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
         if (res.ok && res.j.ok) {
-          pending = {};
           setSaveState('saved ✓', 'ok');
           setTimeout(function () { setSaveState(''); }, 1800);
         } else {
+          restoreSubmittedSettings(submitted);
           setSaveState('save failed', 'err');
         }
       })
-      .catch(function () { setSaveState('network error', 'err'); });
+      .catch(function (error) {
+        if (adminAuthCancelled(error)) return;
+        restoreSubmittedSettings(submitted);
+        setSaveState('network error', 'err');
+      })
+      .then(function () {
+        settingsSaveBusy = false;
+        submitted = {};
+      });
   }
 
   // ---- Hash routing + atlas detail modal ----
@@ -5935,31 +6631,71 @@
   // collage masks refresh in place. Cost control is the whole point -
   // people generate the birds they actually hear, not a whole region.
   var genPollT = null;
+  var activeGenerate = null;
   function genBtnState(btn, label, disabled) {
     btn.textContent = label;
     btn.disabled = !!disabled;
+  }
+  function lockVisibleGenerateForAuth() {
+    if (genPollT) { clearTimeout(genPollT); genPollT = null; }
+    var btn = document.getElementById('modalGenerate');
+    if (!btn || btn.hidden) return;
+    var interrupted = activeGenerate && activeGenerate.btn === btn
+      && activeGenerate.stillThere();
+    genBtnState(btn, interrupted
+      ? 'unlock in menu to check progress'
+      : 'unlock in menu to generate', false);
+  }
+  function resumeVisibleGenerateAfterAuth() {
+    var btn = document.getElementById('modalGenerate');
+    if (!btn || btn.hidden) return;
+    if (activeGenerate && activeGenerate.btn === btn
+      && activeGenerate.stillThere()) {
+      genBtnState(btn, 'checking progress...', true);
+      watchGenerate(btn, activeGenerate.sci, activeGenerate.stillThere,
+        activeGenerate.onDone, activeGenerate);
+      return;
+    }
+    activeGenerate = null;
+    if (/^unlock in menu/.test(btn.textContent || '')) {
+      genBtnState(btn, 'generate image', false);
+    }
+  }
+  function finishActiveGenerate(job) {
+    if (activeGenerate === job) activeGenerate = null;
   }
   // stillThere tells the poller whether its button is still the one on
   // screen: the modal may have moved to another bird, and the atlas may have
   // re-rendered the card out from under us. Without it the poll repaints
   // someone else's button.
-  function watchGenerate(btn, sci, stillThere, onDone) {
+  function watchGenerate(btn, sci, stillThere, onDone, job) {
     clearTimeout(genPollT);
-    fetchJson('./avian/api/generate.php?action=status').then(function (s) {
-      if (!stillThere()) return;
+    adminJson('./avian/api/generate.php?action=status').then(function (s) {
+      if (activeGenerate !== job) return;
+      if (!stillThere()) { finishActiveGenerate(job); return; }
       if (s.running) {
         genBtnState(btn, s.step === 'masks' ? 'finishing...' : 'generating...', true);
-        genPollT = setTimeout(function () { watchGenerate(btn, sci, stillThere, onDone); }, 4000);
+        genPollT = setTimeout(function () {
+          watchGenerate(btn, sci, stillThere, onDone, job);
+        }, 4000);
         return;
       }
       if (s.ok && s.sci === sci) {
+        finishActiveGenerate(job);
         genBtnState(btn, 'generated', true);
         justGenerated[sci] = Date.now();
         onDone();
       } else {
+        finishActiveGenerate(job);
         genBtnState(btn, 'failed, try again', false);
       }
-    }).catch(function () {
+    }).catch(function (error) {
+      if (activeGenerate !== job) return;
+      if (adminAuthCancelled(error)) {
+        if (stillThere()) genBtnState(btn, 'unlock in menu to check progress', false);
+        return;
+      }
+      finishActiveGenerate(job);
       if (stillThere()) genBtnState(btn, 'failed, try again', false);
     });
   }
@@ -5973,22 +6709,43 @@
       delete POSTCARD_POSE_CACHE[sci];
       loadTables(true);
     };
+    if (adminAccessState !== 'unlocked') {
+      genBtnState(btn, 'unlock in menu to generate', false);
+      openDd();
+      focusEl(document.getElementById('lockPass'));
+      return;
+    }
+    var job = { btn: btn, sci: sci, stillThere: stillThere, onDone: onDone };
+    activeGenerate = job;
     genBtnState(btn, 'starting...', true);
-    fetch('./avian/api/generate.php?action=start', {
+    adminFetch('./avian/api/generate.php?action=start', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
       body: JSON.stringify({ sci: sci }),
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
-        if (!stillThere()) return;
+        if (activeGenerate !== job || !stillThere()) return;
         if (!res.ok) {
           var why = (res.j && res.j.error) || 'failed';
+          if (why === 'busy') {
+            watchGenerate(btn, sci, stillThere, onDone, job);
+            return;
+          }
+          finishActiveGenerate(job);
           genBtnState(btn, why === 'no gemini key' ? 'add a gemini key in settings' : why, false);
           return;
         }
-        watchGenerate(btn, sci, stillThere, onDone);
+        watchGenerate(btn, sci, stillThere, onDone, job);
       })
-      .catch(function () { if (stillThere()) genBtnState(btn, 'failed, try again', false); });
+      .catch(function (error) {
+        if (activeGenerate !== job) return;
+        if (adminAuthCancelled(error)) {
+          if (stillThere()) genBtnState(btn, 'unlock in menu to check progress', false);
+          return;
+        }
+        finishActiveGenerate(job);
+        if (stillThere()) genBtnState(btn, 'failed, try again', false);
+      });
   }
   (function wireGenerate() {
     var btn = document.getElementById('modalGenerate');
@@ -6270,7 +7027,9 @@
     });
     if (genBtn) {
       genBtn.hidden = !needsArt;
-      if (needsArt) genBtnState(genBtn, 'generate image', false);
+      if (needsArt) genBtnState(genBtn,
+        adminAccessState === 'unlocked' ? 'generate image' : 'unlock in menu to generate',
+        false);
     }
 
     var imageReady;
@@ -6828,14 +7587,21 @@
     if (s < 86400) return Math.round(s / 3600) + 'h';
     return Math.round(s / 86400) + 'd';
   }
-  // Admin endpoints rely on the session cookie set by /api/auth/login -
-  // no Authorization header needed (and nothing sensitive in JS-readable
-  // storage). credentials: 'same-origin' is the default but spelled out
-  // for clarity.
+  // Admin endpoints reuse the HttpOnly session set by menu.php. Nothing
+  // sensitive is kept in JavaScript-readable storage.
   function adminApi(url) {
-    return fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+    return adminFetch(url, { credentials: 'same-origin', cache: 'no-store' });
   }
   function openAdmin(section) {
+    if (adminAccessState !== 'unlocked') {
+      pendingAdminSection = section;
+      if (adminAccessState === 'locked') {
+        showAdminLocked('Unlock Settings, System, Logs, and Tools.', false);
+      }
+      return;
+    }
+    if (adminSect === 'settings' && section !== 'settings') discardPendingSettings();
+    adminViewGeneration += 1;
     document.body.classList.add('admin-on');
     adminEl.setAttribute('aria-hidden', 'false');
     adminTitle.textContent = ADMIN_TITLES[section] || section;
@@ -6847,6 +7613,8 @@
     else if (section === 'tools') renderAdminTools();
   }
   function closeAdmin() {
+    if (adminSect === 'settings') discardPendingSettings();
+    adminViewGeneration += 1;
     document.body.classList.remove('admin-on');
     adminEl.setAttribute('aria-hidden', 'true');
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
@@ -7083,15 +7851,19 @@
   function renderAdminSettings() {
     adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading settings...</p>';
     Promise.all([
-      fetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
+      adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }),
-      fetchJson('./avian/api/generate.php?action=status').catch(function () { return null; }),
+      adminJson('./avian/api/generate.php?action=status').catch(function (error) {
+        if (adminAuthCancelled(error)) throw error;
+        return null;
+      }),
     ])
       .then(function (parts) {
         var cfg = parts[0];
         var gen = parts[1] || {};
         var v = cfg.values || {};
         var sec = cfg.secrets || {};
+        var security = cfg.security || {};
         var preserve = cfg.preserve;
         // Instant chroma cutouts awaiting the full-quality workstation
         // pass: surface the count and a ready-to-paste command. The
@@ -7116,6 +7888,10 @@
           + themeRow()
           + labelsRow()
           + atlasAlwaysAllRow()
+          + '</section><section class="settings-access">'
+          + '<h2>Access</h2>'
+          + lanAuthRow(security)
+          + passwordChangeRow(security)
           + '</section><section>'
           + settingsSlider('CONFIDENCE', 'Confidence threshold', 'min score to log a detection', v.CONFIDENCE, 0.1, 0.95, 0.05, 2, 0.7)
           + settingsSlider('SF_THRESH', 'Range filter', 'min likelihood a species is here this week', v.SF_THRESH, 0.001, 0.5, 0.001, 3, 0.03)
@@ -7155,6 +7931,16 @@
           });
         });
         wireSettingsControls(adminBody);
+        wireLanAuthControl(adminBody, security);
+        wirePasswordChange(adminBody);
+        if (pendingAdminNotice) {
+          var noticeTarget = adminBody.querySelector('[data-lan-auth-status]');
+          if (noticeTarget) {
+            noticeTarget.textContent = pendingAdminNotice.message;
+            noticeTarget.classList.toggle('err', !!pendingAdminNotice.error);
+            pendingAdminNotice = null;
+          }
+        }
         adminBody.querySelectorAll('.seg').forEach(wireToggleAdvance);   // open-space advance
         // Slide each pill onto its current option (fonts settle first,
         // otherwise the measured button width is the fallback face's).
@@ -7202,16 +7988,20 @@
         });
       })
       .catch(function (err) {
+        if (adminAuthCancelled(err)) return;
         adminBody.innerHTML = adminUnreachableHtml('settings load failed (' + err + ')');
       });
   }
 
   function renderAdminSystem() {
     adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading...</p>';
+    var sequence = 0;
     function tick() {
+      var request = ++sequence;
       adminApi('./avian/api/birdnet-status.php?action=diag')
         .then(function (r) { return r.text().then(function (raw) { return { status: r.status, raw: raw }; }); })
         .then(function (res) {
+          if (request !== sequence) return;
           var j = null;
           try { j = JSON.parse(res.raw); } catch (e) { }
           if (res.status !== 200 || !j) {
@@ -7223,7 +8013,11 @@
           adminBody.innerHTML = adminSystemMarkup(j);
           wireAdminRestarts();
         })
-        .catch(function (e) { adminBody.innerHTML = adminUnreachableHtml(e.message); });
+        .catch(function (e) {
+          if (request !== sequence) return;
+          if (adminAuthCancelled(e)) return;
+          adminBody.innerHTML = adminUnreachableHtml(e.message);
+        });
     }
     tick();
     adminPollT = setInterval(tick, 6000);
@@ -7281,7 +8075,9 @@
         + '<td><span class="pill ' + pill + '">' + adminEsc(s.active) + '</span></td>'
         + '<td>' + adminEsc(s.enabled) + '</td>'
         + '<td>' + adminEsc(s.since || '-') + '</td>'
-        + '<td><button class="restart" data-unit="' + adminEsc(name) + '">restart</button></td>'
+        + '<td>' + (s.restartable
+          ? '<button class="restart" data-unit="' + adminEsc(name) + '">restart</button>'
+          : '<span class="muted">status only</span>') + '</td>'
         + '</tr>';
     });
     html += '</tbody></table>';
@@ -7308,8 +8104,10 @@
       b.addEventListener('click', function () {
         var unit = b.dataset.unit;
         if (!confirm('Restart ' + unit + '?')) return;
+        var requestView = adminViewGeneration;
+        var requestSection = adminSect;
         b.disabled = true; var old = b.textContent; b.textContent = '...';
-        fetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
+        adminFetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
           body: '{}',
@@ -7317,15 +8115,28 @@
           .then(function (r) { return r.json(); })
           .then(function (j) {
             b.textContent = j.ok ? 'ok' : 'fail';
-            setTimeout(function () { b.disabled = false; b.textContent = old; renderAdminSystem(); }, 1200);
+            setTimeout(function () {
+              if (requestView !== adminViewGeneration
+                || requestSection !== adminSect
+                || requestSection !== 'system') return;
+              b.disabled = false;
+              b.textContent = old;
+              renderAdminSystem();
+            }, 1200);
           })
-          .catch(function () { b.textContent = 'err'; b.disabled = false; setTimeout(function () { b.textContent = old; }, 1500); });
+          .catch(function (error) {
+            if (adminAuthCancelled(error)) return;
+            b.textContent = 'err';
+            b.disabled = false;
+            setTimeout(function () { b.textContent = old; }, 1500);
+          });
       });
     });
   }
 
   function renderAdminLogs() {
     var unit = 'birdnet_recording', lines = 120, autoScroll = true;
+    var sequence = 0;
     adminBody.innerHTML =
       '<div class="admin-logs-toolbar">'
       + '  <label>unit</label><select id="adminLogsUnit">'
@@ -7348,9 +8159,11 @@
       autoScroll = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 20;
     });
     function tick() {
+      var request = ++sequence;
       adminApi('./avian/api/birdnet-status.php?action=logs&unit=' + encodeURIComponent(unit) + '&lines=' + lines)
         .then(function (r) { return r.text().then(function (raw) { return { status: r.status, raw: raw }; }); })
         .then(function (res) {
+          if (request !== sequence) return;
           var j = null;
           try { j = JSON.parse(res.raw); } catch (e) { }
           if (res.status !== 200 || !j) {
@@ -7359,6 +8172,10 @@
           }
           pane.textContent = sudoBlocked(j.text) ? SUDO_HINT : (j.text || '(empty)');
           if (autoScroll) pane.scrollTop = pane.scrollHeight;
+        }).catch(function (error) {
+          if (request !== sequence) return;
+          if (adminAuthCancelled(error)) return;
+          pane.textContent = 'pi unreachable - ' + (error.message || 'no data');
         });
     }
     tick();
@@ -7428,7 +8245,7 @@
     html += '<h2 class="admin-section-head">your data</h2>';
     html += '<div class="admin-actions-grid">';
     function dataCard(title, desc, what) {
-      return '<a class="admin-action" href="./avian/api/export.php?what=' + what + '" download>'
+      return '<a class="admin-action" data-admin-export data-export-scope="' + what + '" href="./avian/api/export.php?what=' + what + '" download>'
         + '<span class="run">download</span>'
         + '<h4>' + adminEsc(title) + '</h4>'
         + '<p>' + adminEsc(desc) + '</p>'
@@ -7443,6 +8260,40 @@
       + '</div>';
     html += '</div>';
     adminBody.innerHTML = html;
+    adminBody.querySelectorAll('[data-admin-export]').forEach(function (link) {
+      link.addEventListener('click', function (event) {
+        if (!adminAuthMeta.required) return;
+        event.preventDefault();
+        if (link.getAttribute('aria-busy') === 'true') return;
+        link.setAttribute('aria-busy', 'true');
+        var scope = link.dataset.exportScope;
+        adminFetch('./avian/api/menu.php?action=download-grant', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+          body: JSON.stringify({ scope: scope }),
+        })
+          .then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (body) {
+              if (!response.ok || !body.ok || !/^[a-f0-9]{48}$/.test(body.token || '')) {
+                throw new Error(body.error || 'download authorization failed');
+              }
+              var download = document.createElement('a');
+              download.href = link.href + '&grant=' + encodeURIComponent(body.token);
+              download.download = '';
+              download.hidden = true;
+              document.body.appendChild(download);
+              download.click();
+              download.remove();
+            });
+          }).catch(function (error) {
+            if (adminAuthCancelled(error)) return;
+            link.setAttribute('data-error', '1');
+            setTimeout(function () { link.removeAttribute('data-error'); }, 1800);
+          }).then(function () {
+            link.removeAttribute('aria-busy');
+          });
+      });
+    });
 
     // The archive stays an optional extra, but Tools owns its setup and
     // day-to-day controls. Google authorization is the only terminal step;
@@ -7456,11 +8307,12 @@
     var archiveFailureKind = '';
     var archiveState = null;
     var archiveCard = document.getElementById('archiveCard');
+    var archiveSequence = 0;
 
     function archiveApi(action, confirmValue) {
       var body = { action: action };
       if (confirmValue) body.confirm = confirmValue;
-      return fetch('./avian/api/archive.php', {
+      return adminFetch('./avian/api/archive.php', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
         body: JSON.stringify(body),
@@ -7473,7 +8325,7 @@
     }
 
     function saveArchiveRetention(values) {
-      return fetch('./avian/api/config.php', {
+      return adminFetch('./avian/api/config.php', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' }, body: JSON.stringify(values),
       }).then(function (r) {
@@ -7485,7 +8337,7 @@
     }
 
     function prepareArchiveRetention() {
-      return fetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
+      return adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) {
           return r.json().catch(function () { return {}; }).then(function (j) {
             if (!r.ok) throw new Error(j.error || 'could not read recording retention');
@@ -7608,9 +8460,11 @@
     }
 
     function loadArchiveStatus() {
-      return fetch('./avian/api/archive.php', { credentials: 'same-origin', cache: 'no-store' })
+      var request = ++archiveSequence;
+      return adminFetch('./avian/api/archive.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (r) {
           return r.json().catch(function () { return {}; }).then(function (j) {
+            if (request !== archiveSequence) return;
             if (!r.ok || !j.ok) {
               var error = new Error(j.error || (r.ok ? 'archive controls unavailable' : ('HTTP ' + r.status)));
               error.archiveKind = r.status === 503 && j.hint ? 'helper' : 'request';
@@ -7628,6 +8482,8 @@
           });
         })
         .catch(function (e) {
+          if (request !== archiveSequence) return;
+          if (adminAuthCancelled(e)) return;
           archiveState = null;
           archiveFailureKind = e.archiveKind || 'network';
           archiveNoticeAction = 'refresh';
@@ -7669,6 +8525,7 @@
               : action === 'disable' ? 'disabled' : 'saved';
         archiveNoticeError = false;
       }).catch(function (e) {
+        if (adminAuthCancelled(e)) return;
         archiveNotice = e.message || 'archive action failed';
         archiveNoticeError = true;
       }).then(function () {
@@ -7735,7 +8592,7 @@
     // Whether a unit is up is the first thing you want off this page, so the
     // badge carries it and the card only has to be hovered to offer the fix.
     function paintStates() {
-      fetchJson('./avian/api/birdnet-status.php?action=services').then(function (j) {
+      adminJson('./avian/api/birdnet-status.php?action=services').then(function (j) {
         var svc = (j && j.services) || {};
         adminBody.querySelectorAll('.tool-card').forEach(function (card) {
           if (card.dataset.busy) return;
@@ -7747,7 +8604,8 @@
           b.dataset.live = live;
           b.querySelector('.now').textContent = live;
         });
-      }).catch(function () {
+      }).catch(function (error) {
+        if (adminAuthCancelled(error)) return;
         adminBody.querySelectorAll('.tool-card .badge').forEach(function (b) {
           b.dataset.live = 'unknown';
           b.querySelector('.now').textContent = 'unknown';
@@ -7767,7 +8625,7 @@
         var out = card.querySelector('.state');
         out.textContent = 'restarting...';
         card.setAttribute('data-state', 'busy');
-        fetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
+        adminFetch('./avian/api/birdnet-status.php?action=restart&unit=' + encodeURIComponent(unit), {
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
           body: '{}',
@@ -7785,6 +8643,7 @@
             }, 2600);
           })
           .catch(function (e) {
+            if (adminAuthCancelled(e)) return;
             card.setAttribute('data-state', 'err');
             out.textContent = e.message || 'request failed';
             setTimeout(function () {
@@ -7846,7 +8705,7 @@
       }
     }
     function maintenanceRequest(action) {
-      return fetch('./avian/api/maintenance.php', {
+      return adminFetch('./avian/api/maintenance.php', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
         body: JSON.stringify({
@@ -7861,13 +8720,15 @@
       });
     }
     function loadMaintenance() {
-      return fetch('./avian/api/maintenance.php', { credentials: 'same-origin', cache: 'no-store' })
+      return adminFetch('./avian/api/maintenance.php', { credentials: 'same-origin', cache: 'no-store' })
         .then(function (response) {
           return response.json().catch(function () { return {}; }).then(function (body) {
             if (!response.ok || !body.ok) throw new Error(body.error || 'maintenance unavailable');
             paintMaintenance(body);
           });
-        }).catch(function () { });
+        }).catch(function (error) {
+          if (!adminAuthCancelled(error) && window.console) console.warn('maintenance status failed', error);
+        });
     }
     adminBody.querySelectorAll('[data-maintenance-action]').forEach(function (button) {
       button.addEventListener('click', function () {
@@ -7884,6 +8745,7 @@
         maintenanceRequest(action).then(function (state) {
           paintMaintenance(state);
         }).catch(function (error) {
+          if (adminAuthCancelled(error)) return;
           button.disabled = false;
           if (card) card.setAttribute('aria-busy', 'false');
           if (out) out.textContent = error.message || 'maintenance unavailable';

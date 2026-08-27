@@ -487,6 +487,10 @@
     box-shadow: var(--recess);
     padding: 4px;
   }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
   .lock-row input {
     flex: 1; background: transparent; border: 0; outline: 0;
     color: var(--ink); padding: 8px 10px;
@@ -505,7 +509,24 @@
     margin: 8px 4px 0; font: 10px ui-monospace, Menlo, monospace;
     color: var(--ink-soft); letter-spacing: 0.04em;
   }
+  .lock-transport {
+    margin: 6px 4px 0; color: var(--accent);
+    font: 9px/1.35 ui-monospace, Menlo, monospace;
+  }
   .lock-err { color: var(--accent); }
+  .menu-lock {
+    width: 100%; margin-top: 10px; padding: 8px 10px;
+    border: 0; border-radius: 7px; cursor: pointer;
+    background: transparent; color: var(--ink-soft);
+    font: 9px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .menu-lock:hover, .menu-lock:focus-visible { color: var(--ink); background: var(--paper-2); }
+  .menu-lock:disabled { opacity: 0.5; cursor: wait; }
+  .live-policy-note {
+    margin: 4px 4px 10px; color: var(--ink-soft);
+    font: 9px/1.45 ui-monospace, Menlo, monospace;
+  }
   /* Tiny "built by teddy" attribution - appears under the lock-screen
      password field AND at the foot of the about-card. Same monospace
      micro-type used by .lock-hint so the two contexts read consistent. */
@@ -608,6 +629,89 @@
   .switch[aria-checked="true"]::after {
     transform: translateX(18px);
     background: var(--pill);
+  }
+  .switch:disabled { opacity: 0.38; cursor: not-allowed; }
+  .switch:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+  .settings-access > h2 {
+    margin: 0 10px 4px; color: var(--ink-soft);
+    font: 9px ui-monospace, Menlo, monospace;
+    letter-spacing: 0.13em; text-transform: uppercase;
+  }
+  .lan-auth-control { padding-bottom: 8px; }
+  .lan-auth-confirm {
+    margin: 2px 10px 0; padding: 9px;
+    border-radius: 7px; background: var(--paper-2); box-shadow: var(--recess);
+  }
+  .lan-auth-confirm[hidden] { display: none; }
+  .lan-auth-confirm > label {
+    display: block; margin-bottom: 6px; color: var(--ink);
+    font: 10px ui-monospace, Menlo, monospace;
+  }
+  .lan-auth-confirm > div { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lan-auth-confirm input {
+    min-width: 150px; flex: 1; padding: 7px 8px;
+    border: 0; border-radius: 5px; outline: 0;
+    background: var(--paper); color: var(--ink); box-shadow: var(--recess);
+    font: 12px ui-monospace, Menlo, monospace;
+  }
+  .lan-auth-warning, .lan-auth-status {
+    margin: 7px 10px 0; color: var(--ink-soft);
+    font: 8.5px/1.5 ui-monospace, Menlo, monospace;
+  }
+  .lan-auth-status { min-height: 13px; }
+  .lan-auth-status.err { color: var(--accent); }
+  .password-change-control { margin: 4px 10px 0; }
+  .password-change-form {
+    display: grid; gap: 8px; margin-top: 8px; padding: 9px;
+    border-radius: 7px; background: var(--paper-2); box-shadow: var(--recess);
+  }
+  .password-change-form[hidden] { display: none; }
+  .password-change-form label {
+    display: grid; gap: 4px; color: var(--ink);
+    font: 10px ui-monospace, Menlo, monospace;
+  }
+  .password-change-form input {
+    width: 100%; box-sizing: border-box; padding: 7px 8px;
+    border: 0; border-radius: 5px; outline: 0;
+    background: var(--paper); color: var(--ink); box-shadow: var(--recess);
+    font: 12px ui-monospace, Menlo, monospace;
+  }
+  .password-change-form input:focus-visible,
+  .lan-auth-confirm input:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .password-change-form > div { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lan-auth-confirm .chip,
+  .lan-auth-reconcile,
+  .password-change-control .chip {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 4px; padding: 7px 10px;
+    background: var(--paper-2); color: var(--ink);
+    box-shadow: var(--raised); cursor: pointer;
+    font: 9px/1 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.1em; text-transform: lowercase;
+  }
+  .lan-auth-confirm .chip:hover,
+  .lan-auth-reconcile:hover,
+  .password-change-control .chip:hover { background: var(--paper); }
+  .lan-auth-confirm .chip:active,
+  .lan-auth-reconcile:active,
+  .password-change-control .chip:active { box-shadow: var(--recess); }
+  .lan-auth-confirm .chip:focus-visible,
+  .lan-auth-reconcile:focus-visible,
+  .password-change-control .chip:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .lan-auth-confirm .chip:disabled,
+  .lan-auth-reconcile:disabled,
+  .password-change-control .chip:disabled {
+    opacity: 0.42; cursor: not-allowed;
   }
 
   /* Slider - title row (label + value badge with breathing room) and
@@ -3172,14 +3276,12 @@ body.postcard-open { overflow: hidden; }
   }
   .bird-card[data-playing="true"] .spectro-wrap::before { --playhead: 0.6; }
 
-/* ============ AvianVisitors mode toggle ============
- * Default install (body.av-local): hide the lock-row, show drawer items
- * directly when the menu opens. The PHP shim at /avian/api/menu.php
- * returns items immediately with no auth, so the live JS skips the lock
- * flow entirely.
+/* ============ AvianVisitors access mode ============
+ * Trusted direct mode (body.av-local): hide the lock row and show drawer
+ * items when the menu opens.
  *
- * Forwarded install (body.av-forwarded): show the lock row so users type the
- * station password before the private API session opens. See avian/forwarding/. */
+ * Protected mode (body.av-forwarded): show the lock row for forwarded access
+ * and for stations that require a password on the local network. */
 body.av-local #dd-locked { display: none; }
 body.av-local #dd-items  { display: block; }
 
