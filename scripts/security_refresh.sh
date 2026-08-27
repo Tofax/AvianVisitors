@@ -34,6 +34,7 @@ passwd_row=$(getent passwd "$birdnet_user")
 [ -n "$passwd_row" ] || { echo "BirdNET-Pi user does not exist" >&2; exit 1; }
 birdnet_home=$(printf '%s\n' "$passwd_row" | cut -d: -f6)
 birdnet_group=$(id -gn "$birdnet_user")
+birdnet_gid=$(id -g "$birdnet_user")
 if ! [[ "$birdnet_home" =~ ^/[A-Za-z0-9._/-]+$ \
   && "$birdnet_home" != *'..'* ]]; then
   echo "Invalid BirdNET-Pi home" >&2
@@ -46,10 +47,26 @@ repo_dir=$birdnet_home/BirdNET-Pi
   || { echo "BirdNET-Pi checkout cannot be a symbolic link" >&2; exit 1; }
 [ -d "$repo_dir/.git" ] || { echo "BirdNET-Pi checkout was not found" >&2; exit 1; }
 
+# Admin credential mutations share one root-only persistent lock. PHP reads
+# the separately group-readable state only after atomic replacement.
+auth_state_dir=/var/lib/avian-visitors
+auth_lock=$auth_state_dir/admin-auth.lock
+if [ -e "$auth_state_dir" ] || [ -L "$auth_state_dir" ]; then
+  [ -d "$auth_state_dir" ] && [ ! -L "$auth_state_dir" ] \
+    && [ "$(stat -c '%u:%g:%a' -- "$auth_state_dir")" = '0:0:755' ] \
+    || { echo "Unsafe admin state directory" >&2; exit 1; }
+else
+  install -d -o root -g root -m 0755 "$auth_state_dir"
+fi
+if [ ! -e "$auth_lock" ] && [ ! -L "$auth_lock" ]; then
+  install -o root -g root -m 0600 /dev/null "$auth_lock"
+fi
+[ -f "$auth_lock" ] && [ ! -L "$auth_lock" ] \
+  && [ "$(stat -c '%u:%g:%a:%h' -- "$auth_lock")" = '0:0:600:1' ] \
+  || { echo "Unsafe admin state lock" >&2; exit 1; }
 # Caddy and the station user may lock this inode, but only root can replace it.
 # It serializes asynchronous illustration workers with checkout updates.
 generation_lock=/run/lock/avian-generation.lock
-birdnet_gid=$(id -g "$birdnet_user")
 if [ ! -e "$generation_lock" ] && [ ! -L "$generation_lock" ]; then
   install -o root -g "$birdnet_gid" -m 0660 /dev/null "$generation_lock"
 fi
@@ -128,6 +145,13 @@ for helper in \
     exit 1
   fi
 done
+
+# Only the root install/update path may claim an absent state from the legacy
+# CADDY_PWD value. Existing state is authoritative and is never resynced here.
+if ! admin_init_output=$(/usr/local/sbin/avian-admin-control auth-state-init); then
+  printf '%s\n' "$admin_init_output" >&2
+  exit 1
+fi
 
 # A running pre-patch service refresher keeps reading its old inode after it
 # atomically installs the new helpers. It does invoke this newly installed

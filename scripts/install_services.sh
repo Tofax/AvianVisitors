@@ -42,7 +42,7 @@ install_scripts() {
 }
 
 install_avian_controls() {
-  local source target
+  local source target admin_init_output
   while read -r source target; do
     [ -f "${my_dir}/scripts/${source}" ] || continue
     install -o root -g root -m 0755 \
@@ -57,6 +57,30 @@ security_refresh.sh avian-security-refresh
 link_webroot.sh avian-link-webroot
 update_caddyfile.sh avian-caddy-refresh
 EOF
+
+  auth_state_dir=/var/lib/avian-visitors
+  auth_lock=$auth_state_dir/admin-auth.lock
+  if [ -e "$auth_state_dir" ] || [ -L "$auth_state_dir" ]; then
+    [ -d "$auth_state_dir" ] && [ ! -L "$auth_state_dir" ] \
+      && [ "$(stat -c '%u:%g:%a' -- "$auth_state_dir")" = '0:0:755' ] \
+      || { echo "Unsafe admin state directory" >&2; return 1; }
+  else
+    install -d -o root -g root -m 0755 "$auth_state_dir"
+  fi
+  if [ -e "$auth_lock" ] || [ -L "$auth_lock" ]; then
+    [ -f "$auth_lock" ] && [ ! -L "$auth_lock" ] \
+      && [ "$(stat -c '%u:%g:%a:%h' -- "$auth_lock")" = '0:0:600:1' ] \
+      || { echo "Unsafe admin state lock" >&2; return 1; }
+  else
+    install -o root -g root -m 0600 /dev/null "$auth_lock"
+  fi
+  # Initialize the verifier and atomically provision the derived rate state
+  # before the first managed Caddy render. Runtime readers fail closed while
+  # either state is absent, so a clean install must not defer this step.
+  if ! admin_init_output=$(/usr/local/sbin/avian-admin-control auth-state-init); then
+    printf '%s\n' "$admin_init_output" >&2
+    return 1
+  fi
 
   # Refresh an archive the owner has already opted into. First-time setup
   # remains a deliberate Tools action.

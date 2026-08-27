@@ -55,11 +55,11 @@ BIRDWEATHER_ID=
 
 #-----------------------  Web Interface User Password  ------------------------#
 #____________________The variable below sets the 'birdnet'_____________________#
-#___________________user password for the Live Audio Stream,___________________#
-#_________________Tools, System Links, and the Processed files ________________#
+#___________________user password for protected admin and______________________#
+#_______________________legacy BirdNET-Pi pages._______________________________#
 
-## CADDY_PWD is the plaintext password (that will be hashed) and used to access
-## certain parts of the web interface
+## CADDY_PWD initializes the admin credential during setup. AvianVisitors then
+## stores only its password verifier in root-managed runtime state.
 
 CADDY_PWD=
 

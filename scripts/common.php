@@ -2,6 +2,8 @@
 
 define('__ROOT__', dirname(dirname(__FILE__)));
 
+require_once dirname(__DIR__) . '/avian/api/admin-state.php';
+
 if (session_status() !== PHP_SESSION_ACTIVE)
   session_start();
 
@@ -67,16 +69,37 @@ function get_service_mount_name() {
 }
 
 function is_authenticated() {
+  static $cached_proof = null;
+  static $cached_result = false;
+  $state = avian_admin_state();
+  if (empty($state['valid'])
+      || empty($state['configured'])
+      || !empty($state['required'])) {
+    return false;
+  }
+  if (hash_equals('1', (string)($_SERVER['AVIAN_LEGACY_AUTH'] ?? ''))) {
+    $markerEpoch = (string)($_SERVER['AVIAN_LEGACY_AUTH_EPOCH'] ?? '');
+    if ($markerEpoch !== ''
+        && hash_equals((string)$state['epoch'], $markerEpoch)) {
+      return true;
+    }
+  }
   if (!isset($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'])) {
     return false;
   }
-  $config = get_config();
-  $expected = (string)($config['CADDY_PWD'] ?? '');
-  if ($expected === '') {
-    return false;
+  $proof = hash('sha256', implode("\0", [
+    (string)$state['epoch'],
+    (string)$state['verifier'],
+    (string)$_SERVER['PHP_AUTH_USER'],
+    (string)$_SERVER['PHP_AUTH_PW'],
+  ]));
+  if (is_string($cached_proof) && hash_equals($cached_proof, $proof)) {
+    return $cached_result;
   }
-  return hash_equals('birdnet', (string)$_SERVER['PHP_AUTH_USER'])
-    && hash_equals($expected, (string)$_SERVER['PHP_AUTH_PW']);
+  $cached_proof = $proof;
+  $cached_result = hash_equals('birdnet', (string)$_SERVER['PHP_AUTH_USER'])
+    && avian_admin_password_matches((string)$_SERVER['PHP_AUTH_PW'], $state);
+  return $cached_result;
 }
 
 function ensure_authenticated($error_message = 'You cannot edit the settings for this installation') {
