@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
-# Run as root in a disposable Debian container with the repository at /source.
+# Run as root in a disposable Debian container with the repository at /source
+# and AVIAN_CADDY_OVERLAY_TEST=1 set explicitly.
 
 set -euo pipefail
 IFS=$'\n\t'
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-[ -f /.dockerenv ] || fail "test must run in a disposable container"
+[ -f /.dockerenv ] \
+  || fail "refusing Caddy overlay smoke outside a disposable container"
+[ "${AVIAN_CADDY_OVERLAY_TEST:-0}" = 1 ] \
+  || fail "refusing Caddy overlay smoke without AVIAN_CADDY_OVERLAY_TEST=1"
 [ "$(id -u)" -eq 0 ] || fail "test must run as root"
-
 test_root=/tmp/avian-caddy-overlay-smoke
 overlay=/etc/caddy/avian-site-overlay.caddy
 generator=/source/scripts/update_caddyfile.sh
 auth_dir=/var/lib/avian-visitors
-mkdir -p "$test_root" /etc/birdnet /etc/caddy /srv/avian /usr/sbin "$auth_dir"
+mkdir -p "$test_root" /etc/birdnet /etc/caddy /srv/avian \
+  /usr/sbin "$auth_dir"
 id caddy >/dev/null 2>&1 \
   || useradd --system --no-create-home --shell /usr/sbin/nologin caddy
 id bird >/dev/null 2>&1 || useradd --create-home --shell /bin/bash bird
@@ -22,6 +26,8 @@ cat >/etc/birdnet/birdnet.conf <<'EOF'
 BIRDNET_USER=bird
 EXTRACTED=/srv/avian
 EOF
+install -o root -g root -m 0755 /source/scripts/admin_control.sh \
+  /usr/local/sbin/avian-admin-control
 
 legacy_hash='$2y$14$FJs8skDlFXw6UEyzPutTQuQBPcFdy0iyGDrL3silEC/X6CwX7aOhi'
 write_state() {
@@ -56,11 +62,21 @@ set -euo pipefail
 root=/tmp/avian-caddy-overlay-smoke
 printf 'systemctl %s\n' "$*" >>"$root/order.log"
 case "$*" in
+  'daemon-reload') : ;;
   'is-active --quiet caddy') [ ! -e "$root/caddy-inactive" ] ;;
   'is-active --quiet icecast2') [ -e "$root/icecast-active" ] ;;
+  'is-active icecast2')
+    if [ -e "$root/icecast-active" ]; then printf 'active\n'; else printf 'inactive\n'; exit 3; fi
+    ;;
+  'cat icecast2') printf '[Service]\nExecStart=/usr/bin/icecast2\n' ;;
+  'show -p MainPID --value icecast2')
+    if [ -e "$root/icecast-active" ]; then printf '1\n'; else printf '0\n'; fi
+    ;;
+  'show -p ControlPID --value icecast2') printf '0\n' ;;
+  'show -p ControlGroup --value icecast2') printf '/avian-test-icecast2\n' ;;
+  'is-enabled icecast2') printf 'enabled\n' ;;
   'reload caddy') [ ! -e "$root/fail-caddy-reload" ] ;;
   'start caddy') [ ! -e "$root/fail-caddy-start" ] ;;
-  'try-restart icecast2') [ ! -e "$root/fail-icecast-restart" ] ;;
   'stop icecast2')
     [ ! -e "$root/fail-icecast-stop" ] || exit 1
     rm -f "$root/icecast-active"
@@ -132,6 +148,11 @@ grep -Fxq 'systemctl reload caddy' "$test_root/order.log" \
   || fail "active Caddy was not reloaded"
 ! grep -Fq 'systemctl restart caddy' "$test_root/order.log" \
   || fail "generator synchronously restarted active Caddy"
+[ "$(stat -c '%U:%G:%a:%h' /etc/systemd/system/icecast2.service.d/zz-avian-lan-auth.conf)" = root:root:644:1 ] \
+  || fail "systemd live audio guard metadata is unsafe"
+grep -Fxq 'ExecCondition=+/usr/local/sbin/avian-admin-control icecast-start-allowed' \
+  /etc/systemd/system/icecast2.service.d/zz-avian-lan-auth.conf \
+  || fail "systemd live audio guard condition is missing"
 
 # Compatibility mode takes the bcrypt verifier only from root-owned state.
 write_state 0 1 "$legacy_hash"
@@ -180,28 +201,41 @@ bash "$generator"
 grep -Fxq 'systemctl start caddy' "$test_root/order.log" \
   || fail "inactive Caddy was not started"
 
-# The explicit cutoff request terminates established Icecast listeners and
-# reports bounded, distinct failure states.
+# Required policy terminates established Icecast listeners and leaves the
+# service stopped behind the permanent systemd condition.
 reset_logs
 touch "$test_root/icecast-active"
 AVIAN_CLOSE_STREAMS=1 bash "$generator"
-grep -Fxq 'systemctl try-restart icecast2' "$test_root/order.log" \
-  || fail "active Icecast was not restarted"
+grep -Fxq 'systemctl stop icecast2' "$test_root/order.log" \
+  || fail "active Icecast was not stopped"
+! grep -Eq 'systemctl (start|restart|enable|disable) icecast2' "$test_root/order.log" \
+  || fail "protected cutoff changed or started the Icecast unit"
 
+# A failed restore reports status 21, retains its root-only transition record, and
+# never alters whether the service is enabled at boot.
+write_state 0 3 "$legacy_hash"
+printf 'v1\n' >"$auth_dir/icecast-restore-on-unlock"
+chown root:root "$auth_dir/icecast-restore-on-unlock"
+chmod 0400 "$auth_dir/icecast-restore-on-unlock"
 reset_logs
-touch "$test_root/icecast-active" "$test_root/fail-icecast-restart" \
-  "$test_root/fail-icecast-start"
+touch "$test_root/fail-icecast-start"
 set +e
-AVIAN_CLOSE_STREAMS=1 bash "$generator" >"$test_root/start-failure.log" 2>&1
+bash "$generator" >"$test_root/start-failure.log" 2>&1
 status=$?
 set -e
 [ "$status" = 21 ] || fail "Icecast start failure returned $status instead of 21"
-[ "$(first_stream_route_instruction)" = 'respond 404' ] \
-  || fail "Icecast start failure reopened live audio"
+[ "$(cat "$auth_dir/icecast-start-blocked")" = "v2"$'\t'"restoring"$'\t'"yes" ] \
+  || fail "Icecast start failure discarded restore intent"
+[ ! -e "$auth_dir/icecast-restore-on-unlock" ] \
+  || fail "Icecast start failure retained a superseded legacy marker"
+! grep -Eq 'systemctl (enable|disable) icecast2' "$test_root/order.log" \
+  || fail "Icecast restore changed the unit enable state"
+rm -f "$auth_dir/icecast-start-blocked"
 
+write_state 1 4 "$legacy_hash"
 reset_logs
-touch "$test_root/icecast-active" "$test_root/fail-icecast-restart" \
-  "$test_root/fail-icecast-stop" "$test_root/fail-icecast-kill"
+touch "$test_root/icecast-active" "$test_root/fail-icecast-stop" \
+  "$test_root/fail-icecast-kill"
 set +e
 AVIAN_CLOSE_STREAMS=1 bash "$generator" >"$test_root/stop-failure.log" 2>&1
 status=$?

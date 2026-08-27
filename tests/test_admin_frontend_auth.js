@@ -278,7 +278,10 @@ async function settle() {
 async function main() {
   const rowContext = {};
   vm.createContext(rowContext);
-  vm.runInContext(extractFunction('lanAuthRow'), rowContext);
+  vm.runInContext([
+    extractFunction('settingsInfoMarkup'),
+    extractFunction('lanAuthRow'),
+  ].join('\n'), rowContext);
   const reconciliationRow = rowContext.lanAuthRow({
     lan_admin_auth: false,
     password_configured: true,

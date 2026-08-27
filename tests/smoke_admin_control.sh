@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run as root in a disposable Debian container with the repository at /source.
+# Run as root in a disposable Debian container with the repository at /source
+# and AVIAN_ADMIN_CONTROL_TEST=1 set explicitly.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -8,6 +9,11 @@ fail() {
   echo "FAIL: $*" >&2
   exit 1
 }
+
+[ -f /.dockerenv ] \
+  || fail "refusing admin control smoke outside a disposable container"
+[ "${AVIAN_ADMIN_CONTROL_TEST:-0}" = 1 ] \
+  || fail "refusing admin control smoke without AVIAN_ADMIN_CONTROL_TEST=1"
 
 expect_failure() {
   local label=$1 expected=$2
@@ -51,9 +57,29 @@ end_crashed_action() {
   wait "$action_pid" 2>/dev/null || true
   rm -f /tmp/avian-caddy-refresh-parent /tmp/avian-caddy-refresh-child \
     /tmp/avian-caddy-refresh-crash-ready \
+    /tmp/avian-caddy-refresh-child-released \
     /tmp/avian-caddy-refresh-stop-before \
     /tmp/avian-caddy-refresh-stop-before-live \
     /tmp/avian-caddy-refresh-stop-after
+}
+
+resume_commit_failure_action() {
+  local action_pid=$1 recovery_status=$2 parent_pid
+  parent_pid=$(cat /tmp/avian-caddy-refresh-parent)
+  rm -f /tmp/avian-caddy-refresh-stop-after
+  for _ in $(seq 1 100); do
+    [ -e /tmp/avian-caddy-refresh-child-released ] && break
+    sleep 0.05
+  done
+  [ -e /tmp/avian-caddy-refresh-child-released ] \
+    || fail "candidate refresh did not leave its commit-failure barrier"
+  rm -f /var/lib/avian-visitors/.admin-auth.state.*
+  printf '%s\n' "$recovery_status" >/tmp/avian-caddy-refresh-status-sequence
+  kill -CONT "$parent_pid"
+  wait "$action_pid" 2>/dev/null || true
+  rm -f /tmp/avian-caddy-refresh-parent /tmp/avian-caddy-refresh-child \
+    /tmp/avian-caddy-refresh-crash-ready \
+    /tmp/avian-caddy-refresh-child-released
 }
 
 password_stdin() {
@@ -164,12 +190,26 @@ fi
   || printf 'started\n' >/tmp/avian-caddy-refresh-ready
 [ ! -e /tmp/avian-caddy-refresh-slow ] || sleep 1
 [ ! -e /tmp/avian-caddy-refresh-fail ] || exit 1
+status=0
+if [ -s /tmp/avian-caddy-refresh-status-sequence ]; then
+  status=$(sed -n '1p' /tmp/avian-caddy-refresh-status-sequence)
+  sed '1d' /tmp/avian-caddy-refresh-status-sequence \
+    >/tmp/avian-caddy-refresh-status-sequence.next
+  mv -f /tmp/avian-caddy-refresh-status-sequence.next \
+    /tmp/avian-caddy-refresh-status-sequence
+  case "$status" in 0|1|20|21) ;; *) exit 99 ;; esac
+  [ "$status" != 1 ] || exit 1
+fi
 cp "$state_source" /tmp/avian-caddy-loaded.state
 [ ! -e /tmp/avian-caddy-refresh-stop-after ] || {
+  printf '%s\n' "$$" >/tmp/avian-caddy-refresh-child
   printf '%s\n' "$PPID" >/tmp/avian-caddy-refresh-parent
   touch /tmp/avian-caddy-refresh-crash-ready
   kill -STOP "$PPID"
+  while [ -e /tmp/avian-caddy-refresh-stop-after ]; do sleep 0.05; done
+  touch /tmp/avian-caddy-refresh-child-released
 }
+[ "$status" = 0 ] || exit "$status"
 [ ! -e /tmp/avian-caddy-refresh-status20 ] || exit 20
 [ ! -e /tmp/avian-caddy-refresh-status21 ] || exit 21
 EOF
@@ -186,6 +226,13 @@ grep -Fxq 'security refresh: ok' /tmp/avian-security-refresh.out \
   || fail "admin state metadata is wrong"
 [ "$(stat -c '%U:%G:%a:%h' /var/lib/avian-visitors/admin-auth.rate)" = root:caddy:660:1 ] \
   || fail "admin rate metadata is wrong"
+"$admin" icecast-start-allowed >/tmp/avian-icecast-condition-off \
+  || fail "policy-off Icecast start condition was rejected"
+printf 'v1\n' >/var/lib/avian-visitors/icecast-start-blocked
+chmod 0400 /var/lib/avian-visitors/icecast-start-blocked
+expect_failure "transition Icecast start condition" "changing or enabled" \
+  "$admin" icecast-start-allowed
+rm -f /var/lib/avian-visitors/icecast-start-blocked
 grep -Fxq '{"version":1,"entries":{}}' /var/lib/avian-visitors/admin-auth.rate \
   || fail "admin rate state was not initialized canonically"
 [ "$(stat -c '%U:%G:%a:%h' /var/lib/avian-visitors/admin-auth.initialized)" = root:root:400:1 ] \
@@ -425,6 +472,10 @@ code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
   -H 'X-Avian-Credential: 1' --data '{"lan_admin_auth":true}' \
   http://127.0.0.1:8896/avian/api/config.php)
 [ "$code" = 200 ] || fail "marked UTF-8 credential did not enable policy: $(cat /tmp/avian-api-body)"
+case "$(tail -n 1 /tmp/avian-caddy-refresh.log)" in
+  'candidate=/var/lib/avian-visitors/.admin-auth.state.'*' close=1') ;;
+  *) fail "enable transition did not request the live audio cutoff" ;;
+esac
 touch /tmp/avian-stale-release
 wait "$stale_pid" || true
 ! grep -Eiq '^Set-Cookie:[[:space:]]*avian_admin=' /tmp/avian-stale-headers \
@@ -487,6 +538,18 @@ for unit in caddy php8.2-fpm php8.3-fpm php8.4-fpm; do
   [ "$code" = 400 ] || fail "$unit was restartable through its own HTTP request"
 done
 
+# Icecast remains restartable while the station is in ordinary trusted-LAN
+# mode. The protected-mode checks below must remove only that one action.
+code=$(curl -sS -o /tmp/avian-services-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -H 'X-Avian-Credential: 1' \
+  'http://127.0.0.1:8896/avian/api/birdnet-status.php?action=services')
+[ "$code" = 200 ] || fail "trusted-mode service status returned $code"
+php -r '
+  $body = json_decode(file_get_contents($argv[1]), true);
+  exit(($body["services"]["icecast2"]["restartable"] ?? null) === true ? 0 : 1);
+' /tmp/avian-services-body \
+  || fail "trusted-mode service status hid the Icecast restart action"
+
 # Establish required mode first. Its same-policy cutoff guidance mentions SSH,
 # but it is not a credential recovery failure. Keep the Access controls
 # available and preserve the Icecast remediation.
@@ -496,6 +559,45 @@ code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
   --data '{"lan_admin_auth":true}' \
   http://127.0.0.1:8896/avian/api/config.php)
 [ "$code" = 200 ] || fail "API setup did not establish required mode"
+
+expect_failure "protected Icecast restart" "LAN password protection is enabled" \
+  "$admin" restart icecast2
+expect_failure "protected Icecast start condition" "password protection is enabled" \
+  "$admin" icecast-start-allowed
+state_snapshot=$(cat /var/lib/avian-visitors/admin-auth.state)
+printf 'malformed\n' >/var/lib/avian-visitors/admin-auth.state
+expect_failure "invalid-state Icecast restart" "state is unsafe or malformed" \
+  "$admin" restart icecast2
+expect_failure "invalid-state Icecast start condition" "state is unsafe or malformed" \
+  "$admin" icecast-start-allowed
+printf '%s\n' "$state_snapshot" >/var/lib/avian-visitors/admin-auth.state
+
+curl -fsS -c /tmp/avian-service-cookie -u "birdnet:$new_password" \
+  -X POST -H 'X-Avian-Credential: 1' \
+  http://127.0.0.1:8896/avian/api/menu.php >/tmp/avian-menu-body \
+  || fail "protected-mode service test could not unlock"
+code=$(curl -sS -o /tmp/avian-services-body -w '%{http_code}' \
+  -b /tmp/avian-service-cookie \
+  'http://127.0.0.1:8896/avian/api/birdnet-status.php?action=services')
+[ "$code" = 200 ] || fail "protected-mode service status returned $code"
+php -r '
+  $body = json_decode(file_get_contents($argv[1]), true);
+  $services = is_array($body) ? ($body["services"] ?? []) : [];
+  $icecast = $services["icecast2"]["restartable"] ?? null;
+  $analysis = $services["birdnet_analysis"]["restartable"] ?? null;
+  exit($icecast === false && $analysis === true ? 0 : 1);
+' /tmp/avian-services-body \
+  || fail "protected-mode service status did not suppress only Icecast"
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' -H 'X-Avian-Credential: 1' --data '{}' \
+  'http://127.0.0.1:8896/avian/api/birdnet-status.php?action=restart&unit=icecast2')
+[ "$code" = 400 ] || fail "protected Icecast restart API returned $code"
+grep -Fq 'unit is status-only' /tmp/avian-api-body \
+  || fail "protected Icecast restart API did not explain the suppressed action"
+! grep -Fq 'icecast2' /tmp/avian-api-body \
+  || fail "protected Icecast restart API still advertised Icecast as allowed"
+
 touch /tmp/avian-caddy-refresh-status20
 code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
   -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
@@ -505,7 +607,7 @@ code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
 [ "$code" = 500 ] || fail "uncertain API stream cutoff returned $code"
 grep -Fq '"reauth":false' /tmp/avian-api-body \
   || fail "same-policy stream cutoff incorrectly reported an epoch change"
-grep -Fq 'sudo systemctl restart icecast2' /tmp/avian-api-body \
+grep -Fq 'sudo systemctl stop icecast2' /tmp/avian-api-body \
   || fail "same-policy stream cutoff lost its Icecast guidance"
 grep -Fq 'reboot the station' /tmp/avian-api-body \
   || fail "uncertain API stream cutoff lost its remediation"
@@ -520,6 +622,21 @@ code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
   --data '{"lan_admin_auth":true}' \
   http://127.0.0.1:8896/avian/api/config.php)
 [ "$code" = 200 ] || fail "same-policy API cutoff retry did not recover"
+
+# A failed disable can mention an Icecast restore while the transaction rolls
+# back to required mode. Remediation must follow the final protected policy.
+printf '21\n0\n' >/tmp/avian-caddy-refresh-status-sequence
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' -H 'X-Avian-Credential: 1' \
+  --data '{"lan_admin_auth":false}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 500 ] || fail "protected rollback remediation returned $code"
+[ "$(state_field 2)" = 1 ] || fail "protected rollback did not remain required"
+grep -Fq 'stream returns 404' /tmp/avian-api-body \
+  || fail "protected rollback lost its closed-route guidance"
+! grep -Fq 'sudo systemctl start icecast2' /tmp/avian-api-body \
+  || fail "protected rollback incorrectly requested an Icecast start"
 
 rm -f /var/lib/avian-visitors/admin-auth.initialized
 code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
@@ -536,23 +653,142 @@ chmod 0400 /var/lib/avian-visitors/admin-auth.initialized
 
 # Root transaction failure and retry behavior.
 password_stdin "$new_password" "$admin" lan-auth-set-stdin 1 >/dev/null
-old_epoch=$(state_field 3)
-touch /tmp/avian-caddy-refresh-fail
-expect_failure "disable refresh rollback" "protected access was restored" \
-  password_stdin "$new_password" "$admin" lan-auth-set-stdin 0
-rm -f /tmp/avian-caddy-refresh-fail
-[ "$(state_field 2)" = 1 ] || fail "failed disable left policy open"
-[ "$(state_field 3)" -eq $((old_epoch + 2)) ] \
-  || fail "failed disable did not advance rollback epoch"
+
+for recovery_status in 0 20 1; do
+  old_epoch=$(state_field 3)
+  printf '21\n%s\n' "$recovery_status" \
+    >/tmp/avian-caddy-refresh-status-sequence
+  case "$recovery_status" in
+    0) expected='restored and verified' ;;
+    20) expected='restored, but live audio cutoff could not be verified' ;;
+    1) expected='Caddy, the Icecast start block, and live audio cutoff could not be verified' ;;
+  esac
+  expect_failure "Icecast restore rollback $recovery_status" "$expected" \
+    password_stdin "$new_password" "$admin" lan-auth-set-stdin 0
+  [ "$(state_field 2)" = 1 ] \
+    || fail "Icecast restore rollback $recovery_status left policy open"
+  [ "$(state_field 3)" -eq $((old_epoch + 2)) ] \
+    || fail "Icecast restore rollback $recovery_status used the wrong epoch"
+  [ "$(tail -n 1 /tmp/avian-caddy-refresh.log)" = 'candidate=live close=1' ] \
+    || fail "Icecast restore rollback $recovery_status omitted the cutoff reconciliation"
+  if [ "$recovery_status" = 1 ]; then
+    ! grep -Fq 'restored and verified' /tmp/avian-admin-failure.out \
+      || fail "unverified Icecast rollback claimed complete recovery"
+    password_stdin "$new_password" "$admin" lan-auth-set-stdin 1 >/dev/null
+  fi
+  password_stdin "$new_password" "$admin" lan-auth-set-stdin 0 >/dev/null
+  password_stdin "$new_password" "$admin" lan-auth-set-stdin 1 >/dev/null
+done
 
 password_stdin "$new_password" "$admin" lan-auth-set-stdin 0 >/dev/null
-state_hash=$(sha256sum /var/lib/avian-visitors/admin-auth.state)
-touch /tmp/avian-caddy-refresh-fail
-expect_failure "enable refresh rollback" "setting was not changed" \
-  password_stdin "$new_password" "$admin" lan-auth-set-stdin 1
-rm -f /tmp/avian-caddy-refresh-fail
-[ "$(sha256sum /var/lib/avian-visitors/admin-auth.state)" = "$state_hash" ] \
-  || fail "failed enable changed authoritative state"
+for restore_status in 0 21 1; do
+  state_hash=$(sha256sum /var/lib/avian-visitors/admin-auth.state)
+  printf '1\n%s\n' "$restore_status" \
+    >/tmp/avian-caddy-refresh-status-sequence
+  case "$restore_status" in
+    0) expected='prior access policy and live audio state were restored and verified' ;;
+    21) expected='prior access policy was restored, but live audio could not be restored' ;;
+    1) expected='prior access policy and live audio state could not be verified' ;;
+  esac
+  expect_failure "enable refresh rollback $restore_status" "$expected" \
+    password_stdin "$new_password" "$admin" lan-auth-set-stdin 1
+  [ "$(sha256sum /var/lib/avian-visitors/admin-auth.state)" = "$state_hash" ] \
+    || fail "enable refresh rollback $restore_status changed authoritative state"
+  [ "$(tail -n 1 /tmp/avian-caddy-refresh.log)" = \
+    'candidate=live close=0' ] \
+    || fail "enable refresh rollback $restore_status did not reconcile authoritative trusted mode"
+  if [ "$restore_status" = 1 ]; then
+    ! grep -Fq 'restored and verified' /tmp/avian-admin-failure.out \
+      || fail "unverified enable refresh rollback claimed complete recovery"
+  fi
+done
+
+# A failed enable whose trusted policy and audio were fully restored needs no
+# closed-route remediation. An unverified trusted restore needs availability
+# guidance because the final authoritative policy is still disabled.
+printf '1\n0\n' >/tmp/avian-caddy-refresh-status-sequence
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' -H 'X-Avian-Credential: 1' \
+  --data '{"lan_admin_auth":true}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 500 ] || fail "verified trusted rollback returned $code"
+grep -Fq '"remediation":null' /tmp/avian-api-body \
+  || fail "verified trusted rollback added unnecessary audio guidance"
+
+printf '1\n1\n' >/tmp/avian-caddy-refresh-status-sequence
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' -H 'X-Avian-Credential: 1' \
+  --data '{"lan_admin_auth":true}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 500 ] || fail "unverified trusted rollback returned $code"
+grep -Fq 'sudo systemctl start icecast2' /tmp/avian-api-body \
+  || fail "unverified trusted rollback lost its availability guidance"
+! grep -Fq 'stream returns 404' /tmp/avian-api-body \
+  || fail "unverified trusted rollback requested a closed route"
+
+# Trusted-mode reconciliation failures need availability guidance, not the
+# protected-mode instruction to stop Icecast and verify a closed route.
+touch /tmp/avian-caddy-refresh-status21
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' -H 'X-Avian-Credential: 1' \
+  --data '{"lan_admin_auth":false}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 500 ] || fail "trusted-mode Icecast restore failure returned $code"
+grep -Fq 'sudo systemctl status icecast2' /tmp/avian-api-body \
+  || fail "trusted-mode Icecast failure lost its status guidance"
+grep -Fq 'sudo systemctl start icecast2' /tmp/avian-api-body \
+  || fail "trusted-mode Icecast failure lost its restore guidance"
+grep -Fq 'stream works from the local network' /tmp/avian-api-body \
+  || fail "trusted-mode Icecast failure lost its availability check"
+! grep -Fq 'sudo systemctl stop icecast2' /tmp/avian-api-body \
+  || fail "trusted-mode Icecast failure incorrectly requested a stop"
+! grep -Fq 'stream returns 404' /tmp/avian-api-body \
+  || fail "trusted-mode Icecast failure incorrectly requested a closed route"
+rm -f /tmp/avian-caddy-refresh-status21
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -u "birdnet:$new_password" -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' -H 'X-Avian-Credential: 1' \
+  --data '{"lan_admin_auth":false}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 200 ] || fail "trusted-mode Icecast reconciliation retry failed"
+
+for recovery_status in 0 20 1; do
+  old_epoch=$(state_field 3)
+  rm -f /tmp/avian-caddy-refresh-parent /tmp/avian-caddy-refresh-child \
+    /tmp/avian-caddy-refresh-crash-ready
+  touch /tmp/avian-caddy-refresh-stop-after
+  password_stdin "$new_password" "$admin" lan-auth-set-stdin 1 \
+    >"/tmp/avian-enable-commit-$recovery_status.out" 2>&1 &
+  commit_pid=$!
+  wait_for_crash_barrier "enable commit failure $recovery_status"
+  resume_commit_failure_action "$commit_pid" "$recovery_status"
+  case "$recovery_status" in
+    0) expected='restored and verified' ;;
+    20) expected='restored, but live audio cutoff could not be verified' ;;
+    1) expected='Caddy, the Icecast start block, and live audio cutoff could not be verified' ;;
+  esac
+  grep -Fq 'admin state commit failed' "/tmp/avian-enable-commit-$recovery_status.out" \
+    || fail "enable commit failure $recovery_status lost its primary error"
+  grep -Fq "$expected" "/tmp/avian-enable-commit-$recovery_status.out" \
+    || fail "enable commit failure $recovery_status reported the wrong recovery result"
+  [ "$(state_field 2)" = 1 ] \
+    || fail "enable commit failure $recovery_status did not fail closed"
+  [ "$(state_field 3)" -eq $((old_epoch + 2)) ] \
+    || fail "enable commit failure $recovery_status used the wrong rollback epoch"
+  [ "$(tail -n 1 /tmp/avian-caddy-refresh.log)" = 'candidate=live close=1' ] \
+    || fail "enable commit failure $recovery_status omitted required reconciliation"
+  ! compgen -G '/var/lib/avian-visitors/.admin-auth.state.*' >/dev/null \
+    || fail "enable commit failure $recovery_status retained a candidate state"
+  if [ "$recovery_status" = 1 ]; then
+    ! grep -Fq 'restored and verified' "/tmp/avian-enable-commit-$recovery_status.out" \
+      || fail "unverified enable rollback claimed complete recovery"
+    password_stdin "$new_password" "$admin" lan-auth-set-stdin 1 >/dev/null
+  fi
+  password_stdin "$new_password" "$admin" lan-auth-set-stdin 0 >/dev/null
+done
 
 touch /tmp/avian-caddy-refresh-status20
 expect_failure "uncertain stream cutoff" "older live audio connection may remain" \

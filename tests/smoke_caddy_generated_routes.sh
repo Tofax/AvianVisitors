@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run as root with real Caddy in a disposable Debian container.
+# Run as root with real Caddy in a disposable Debian container and
+# AVIAN_CADDY_GENERATED_ROUTES_TEST=1 set explicitly.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -10,8 +11,12 @@ fail() {
   exit 1
 }
 
+[ -f /.dockerenv ] \
+  || fail "refusing generated Caddy route smoke outside a disposable container"
+[ "${AVIAN_CADDY_GENERATED_ROUTES_TEST:-0}" = 1 ] \
+  || fail "refusing generated Caddy route smoke without AVIAN_CADDY_GENERATED_ROUTES_TEST=1"
 [ "${EUID:-$(id -u)}" -eq 0 ] || fail "test must run as root"
-for command in caddy curl; do command -v "$command" >/dev/null || fail "$command is required"; done
+for command in caddy curl php; do command -v "$command" >/dev/null || fail "$command is required"; done
 fpm_bin=''
 for candidate in php-fpm8.4 php-fpm8.3 php-fpm8.2 php-fpm84 php-fpm83 php-fpm82 php-fpm81 php-fpm; do
   if command -v "$candidate" >/dev/null; then fpm_bin=$candidate; break; fi
@@ -41,6 +46,8 @@ mkdir -p /etc/birdnet /etc/caddy /var/lib/avian-visitors \
 chmod 0755 "$test_root" "$site"
 install -o root -g root -m 0600 /dev/null \
   /var/lib/avian-visitors/admin-auth.lock
+install -o root -g root -m 0755 /source/scripts/admin_control.sh \
+  /usr/local/sbin/avian-admin-control
 printf 'audio\n' >"$site/Processed/good.mp3"
 printf 'date\n' >"$site/By_Date/good.txt"
 printf 'chart\n' >"$site/Charts/good.txt"
@@ -80,7 +87,7 @@ printf '<?php echo "info"; ?>\n' >"$site/phpsysinfo/index.php"
 printf '<?php echo "js"; ?>\n' >"$site/phpsysinfo/js.php"
 printf '<?php echo "info backup"; ?>\n' >"$site/phpsysinfo/js.php.bak"
 
-api_names=(archive birdnet-api birdnet-status config cutout export generate maintenance menu recording spectrogram wiki)
+api_names=(archive birdnet-api birdnet-status birdweather config cutout export generate maintenance menu recording spectrogram wiki)
 for name in "${api_names[@]}"; do
   printf '<?php echo "api"; ?>\n' >"$site/avian/api/$name.php"
 done
@@ -97,8 +104,14 @@ printf '<?php echo "unknown"; ?>\n' >"$site/avian/api/unknown.php"
 
 cat >/usr/bin/systemctl <<'EOF'
 #!/bin/sh
-if [ "${1-}" = is-active ]; then exit 3; fi
-exit 0
+case "$*" in
+  'is-active icecast2') printf 'inactive\n'; exit 3 ;;
+  'is-active --quiet icecast2'|'is-active --quiet caddy') exit 3 ;;
+  'cat icecast2') exit 1 ;;
+  'show -p MainPID --value icecast2'|'show -p ControlPID --value icecast2') printf '0\n' ;;
+  'show -p ControlGroup --value icecast2') printf '\n' ;;
+  *) exit 0 ;;
+esac
 EOF
 chmod 0755 /usr/bin/systemctl
 

@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Run as root in a disposable Debian container with the repository at /source.
+# Run as root in a disposable Debian container with the repository at /source
+# and AVIAN_REINSTALL_SERVICES_TEST=1 set explicitly.
 
 set -euo pipefail
 IFS=$'\n\t'
+
+[ -f /.dockerenv ] \
+  || { echo 'FAIL: refusing reinstall services smoke outside a disposable container' >&2; exit 1; }
+[ "${AVIAN_REINSTALL_SERVICES_TEST:-0}" = 1 ] \
+  || { echo 'FAIL: refusing reinstall services smoke without AVIAN_REINSTALL_SERVICES_TEST=1' >&2; exit 1; }
 
 fail() {
   echo "FAIL: $*" >&2
@@ -88,8 +94,22 @@ chmod 0755 /usr/local/bin
 cat >/usr/bin/systemctl <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>/tmp/avian-service-refresh-smoke/systemctl.log
-case "${1:-}" in
-  is-active) echo active ;;
+icecast_marker=/tmp/avian-service-refresh-smoke/icecast-active
+case "$*" in
+  'is-active --quiet caddy') exit 0 ;;
+  'is-active icecast2')
+    if [ -e "$icecast_marker" ]; then echo active; else echo inactive; exit 3; fi
+    ;;
+  'is-active --quiet icecast2') [ -e "$icecast_marker" ] ;;
+  'cat icecast2') printf '[Service]\nExecStart=/usr/bin/icecast2\n' ;;
+  'show -p MainPID --value icecast2'|'show -p ControlPID --value icecast2')
+    echo 0
+    ;;
+  'show -p ControlGroup --value icecast2') echo /avian-refresh-icecast2 ;;
+  'stop icecast2'|'kill --kill-who=all --signal=KILL icecast2')
+    rm -f "$icecast_marker"
+    ;;
+  'start icecast2') touch "$icecast_marker" ;;
 esac
 exit 0
 EOF
@@ -164,6 +184,8 @@ AVIAN_UPDATE_LOCK_FD=9 /usr/local/sbin/avian-service-refresh \
   >"$test_root/refresh.log" 2>&1 || fail 'inherited-lock service refresh failed'
 flock -u 9
 exec 9>&-
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 3 ] \
+  || fail 'first-hop refresh performed an unexpected daemon reload'
 
 # This invocation began in the exact 16c7217d helper. It atomically replaced
 # itself, then invoked the newly installed security helper. The new security
@@ -171,6 +193,15 @@ exec 9>&-
 [ "$(sha256sum /usr/local/sbin/avian-service-refresh | cut -d' ' -f1)" = \
   "$(sha256sum "$repo/scripts/reinstall_services.sh" | cut -d' ' -f1)" ] \
   || fail 'first-hop refresh did not install the new service helper'
+icecast_guard=/etc/systemd/system/icecast2.service.d/zz-avian-lan-auth.conf
+[ -f "$icecast_guard" ] && [ ! -L "$icecast_guard" ] \
+  || fail 'first-hop refresh did not install the Icecast start guard'
+[ "$(stat -c '%U:%G:%a:%h' "$icecast_guard")" = root:root:644:1 ] \
+  || fail 'first-hop Icecast start guard metadata is unsafe'
+grep -Fxq \
+  'ExecCondition=+/usr/local/sbin/avian-admin-control icecast-start-allowed' \
+  "$icecast_guard" \
+  || fail 'first-hop Icecast start guard condition is missing'
 [ -f /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf ] \
   || fail 'first-hop refresh did not install the live stream restart policy'
 if grep -qx 'Restart=on-failure' \
@@ -268,6 +299,8 @@ grep -q 'shared audio or RTSP remains available' "$test_root/safe-policy.out" \
   || fail 'shared-audio policy status was not reported'
 [ "$(stat -c '%U:%G:%a' "$policy_file")" = root:root:644 ] \
   || fail 'safe existing live stream drop-in lost its ownership or mode'
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 4 ] \
+  || fail 'explicit audio-policy refresh performed an unexpected daemon reload'
 
 # Never replace a policy file whose ownership shows that it is not managed by
 # root. Restore the fixture afterward so the remaining idempotence checks run.
@@ -285,6 +318,8 @@ grep -q 'live stream drop-in file is unsafe' "$test_root/unsafe-policy.err" \
   || fail 'unsafe live stream drop-in contents were changed'
 chown root:root "$policy_file"
 chmod 0644 "$policy_file"
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 4 ] \
+  || fail 'rejected audio policy changed systemd state'
 
 sed -i 's|^RTSP_STREAM=.*|RTSP_STREAM=rtsp://camera.example.test/audio|' \
   /etc/birdnet/birdnet.conf
@@ -335,7 +370,10 @@ for target in \
   [ -L "$webroot/$target" ] || fail "webroot link missing: $target"
 done
 
-[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 5 ] \
+# Three reloads belong to each full refresh: live-stream policy, final service
+# refresh, and Icecast start guard. The explicit safe audio-policy check adds
+# one more. The phase checks above prevent duplicate reloads from canceling out.
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 7 ] \
   || fail 'daemon reload was not idempotent'
 [ "$(grep -c '^stop livestream.service$' "$test_root/systemctl.log")" -eq 2 ] \
   || fail 'direct ALSA mode did not stop live streaming'
@@ -352,6 +390,46 @@ grep -qx 'Restart=always' \
 grep -qx 'ExecCondition=/usr/local/bin/livestream.sh --check' \
   /etc/systemd/system/livestream.service.d/10-avian-visitors-restart.conf \
   || fail 'live stream restart drop-in lacks its capture condition'
+
+# Re-enter through the exact old helper with an already-required state and an
+# active Icecast unit. The newly installed Caddy helper must publish one atomic
+# restore-intent record, close the route, and stop the backend before the old
+# process can report success.
+required_verifier=$(cut -f4 "$auth_state")
+printf 'v1\t1\t1\t%s\n' "$required_verifier" >"$auth_state"
+chown root:caddy "$auth_state"
+chmod 0640 "$auth_state"
+rm -f "$auth_dir/icecast-start-blocked" "$auth_dir/icecast-restore-on-unlock"
+touch "$test_root/icecast-active"
+stops_before=$(grep -c '^stop icecast2$' "$test_root/systemctl.log" || true)
+kills_before=$(grep -c '^kill --kill-who=all --signal=KILL icecast2$' \
+  "$test_root/systemctl.log" || true)
+cp "$previous_refresh" /usr/local/sbin/avian-service-refresh
+chown root:root /usr/local/sbin/avian-service-refresh
+chmod 0755 /usr/local/sbin/avian-service-refresh
+/usr/local/sbin/avian-service-refresh >"$test_root/required-first-hop.log" 2>&1 \
+  || fail 'already-required active first-hop refresh failed'
+[ "$(cat "$auth_dir/icecast-start-blocked")" = \
+  "v2"$'\t'"blocked"$'\t'"yes" ] \
+  || fail 'already-required first-hop lost active Icecast restore intent'
+[ "$(stat -c '%U:%G:%a:%h' "$auth_dir/icecast-start-blocked")" = \
+  root:root:400:1 ] \
+  || fail 'already-required first-hop transition metadata is unsafe'
+[ ! -e "$test_root/icecast-active" ] \
+  || fail 'already-required first-hop left Icecast active'
+[ "$(grep -c '^stop icecast2$' "$test_root/systemctl.log")" -eq \
+  $((stops_before + 1)) ] \
+  || fail 'already-required first-hop did not stop Icecast exactly once'
+[ "$(grep -c '^kill --kill-who=all --signal=KILL icecast2$' \
+  "$test_root/systemctl.log")" -eq $((kills_before + 1)) ] \
+  || fail 'already-required first-hop did not verify the unit-wide cutoff'
+first_stream_instruction=$(awk '
+  /handle @stream/ { stream=1; next }
+  stream && /route[[:space:]]*{/ { route=1; next }
+  route && NF { sub(/^[[:space:]]*/, ""); print; exit }
+' /etc/caddy/Caddyfile)
+[ "$first_stream_instruction" = 'respond 404' ] \
+  || fail 'already-required first-hop did not close the Caddy stream route'
 
 # A checkout change to code that would become privileged must fail before the
 # installed helper or security policy is replaced.

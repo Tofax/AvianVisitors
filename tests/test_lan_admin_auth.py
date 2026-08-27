@@ -77,6 +77,155 @@ class LanAdminAuthStaticTests(unittest.TestCase):
         self.assertIn("@legacySurface", source)
         self.assertIn("respond @executableSource 404", source)
 
+    def test_protected_stream_uses_durable_systemd_start_guard(self):
+        caddy = self.read("scripts/update_caddyfile.sh")
+        control = self.read("scripts/admin_control.sh")
+        self.assertIn("zz-avian-lan-auth.conf", caddy)
+        self.assertIn(
+            "ExecCondition=+/usr/local/sbin/avian-admin-control icecast-start-allowed",
+            caddy,
+        )
+        self.assertIn("icecast-start-blocked", caddy)
+        self.assertIn("icecast-restore-on-unlock", caddy)
+        self.assertIn("blocked:unknown", caddy)
+        self.assertIn("restoring:yes", caddy)
+        self.assertNotIn("AVIAN_CAPTURE_ICECAST_STATE", caddy)
+        self.assertIn("stop_icecast_backend", caddy)
+        closure = caddy[caddy.index("icecast_backend_closed()") : caddy.index("stop_icecast_backend()")]
+        self.assertIn("ControlGroup", closure)
+        self.assertIn("icecast_processes_closed", closure)
+        self.assertIn("/proc/[0-9]*/comm", caddy)
+        self.assertNotIn("pgrep", closure)
+        self.assertNotIn("8000", closure)
+        self.assertIn("icecast-start-allowed)", control)
+        self.assertNotIn("validate_icecast_config", caddy)
+        self.assertNotIn("/etc/icecast2/icecast.xml", caddy)
+        self.assertNotIn("command -v ss", caddy)
+
+    def test_destructive_live_smoke_requires_two_explicit_safety_gates(self):
+        smoke = self.read("tests/smoke_caddy_live_transition.sh")
+        container_gate = smoke.index("[ -f /.dockerenv ]")
+        opt_in_gate = smoke.index("AVIAN_LIVE_TRANSITION_TEST")
+        first_mutation = min(smoke.index("useradd"), smoke.index("mkdir -p"))
+        self.assertLess(container_gate, first_mutation)
+        self.assertLess(opt_in_gate, first_mutation)
+        result = subprocess.run(
+            ["env", "-u", "AVIAN_LIVE_TRANSITION_TEST", "bash", "tests/smoke_caddy_live_transition.sh"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("refusing live transition smoke", result.stdout)
+
+    def test_reinstall_smoke_requires_two_explicit_safety_gates(self):
+        smoke = self.read("tests/smoke_reinstall_services.sh")
+        container_gate = smoke.index("[ -f /.dockerenv ]")
+        opt_in_gate = smoke.index("AVIAN_REINSTALL_SERVICES_TEST")
+        first_mutation = smoke.index('rm -rf "$test_root"')
+        self.assertLess(container_gate, first_mutation)
+        self.assertLess(opt_in_gate, first_mutation)
+        result = subprocess.run(
+            [
+                "env",
+                "-u",
+                "AVIAN_REINSTALL_SERVICES_TEST",
+                "bash",
+                "tests/smoke_reinstall_services.sh",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("refusing reinstall services smoke", result.stdout)
+
+    def test_other_root_smokes_require_two_explicit_safety_gates(self):
+        cases = (
+            (
+                "tests/smoke_admin_control.sh",
+                "AVIAN_ADMIN_CONTROL_TEST",
+                "id caddy",
+                "/usr/local/sbin/avian-admin-control",
+                "admin control smoke",
+            ),
+            (
+                "tests/smoke_caddy_generated_routes.sh",
+                "AVIAN_CADDY_GENERATED_ROUTES_TEST",
+                "test_root=$(mktemp -d)",
+                "cat >/usr/bin/systemctl",
+                "generated Caddy route smoke",
+            ),
+            (
+                "tests/smoke_caddy_overlay.sh",
+                "AVIAN_CADDY_OVERLAY_TEST",
+                'mkdir -p "$test_root"',
+                "cat >/usr/sbin/systemctl",
+                "Caddy overlay smoke",
+            ),
+            (
+                "tests/smoke_security_diagnostic_cleanup.sh",
+                "AVIAN_SECURITY_DIAGNOSTIC_TEST",
+                "id caddy",
+                "/source/scripts/security_refresh.sh",
+                "security diagnostic smoke",
+            ),
+        )
+        in_container = pathlib.Path("/.dockerenv").is_file()
+        for path, sentinel, first_mutation_text, sensitive_text, label in cases:
+            with self.subTest(path=path):
+                smoke = self.read(path)
+                container_gate = smoke.index("[ -f /.dockerenv ]")
+                opt_in_gate = smoke.index(sentinel)
+                first_mutation = smoke.index(first_mutation_text)
+                sensitive_action = smoke.index(sensitive_text)
+                self.assertLess(container_gate, first_mutation)
+                self.assertLess(opt_in_gate, first_mutation)
+                self.assertLess(container_gate, sensitive_action)
+                self.assertLess(opt_in_gate, sensitive_action)
+                if in_container:
+                    command = ["env", "-u", sentinel, "bash", path]
+                    expected = f"without {sentinel}=1"
+                else:
+                    command = ["env", f"{sentinel}=1", "bash", path]
+                    expected = "outside a disposable container"
+                result = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(expected, result.stdout)
+
+    def test_admin_rollback_claims_only_verified_required_reconciliation(self):
+        control = self.read("scripts/admin_control.sh")
+        self.assertIn("reconcile_required_policy", control)
+        self.assertIn("REQUIRED_RECOVERY_STATUS", control)
+        self.assertIn("restored and verified", control)
+        self.assertIn("could not be verified; over SSH", control)
+        self.assertIn(
+            "prior access policy and live audio state were restored and verified",
+            control,
+        )
+        self.assertNotIn("the prior Caddy policy was restored", control)
+
+    def test_protected_mode_suppresses_icecast_restart(self):
+        control = self.read("scripts/admin_control.sh")
+        status_api = self.read("avian/api/birdnet-status.php")
+        self.assertIn("Icecast restart is unavailable while LAN password protection", control)
+        self.assertIn("restartable_units_for_state", status_api)
+        self.assertIn("$unit !== 'icecast2'", status_api)
+
     def test_caddy_barrier_is_atomic_and_durable_before_reload(self):
         source = self.read("scripts/update_caddyfile.sh")
         candidate = source.index('sync -f "$temp"')
@@ -199,6 +348,9 @@ class LanAdminAuthStaticTests(unittest.TestCase):
             "tests/smoke_admin_control.sh",
             "tests/smoke_caddy_generated_routes.sh",
             "tests/smoke_caddy_live_transition.sh",
+            "tests/smoke_caddy_overlay.sh",
+            "tests/smoke_reinstall_services.sh",
+            "tests/smoke_security_diagnostic_cleanup.sh",
         ]
         result = subprocess.run(
             ["bash", "-n", *paths],
