@@ -29,6 +29,38 @@ header('Cache-Control: public, max-age=30');
 // under PHP-FPM (BirdNET-Pi runs it as the caddy user), so it can't
 // be relied on.
 $DB_PATH = dirname(__DIR__, 2) . '/scripts/birds.db';
+$CONF_PATH = dirname(__DIR__, 2) . '/birdnet.conf';
+
+// SITE_NAME is already public on BirdNET-Pi's legacy homepage. Read only that
+// key so the collage can share its canonical title without exposing the rest
+// of birdnet.conf, which can contain API and service credentials.
+function publicSiteName(string $path): string {
+    if (!is_readable($path) || is_dir($path)) return 'BirdNET-Pi';
+    $lines = @file($path, FILE_IGNORE_NEW_LINES);
+    if (!is_array($lines)) return 'BirdNET-Pi';
+    $value = '';
+    foreach ($lines as $line) {
+        if (trim($line) === '' || str_starts_with(ltrim($line), '#')) continue;
+        if (preg_match('/^\s*(?:export\s+)?SITE_NAME\s*=\s*(.*)$/', $line, $match) !== 1) continue;
+        $raw = trim($match[1]);
+        if (str_starts_with($raw, '"')) {
+            if (preg_match('/^"([^"\\\\]*)"\s*(?:#.*)?$/', $raw, $quoted) !== 1) continue;
+            $raw = $quoted[1];
+        } elseif (str_starts_with($raw, "'")) {
+            if (preg_match("/^'([^']*)'\\s*(?:#.*)?$/", $raw, $quoted) !== 1) continue;
+            $raw = $quoted[1];
+        } else {
+            $raw = preg_replace('/\s+#.*$/', '', $raw) ?? '';
+            $raw = trim($raw);
+        }
+        if (strlen($raw) <= 60 && preg_match("/^[A-Za-z0-9 _.,'-]*$/u", $raw) === 1) {
+            $value = $raw;
+        }
+    }
+    return $value !== '' ? $value : 'BirdNET-Pi';
+}
+
+if (defined('AVIAN_BIRDNET_API_LIBRARY_ONLY')) return;
 
 if (!file_exists($DB_PATH)) {
     http_response_code(503);
@@ -165,7 +197,7 @@ switch ($action) {
         echo json_encode([
             'hours' => $hours, 'date' => $ctx['date'], 'station_date' => $ctx['today'],
             'is_today' => $ctx['is_today'], 'anchor' => $ctx['anchor'],
-            'species' => $rs, 'as_of' => date('c')
+            'species' => $rs, 'site_name' => publicSiteName($CONF_PATH), 'as_of' => date('c')
         ]);
         break;
     }

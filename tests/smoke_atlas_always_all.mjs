@@ -68,7 +68,7 @@ assert.match(renderAtlas, /var statRows = isAllWindow/, 'ALL controls card count
 
 assert.match(source, /Always show full atlas/, 'Settings copy is present');
 assert.match(source, /show every unlocked stamp/, 'Settings explains the result');
-assert.match(source, /\.switch:not\(\[data-atlas-always-all\]\)/,
+assert.match(source, /\.switch:not\(\[data-labels-switch\]\):not\(\[data-atlas-always-all\]\)/,
   'client preference is excluded from Pi config autosave');
 assert.match(source, /var forHours = currentHours;/, 'collage and stats requests still use the shared window');
 

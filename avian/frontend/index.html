@@ -13,14 +13,14 @@
 function systemTheme(){try{return window.matchMedia&&window.matchMedia(q).matches?'dark':'light';}catch(e){return'light';}}
 function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
 var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemTheme());})();</script>
-<link rel="stylesheet" href="./styles.css?v=r167">
+  <link rel="stylesheet" href="./styles.css?v=r188">
   <link rel="stylesheet" href="./stamps.css?v=r355">
   <link rel="stylesheet" href="./stamp-batch-root.css?v=r254">
   <link rel="stylesheet" href="./stamp-batch-a.css?v=r257">
     <link rel="stylesheet" href="./stamp-batch-b.css?v=r319">
-  <link rel="stylesheet" href="./stamp-batch-c.css?v=r229">
+  <link rel="stylesheet" href="./stamp-batch-c.css?v=r231">
 </head>
-<body class="av-local">
+<body>
 <!-- Pill in the top-left slot, only visible on admin overlays
      (body.admin-on); CSS in styles.css hides it everywhere else.
      href="/" returns to the collage view via a full reload, which is
@@ -54,13 +54,18 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     <div class="menu-sheet">
   <div id="dd-locked">
     <form class="lock-row" id="unlockForm">
-      <input id="lockPass" type="password" placeholder="password" autocomplete="current-password">
-      <button type="submit" aria-label="unlock">→</button>
+      <label class="sr-only" for="lockPass">Admin password</label>
+      <input id="lockPass" type="password" placeholder="admin password" autocomplete="current-password" aria-describedby="lockHint lockTransport">
+      <button type="submit" aria-label="Unlock admin controls">→</button>
     </form>
-    <p class="lock-hint" id="lockHint">enter password to unlock tools.</p>
+    <p class="lock-hint" id="lockHint" role="status" aria-live="polite" aria-atomic="true"></p>
+    <p class="lock-transport" id="lockTransport" hidden>Plain HTTP does not protect this password from other devices on the network.</p>
   </div>
   <nav class="menu-items" id="dd-items"></nav>
-  <p class="built-by">built by <a href="https://theodore.net" target="_blank" rel="noopener">teddy</a> · <a href="https://github.com/Twarner491/AvianVisitors" target="_blank" rel="noopener">github</a></p>
+  <div class="menu-footer">
+    <p class="built-by">built by <a href="https://theodore.net" target="_blank" rel="noopener">teddy</a> · <a href="https://github.com/Twarner491/AvianVisitors" target="_blank" rel="noopener">github</a></p>
+    <button type="button" class="menu-lock" id="adminLock" hidden>lock admin controls</button>
+  </div>
     </div>
   </aside>
   </div>
@@ -76,7 +81,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 
 <main class="stage">
   <header class="static-head">
-    <button type="button" class="pre" id="aboutLink">your birds</button>
+    <button type="button" class="pre" id="aboutLink" data-site-name>your birds</button>
     <h1 id="staticTitle">Heard Recently</h1>
   </header>
   <div class="views" id="views">
@@ -300,7 +305,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
   <div class="modal-backdrop" data-close="1"></div>
   <div class="about-card" role="document">
     <button type="button" class="modal-close" data-close="1" aria-label="close">×</button>
-    <p class="about-eyebrow">your birds</p>
+    <p class="about-eyebrow" data-site-name>your birds</p>
     <h2 id="aboutTitle">The birds outside your window</h2>
     <p class="about-body">A tiny microphone identifies every passing bird with Cornell's <a href="https://birdnet.cornell.edu/" target="_blank" rel="noopener">BirdNET</a>. Each species shows up as an illustration in the collage, sized by how often it's been heard.</p>
     <button type="button" class="about-explore" data-close="1">explore the birds →</button>
@@ -315,10 +320,8 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 </nav>
 
 
-<!-- AvianVisitors: empty admin-screen stub. The live JS expects this
-     element to exist (openAdmin/closeAdmin call setAttribute on it).
-     Menu items navigate to BirdNET-Pi's stock pages instead of opening
-     in-app admin views, so this stays empty. -->
+<!-- Native Settings, System, Logs, and Tools views render here. The live JS
+     clears this workspace whenever the admin session locks or changes. -->
 <section class="admin-screen" id="adminScreen" aria-hidden="true">
   <div class="admin-frame">
     <header class="admin-title"><h1 id="adminTitle"></h1></header>
@@ -384,7 +387,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
   <script src="./stamp-batch-root.js?v=r250"></script>
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
-<script src="./stamp-batch-c.js?v=r234"></script>
-<script src="./apt.js?v=r180"></script>
+<script src="./stamp-batch-c.js?v=r235"></script>
+<script src="./apt.js?v=r214"></script>
 </body>
 </html>

@@ -4,15 +4,71 @@
 // Returns the list of links shown in the side drawer when a user clicks
 // the menu button. The live JS expects {items: [{label, href, native}]}.
 //
-// Direct requests on the station's private address are available without a
-// password. Forwarded and public-host requests verify BirdNET-Pi's configured
-// admin password here, then use a password-bound HttpOnly session.
+// Direct requests can be password protected by the station owner. Forwarded
+// and public-host requests always verify the same configured password.
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 require_once __DIR__ . '/admin-auth.php';
+
+$menuAction = (string)($_GET['action'] ?? '');
+
+if ($menuAction === 'lock') {
+    avian_require_json_action();
+    avian_logout_admin_session($_SERVER);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+if ($menuAction === 'activity') {
+    avian_require_json_action();
+    $activityState = avian_admin_state();
+    if (empty($activityState['valid']) || empty($activityState['configured'])) {
+        avian_admin_password_missing_fail();
+    }
+    if (!avian_admin_session_valid($_SERVER, $activityState, true)) {
+        avian_api_fail(401, 'unauthorized');
+    }
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+if ($menuAction === 'idle-lock') {
+    avian_require_json_action();
+    $idleState = avian_admin_state();
+    echo json_encode([
+        'ok' => true,
+        'recovery' => empty($idleState['valid']) || empty($idleState['configured']),
+    ] + avian_idle_lock_admin_session($_SERVER));
+    exit;
+}
+
+if ($menuAction === 'download-grant') {
+    avian_require_json_action();
+    avian_require_admin();
+    $grantBody = json_decode((string)file_get_contents('php://input'), true);
+    $scope = is_array($grantBody) ? (string)($grantBody['scope'] ?? '') : '';
+    $token = avian_create_admin_download_grant($_SERVER, $scope);
+    if (!is_string($token)) avian_api_fail(400, 'invalid download request');
+    echo json_encode(['ok' => true, 'token' => $token, 'expires_in' => 30]);
+    exit;
+}
+
+$adminState = avian_admin_state();
+$passwordRequired = avian_lan_admin_auth_required()
+    || !avian_is_direct_local_request($_SERVER);
+if ($passwordRequired
+    && (empty($adminState['valid']) || empty($adminState['configured']))) {
+    http_response_code(401);
+    echo json_encode([
+        'ok' => false,
+        'error' => 'admin credential state is missing or invalid',
+        'recovery' => true,
+    ]);
+    exit;
+}
 avian_require_admin();
 
 // Count of instant (chroma) cutouts awaiting the full-quality upgrade
@@ -40,4 +96,11 @@ echo json_encode([
         ['label' => 'tools',    'href' => '/#admin=tools',    'native' => true],
     ],
     'chroma' => $chroma,
+    'auth' => [
+        'required' => $passwordRequired,
+        'lan_policy' => avian_lan_admin_auth_required(),
+        'password_configured' => !empty($adminState['valid'])
+            && !empty($adminState['configured']),
+        'recovery' => empty($adminState['valid']),
+    ],
 ]);

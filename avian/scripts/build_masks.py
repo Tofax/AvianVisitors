@@ -20,9 +20,11 @@ species produce non-overlapping diffs instead of colliding. The tables
 used to be inlined in apt.js as single ~800KB lines, which turned every
 species-add into a whole-line rewrite and an unavoidable merge conflict.
 
-Run after changing the illustration set. Bump SKETCH_VERSION and
-IMG_VERSION in apt.js when you re-render a bird so browsers drop the
-stale image (and the freshly written dims.json/masks.json).
+Run after changing the illustration set. If dims.json or masks.json changes,
+always bump TABLE_VERSION in apt.js. For a one-species correction, also add or
+update that species in ART_REVISIONS. For a regional or library-wide rebuild,
+bump SKETCH_VERSION and IMG_VERSION instead of creating hundreds of species
+revisions.
 
 Usage:
     python3 build_masks.py            # write dims.json + masks.json
@@ -142,7 +144,9 @@ def main() -> int:
     dims_path.write_text(dump_perkey(dims))
     masks_path.write_text(dump_perkey(masks))
     print(f"wrote {dims_path} + {masks_path} ({len(dims)} entries each)\n"
-          f"remember to bump SKETCH_VERSION + IMG_VERSION in apt.js if pixels changed")
+          "cache reminder: if the tables changed, always bump TABLE_VERSION; "
+          "for one corrected species update ART_REVISIONS, or for a regional "
+          "or library-wide rebuild bump SKETCH_VERSION + IMG_VERSION")
     return 0
 
 
