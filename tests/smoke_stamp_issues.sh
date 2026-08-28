@@ -153,8 +153,11 @@ assert.match(
 const batchCss = fs.readFileSync(path.join(frontend, 'stamp-batch-c.css'), 'utf8').trim();
 assert.match(batchCss, /:root\{--avian-stamp-batch-c-ready:1\}$/,
   'the batch C readiness marker must stay at the end of the stylesheet');
+assert.match(batchCss,
+  /\.tpl-ribbonbird \.wv-head h3\{[^}]*box-sizing:content-box;[^}]*padding-block-end:\.16em;/,
+  'shared-family labels must leave room for letters below the baseline');
 const indexHtml = fs.readFileSync(path.join(frontend, 'index.html'), 'utf8');
-assert.match(indexHtml, /stamp-batch-c\.css\?v=r230/,
+assert.match(indexHtml, /stamp-batch-c\.css\?v=r231/,
   'the guarded batch C stylesheet must have a fresh cache key');
 NODE
 
