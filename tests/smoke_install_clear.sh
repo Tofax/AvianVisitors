@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# Run inside a disposable Debian container with the repository at /source.
+# Run inside a disposable Debian container with the repository at /source and
+# AVIAN_INSTALL_CLEAR_TEST=1 set explicitly.
 # Exercises the Avian Visitors overlay install and clear-all-data recovery
 # without touching a host installation or starting real services.
 
 set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+
+[ -f /.dockerenv ] \
+  || fail "refusing install and clear smoke outside a disposable container"
+[ "${AVIAN_INSTALL_CLEAR_TEST:-0}" = 1 ] \
+  || fail "refusing install and clear smoke without AVIAN_INSTALL_CLEAR_TEST=1"
 
 font_source=/source/avian/frontend/fonts/Caveat.ttf
 [ -f "$font_source" ] || fail "Caveat release font is missing"

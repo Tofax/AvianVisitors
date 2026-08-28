@@ -1,6 +1,9 @@
+import json
+import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 
@@ -176,6 +179,13 @@ class LanAdminAuthStaticTests(unittest.TestCase):
                 "/source/scripts/security_refresh.sh",
                 "security diagnostic smoke",
             ),
+            (
+                "tests/smoke_install_clear.sh",
+                "AVIAN_INSTALL_CLEAR_TEST",
+                'mkdir -p "$test_bin"',
+                "/usr/local/sbin/avian-archive-control",
+                "install and clear smoke",
+            ),
         )
         in_container = pathlib.Path("/.dockerenv").is_file()
         for path, sentinel, first_mutation_text, sensitive_text, label in cases:
@@ -324,6 +334,46 @@ class LanAdminAuthStaticTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertRegex(result.stdout, r"admin auth tests passed [(][0-9]+ checks[)]")
 
+    @unittest.skipUnless(shutil.which("php"), "PHP CLI is unavailable")
+    def test_menu_returns_stable_native_rows(self):
+        with tempfile.TemporaryDirectory(prefix="avian-menu-") as temporary:
+            state = pathlib.Path(temporary) / "admin-auth.state"
+            state.write_text("v1\t0\t1\t-\n", encoding="utf-8")
+            environment = os.environ.copy()
+            environment.update({
+                "AV_ADMIN_STATE_FILE": str(state),
+                "AV_ADMIN_STATE_TEST_METADATA": "1",
+                "AV_REQUIRE_AUTH": "0",
+            })
+            menu_path = json.dumps(str(ROOT / "avian/api/menu.php"))
+            code = (
+                "$_SERVER = ["
+                "'REQUEST_METHOD' => 'GET',"
+                "'REMOTE_ADDR' => '127.0.0.1',"
+                "'HTTP_HOST' => 'localhost'"
+                "]; require " + menu_path + ";"
+            )
+            result = subprocess.run(
+                ["php", "-r", code],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=30,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        payload = json.loads(result.stdout)
+        items = payload["items"]
+        self.assertEqual(
+            [item["label"] for item in items],
+            ["settings", "system", "logs", "tools"],
+        )
+        self.assertTrue(all(item["native"] is True for item in items))
+        self.assertTrue(all("full" not in item for item in items))
+        self.assertEqual(items[-1]["href"], "/#admin=tools")
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_frontend_auth_runtime_suite(self):
         result = subprocess.run(
@@ -349,6 +399,7 @@ class LanAdminAuthStaticTests(unittest.TestCase):
             "tests/smoke_caddy_generated_routes.sh",
             "tests/smoke_caddy_live_transition.sh",
             "tests/smoke_caddy_overlay.sh",
+            "tests/smoke_install_clear.sh",
             "tests/smoke_reinstall_services.sh",
             "tests/smoke_security_diagnostic_cleanup.sh",
         ]

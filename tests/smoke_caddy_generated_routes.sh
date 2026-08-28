@@ -101,6 +101,7 @@ echo (avian_is_direct_local_request($_SERVER) ? 'direct' : 'forwarded') . '|'
     . ($_SERVER['AVIAN_FORCE_AUTH'] ?? 'missing');
 PHP
 printf '<?php echo "unknown"; ?>\n' >"$site/avian/api/unknown.php"
+printf '<?php echo "removed educator"; ?>\n' >"$site/avian/api/educators.php"
 
 cat >/usr/bin/systemctl <<'EOF'
 #!/bin/sh
@@ -292,6 +293,11 @@ for name in "${api_names[@]}"; do
 done
 [ "$(code http://127.0.0.1/avian/api/unknown.php)" = 404 ] \
   || fail "trusted mode sent an unknown API to PHP-FPM"
+[ "$(code http://127.0.0.1/avian/api/educators.php)" = 404 ] \
+  || fail "trusted mode exposed the removed Educators endpoint"
+[ "$(code -H 'Forwarded: for=198.51.100.2' \
+  http://127.0.0.1/avian/api/educators.php)" = 404 ] \
+  || fail "forwarded traffic exposed the removed Educators endpoint"
 [ "$(code http://127.0.0.1/log)" = 502 ] \
   || fail "trusted mode blocked the local log proxy"
 [ "$(code http://127.0.0.1/terminal)" = 404 ] \
@@ -436,6 +442,11 @@ for name in "${api_names[@]}"; do
 done
 [ "$(code http://127.0.0.1/avian/api/unknown.php)" = 404 ] \
   || fail "unknown API reached PHP-FPM"
+[ "$(code http://127.0.0.1/avian/api/educators.php)" = 404 ] \
+  || fail "required mode exposed the removed Educators endpoint"
+[ "$(code -H 'Forwarded: for=198.51.100.2' \
+  http://127.0.0.1/avian/api/educators.php)" = 404 ] \
+  || fail "required forwarded traffic exposed the removed Educators endpoint"
 [ "$(code http://127.0.0.1/avian/api/admin-state.php)" = 404 ] \
   || fail "include-only admin state reached PHP-FPM"
 [ "$(code http://127.0.0.1/stream)" = 404 ] \
