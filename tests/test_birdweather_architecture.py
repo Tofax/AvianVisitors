@@ -11,18 +11,50 @@ class BirdWeatherArchitectureTests(unittest.TestCase):
     def read(self, path):
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_endpoint_is_admin_gated_and_write_only_for_token(self):
+    def test_endpoint_is_admin_gated_and_token_reveal_requires_session_proof(self):
         source = self.read("avian/api/birdweather.php")
         self.assertIn("avian_require_admin();", source)
         self.assertIn("avian_require_json_action();", source)
+        self.assertIn("avian_require_admin_proof();", source)
         self.assertIn("rawurlencode($token)", source)
         self.assertNotIn("'token' => $token", source)
         self.assertNotIn('"token" => $token', source)
         self.assertIn("CURLOPT_FOLLOWLOCATION => false", source)
         self.assertIn("CURLOPT_PROXY => ''", source)
+        proof = source.index("avian_require_admin_proof();")
+        reveal = source.index("$status['token']", proof)
+        self.assertLess(proof, reveal)
         probe = source.index("$probeCheck = birdweather_validate_new_token")
         write = source.index("$write = birdweather_run_admin_control", probe)
         self.assertLess(probe, write)
+
+    def test_posts_are_patch_based_and_errors_do_not_serialize_tokens(self):
+        source = self.read("avian/api/birdweather.php")
+        self.assertIn("if (array_key_exists('enabled', $body))", source)
+        self.assertNotIn("enabled must be supplied", source)
+        self.assertIn("$validation['new_token'] = null;", source)
+        self.assertNotIn("'settings' => $next", source)
+        self.assertNotIn("$next = $conf", source)
+        restart = source.index("$restart = birdweather_run_admin_control")
+        canonical = source.index("$response = birdweather_canonical_status", restart)
+        respond = source.index("birdweather_response(200, $response)", canonical)
+        self.assertLess(restart, canonical)
+        self.assertLess(canonical, respond)
+
+    def test_probe_requires_official_success_and_collection_shape(self):
+        source = self.read("avian/api/birdweather.php")
+        self.assertIn("$decoded['success'] !== true", source)
+        self.assertIn("array_is_list($decoded[$collection])", source)
+        self.assertIn("birdweather_http_get(string $url, string $collection)", source)
+
+    def test_every_token_enforcement_layer_rejects_dot_segments(self):
+        php = self.read("avian/api/birdweather.php")
+        reporting = self.read("scripts/utils/reporting.py")
+        root = self.read("scripts/admin_control.sh")
+        self.assertIn("$token !== '.'", php)
+        self.assertIn("$token !== '..'", php)
+        self.assertIn("token not in {'.', '..'}", reporting)
+        self.assertIn('[ "$value" != . ] && [ "$value" != .. ]', root)
 
     def test_installer_has_explicit_opt_in_defaults(self):
         source = self.read("scripts/install_config.sh")

@@ -111,6 +111,15 @@ class BirdWeatherReportingTests(unittest.TestCase):
         self.assertTrue(policy["enabled_implicit"])
         self.assertTrue(policy["upload_audio_implicit"])
 
+    def test_legacy_dot_segment_tokens_are_inert(self):
+        for token in (".", ".."):
+            with self.subTest(token=token):
+                policy = reporting.birdweather_config({"BIRDWEATHER_ID": token})
+                self.assertTrue(policy["token_configured"])
+                self.assertFalse(policy["token_valid"])
+                self.assertFalse(policy["enabled"])
+                self.assertEqual(policy["token"], "")
+
     def test_new_enable_key_without_audio_permission_fails_closed(self):
         policy = reporting.birdweather_config({
             "BIRDWEATHER_ID": TOKEN,
@@ -229,6 +238,20 @@ class BirdWeatherReportingTests(unittest.TestCase):
         self.assertFalse(result["enabled"])
         session_factory.assert_not_called()
         self.assertNotIn(invalid, "\n".join(captured.output))
+
+    @patch.object(reporting.requests, "Session")
+    @patch.object(reporting, "get_settings")
+    def test_dot_segment_tokens_never_open_network_session(self, get_settings, session_factory):
+        for token in (".", ".."):
+            with self.subTest(token=token):
+                get_settings.return_value = settings(
+                    BIRDWEATHER_ID=token,
+                    BIRDWEATHER_ENABLED="1",
+                )
+                with self.assertLogs(reporting.log, level=logging.ERROR):
+                    result = reporting.bird_weather(file_fixture(), [detection_fixture()])
+                self.assertFalse(result["enabled"])
+        session_factory.assert_not_called()
 
     @patch.object(reporting.soundfile, "write")
     @patch.object(reporting.soundfile, "read")

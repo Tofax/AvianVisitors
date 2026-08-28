@@ -42,7 +42,9 @@ def birdweather_config(conf):
         bool(token) and not enabled_explicit
     )
 
-    valid_token = bool(_BIRDWEATHER_TOKEN.fullmatch(token))
+    valid_token = token not in {'.', '..'} and bool(
+        _BIRDWEATHER_TOKEN.fullmatch(token)
+    )
     return {
         'enabled': enabled and valid_token,
         'upload_audio': upload_audio,

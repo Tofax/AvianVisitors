@@ -197,7 +197,10 @@ valid_config_value() {
       ;;
     FULL_DISK) [ "$value" = purge ] || [ "$value" = keep ] ;;
     BIRDWEATHER_ID)
-      [ -z "$value" ] || { [ "${#value}" -le 160 ] && [[ "$value" =~ ^[A-Za-z0-9._~-]+$ ]]; }
+      [ -z "$value" ] || {
+        [ "$value" != . ] && [ "$value" != .. ] \
+          && [ "${#value}" -le 160 ] && [[ "$value" =~ ^[A-Za-z0-9._~-]+$ ]]
+      }
       ;;
     BIRDWEATHER_ENABLED|BIRDWEATHER_UPLOAD_AUDIO)
       [ "$value" = 0 ] || [ "$value" = 1 ]
