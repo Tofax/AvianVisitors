@@ -129,7 +129,8 @@ BIRDNET_USER=$(conf_value BIRDNET_USER)
 EXTRACTED=$(conf_value EXTRACTED)
 [[ "$BIRDNET_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] \
   || { echo "Invalid BirdNET-Pi user" >&2; exit 1; }
-[[ "$EXTRACTED" =~ ^/[A-Za-z0-9._/-]+$ ]] && [[ "$EXTRACTED" != *'..'* ]] \
+[[ "$EXTRACTED" =~ ^/[A-Za-z0-9._/-]+$ ]] \
+  && [ "$EXTRACTED" != / ] && [[ "$EXTRACTED" != *'..'* ]] \
   || { echo "Invalid BirdNET-Pi webroot" >&2; exit 1; }
 caddy_gid=$(getent group caddy | awk -F: 'NR == 1 { print $3 }')
 [ -n "$caddy_gid" ] || { echo "Caddy group was not found" >&2; exit 1; }

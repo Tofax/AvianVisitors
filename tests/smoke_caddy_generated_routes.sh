@@ -256,6 +256,17 @@ assert_password_transition_lock() {
 
 # Trusted default mode keeps reviewed local legacy pages and static recordings,
 # but never sends writable recording trees through PHP-FPM.
+cat >/etc/birdnet/birdnet.conf <<'EOF'
+BIRDNET_USER=bird
+EXTRACTED=/
+EOF
+if bash /source/scripts/update_caddyfile.sh \
+    >/tmp/avian-generated-invalid-webroot.out 2>&1; then
+  fail "filesystem root was accepted as the BirdNET-Pi webroot"
+fi
+grep -Fq "Invalid BirdNET-Pi webroot" \
+  /tmp/avian-generated-invalid-webroot.out \
+  || fail "unsafe webroot returned the wrong validation error"
 write_config 0 ''
 generate
 start_caddy
