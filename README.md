@@ -52,15 +52,15 @@ curl -s https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitor
 
 Clones this fork, installs BirdNET-Pi, symlinks the AvianVisitors overlay into the Caddy web root. Takes 20-40 minutes. Reboots when done.
 
-Collage: `http://birdnet.local/`. Stock BirdNET-Pi UI: `http://birdnet.local/index.php`. The menu button in the top right opens an admin overlay with settings, system, log, and tool panels.
+Collage: `http://birdnet.local/`. Stock BirdNET-Pi UI: `http://birdnet.local/index.php`. The menu button in the top right opens an admin overlay with Settings, System, Logs, and Tools.
 
 Stock BirdNET-Pi pages still render, but privileged legacy controls are not enabled. Use the Avian Visitors menu for the station controls it exposes, and SSH for remaining maintenance.
 
-Optional Google Drive backups are set up under **Tools → Your data → Drive archive**. Local cleanup stays unavailable until an archive run has been verified.
+Optional Google Drive backups are set up under **Settings → Nightly Drive backup**. Local cleanup stays unavailable until an archive run has been verified.
 
 ### Local admin access
 
-The local-network password gate is off by default. To enable it, open **Settings → Access**, confirm the change, and enter the station admin password. Collage, Stats, Atlas, public recordings, and bird postcards remain available without signing in. Live audio closes while the gate is required.
+Optional password protection for local administrator controls can be enabled in **Settings**. Public bird pages remain available without signing in, while live audio is unavailable when protection is on.
 
 If no password is configured, or the state is missing or invalid, recover it from an SSH session:
 
@@ -68,7 +68,7 @@ If no password is configured, or the state is missing or invalid, recover it fro
 sudo /usr/local/sbin/avian-admin-control password-reset
 ```
 
-The command prompts privately for a new password. Return to **Settings → Access** after it finishes.
+The command prompts privately for a new password. Return to **Settings** after it finishes.
 
 ### Updating an existing station
 

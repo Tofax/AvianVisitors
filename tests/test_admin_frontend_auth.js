@@ -279,6 +279,8 @@ async function main() {
   const rowContext = {};
   vm.createContext(rowContext);
   vm.runInContext([
+    'var ICON_EYE = "<svg aria-hidden=\\"true\\"></svg>";',
+    'var ICON_EYE_OFF = "<svg aria-hidden=\\"true\\"></svg>";',
     extractFunction('settingsInfoMarkup'),
     extractFunction('lanAuthRow'),
   ].join('\n'), rowContext);

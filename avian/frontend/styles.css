@@ -11,6 +11,10 @@
     --danger:   #9b3f37;   /* restrained destructive action */
     --hairline: rgba(26,22,18,0.14);  /* faint divider lines + chart gridlines */
     --pill:     #fcfcfb;              /* active-toggle sliding pill */
+    --control-track: #f3f2ee;
+    --control-thumb: #fcfcfb;
+    --control-on: #4a3f31;
+    --control-on-thumb: #fcfcfb;
     /* Depth shadow recipes - replace flat 1px borders */
     --edge:    inset 0 0 0 1px rgba(255,255,255,0.55), 0 0 0 1px rgba(26,22,18,0.04);
     --edge-lg: inset 0 0 0 1px rgba(255,255,255,0.6), 0 0 0 1px rgba(26,22,18,0.06), 0 8px 28px rgba(26,22,18,0.06);
@@ -37,6 +41,10 @@
     --danger:   #dc8b81;
     --hairline: rgba(236,232,225,0.20);  /* faint light divider on charcoal */
     --pill:     #3a3e48;                 /* raised, clearly lighter than the track */
+    --control-track: #212329;
+    --control-thumb: #3a3e48;
+    --control-on: #555a66;
+    --control-on-thumb: #d8d2c6;
     --edge:    inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.4);
     --edge-lg: inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 0 1px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.5);
     --recess:  inset 0 1px 2px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.04);
@@ -511,6 +519,7 @@
     margin: 8px 4px 0; font: 10px ui-monospace, Menlo, monospace;
     color: var(--ink-soft); letter-spacing: 0.04em;
   }
+  .lock-hint:empty { display: none; }
   .lock-transport {
     margin: 6px 4px 0; color: var(--accent);
     font: 9px/1.35 ui-monospace, Menlo, monospace;
@@ -534,10 +543,6 @@
     outline-offset: 1px;
   }
   .menu-lock:disabled { opacity: 0.5; cursor: wait; }
-  .live-policy-note {
-    margin: 4px 4px 10px; color: var(--ink-soft);
-    font: 9px/1.45 ui-monospace, Menlo, monospace;
-  }
   /* Tiny "built by teddy" attribution - appears under the lock-screen
      password field AND at the foot of the about-card. Same monospace
      micro-type used by .lock-hint so the two contexts read consistent. */
@@ -623,7 +628,7 @@
   /* Toggle switch (raised pill that slides) */
   .switch {
     position: relative; width: 38px; height: 20px;
-    background: var(--paper-2); border-radius: 999px;
+    background: var(--control-track); border-radius: 999px;
     box-shadow: var(--recess);
     cursor: pointer;
     border: 0; padding: 0;
@@ -631,16 +636,16 @@
   .switch::after {
     content: ''; position: absolute; top: 2px; left: 2px;
     width: 16px; height: 16px;
-    background: var(--pill); border-radius: 999px;
+    background: var(--control-thumb); border-radius: 999px;
     box-shadow: var(--raised);
     transition: transform 220ms cubic-bezier(.7,.05,.2,1), background 200ms ease;
   }
   .switch[aria-checked="true"] {
-    background: var(--ink-2);
+    background: var(--control-on);
   }
   .switch[aria-checked="true"]::after {
     transform: translateX(18px);
-    background: var(--pill);
+    background: var(--control-on-thumb);
   }
   .switch:disabled { opacity: 0.38; cursor: not-allowed; }
   .switch:focus-visible {
@@ -685,21 +690,47 @@
     font: 10px ui-monospace, Menlo, monospace;
   }
   .lan-auth-confirm > div { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lan-password-field {
+    position: relative; min-width: 170px; flex: 1 1 170px;
+  }
   .lan-auth-confirm input {
-    min-width: 150px; flex: 1; padding: 7px 8px;
+    width: 100%; min-width: 0; padding: 7px 36px 7px 8px;
     border: 0; border-radius: 5px; outline: 0;
     background: var(--paper); color: var(--ink); box-shadow: var(--recess);
     font: 12px ui-monospace, Menlo, monospace;
+  }
+  .lan-password-visibility {
+    position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+    display: grid; place-items: center;
+    width: 28px; min-width: 28px; min-height: 26px; padding: 0;
+    border: 0; border-radius: 4px; background: transparent; color: var(--ink-soft);
+    cursor: pointer; isolation: isolate;
+  }
+  .lan-password-visibility::before {
+    position: absolute; inset: 3px 2px; z-index: 0;
+    border-radius: 3px; background: transparent; content: "";
+  }
+  .lan-password-visibility span { position: relative; z-index: 1; display: grid; place-items: center; }
+  .lan-password-visibility svg { width: 15px; height: 15px; }
+  .lan-password-visibility .eye-hide,
+  .lan-password-visibility[aria-pressed="true"] .eye-show { display: none; }
+  .lan-password-visibility[aria-pressed="true"] .eye-hide { display: grid; }
+  @media (hover: hover) and (pointer: fine) {
+    .lan-password-visibility:hover { color: var(--ink); }
+    .lan-password-visibility:hover::before { background: var(--paper-2); }
+  }
+  .lan-password-visibility:focus-visible {
+    outline: 2px solid var(--ink-soft); outline-offset: 0;
   }
   .lan-auth-status {
     margin: 7px 10px 0; color: var(--ink-soft);
     font: 8.5px/1.5 ui-monospace, Menlo, monospace;
   }
   .lan-auth-status { min-height: 13px; }
+  .lan-auth-status:empty { min-height: 0; margin-block: 0; }
   .lan-auth-status.err { color: var(--accent); }
-  .password-change-control { margin: 4px 10px 0; }
   .password-change-form {
-    display: grid; gap: 8px; margin-top: 8px; padding: 9px;
+    display: grid; gap: 8px; margin: 2px 10px 0; padding: 9px;
     border-radius: 7px; background: var(--paper-2); box-shadow: var(--recess);
   }
   .password-change-form[hidden] { display: none; }
@@ -721,7 +752,8 @@
   .password-change-form > div { display: flex; flex-wrap: wrap; gap: 6px; }
   .lan-auth-confirm .chip,
   .lan-auth-reconcile,
-  .password-change-control .chip {
+  .password-change-form .chip,
+  .archive-setup-button {
     flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
     border: 0; border-radius: 4px; padding: 7px 10px;
@@ -732,33 +764,48 @@
   }
   .lan-auth-confirm .chip:hover,
   .lan-auth-reconcile:hover,
-  .password-change-control .chip:hover { background: var(--paper); }
+  .password-change-form .chip:hover,
+  .archive-setup-button:hover { background: var(--paper); }
   .lan-auth-confirm .chip:active,
   .lan-auth-reconcile:active,
-  .password-change-control .chip:active { box-shadow: var(--recess); }
+  .password-change-form .chip:active,
+  .archive-setup-button:active { box-shadow: var(--recess); }
   .lan-auth-confirm .chip:focus-visible,
   .lan-auth-reconcile:focus-visible,
-  .password-change-control .chip:focus-visible {
+  .password-change-form .chip:focus-visible,
+  .archive-setup-button:focus-visible {
     outline: 2px solid var(--ink);
     outline-offset: 2px;
   }
   .lan-auth-confirm .chip:disabled,
   .lan-auth-reconcile:disabled,
-  .password-change-control .chip:disabled {
+  .password-change-form .chip:disabled,
+  .archive-setup-button:disabled {
     opacity: 0.42; cursor: not-allowed;
   }
+  .archive-setup-button {
+    min-height: 32px; padding: 0 11px; white-space: nowrap;
+  }
 
-  .birdweather-head-actions {
+  .lan-auth-head-actions,
+  .birdweather-head-actions,
+  .archive-settings-head-actions {
     display: inline-flex; align-items: center; gap: 8px;
   }
-  .birdweather-disclosure {
+  .settings-disclosure {
     min-height: 24px; padding: 4px 5px; border: 0; border-radius: 4px;
     background: transparent; color: var(--ink-2); cursor: pointer;
     font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.05em;
   }
-  .birdweather-disclosure:hover { background: var(--paper-2); }
-  .birdweather-disclosure:focus-visible {
+  .settings-disclosure:hover { background: var(--paper-2); }
+  .settings-disclosure:focus-visible {
     outline: 2px solid var(--ink-soft); outline-offset: 1px;
+  }
+  @media (max-width: 560px) {
+    .lan-auth-head-actions { gap: 4px; }
+    .lan-auth-head-actions .settings-disclosure {
+      max-width: 104px; line-height: 1.25; text-align: right;
+    }
   }
   .birdweather-details-shell {
     display: grid; grid-template-rows: 1fr; overflow: visible; opacity: 1;
@@ -775,8 +822,8 @@
   .birdweather-details-shell[data-settled="false"] .seg-pill { transition: none; }
   .birdweather-details-shell[hidden] { display: none; }
   .birdweather-details {
-    min-height: 0; overflow: visible; display: grid; gap: 2px;
-    margin: 2px 6px 0; padding: 7px 8px 6px;
+    min-height: 0; overflow: visible; display: grid; gap: 0;
+    margin: 2px 6px 0; padding: 6px 8px 4px;
     border-radius: 8px; background: var(--paper-2); box-shadow: var(--recess);
   }
   .birdweather-unavailable {
@@ -784,8 +831,12 @@
     font: 8.5px/1.45 ui-monospace, Menlo, monospace;
   }
   .birdweather-token {
-    display: grid; gap: 4px; padding: 1px 3px 4px;
+    display: grid; gap: 4px; padding: 1px 3px 2px;
     color: var(--ink); font: 10px ui-monospace, Menlo, monospace;
+  }
+  .birdweather-token-editor { display: grid; gap: 4px; }
+  .birdweather-token-editor > a {
+    color: var(--ink); text-underline-offset: 2px;
   }
   .birdweather-token input {
     width: 100%; min-width: 0; padding: 7px 8px; border: 0; border-radius: 6px;
@@ -796,43 +847,48 @@
   .birdweather-token input:focus-visible {
     box-shadow: var(--recess), 0 0 0 2px var(--ink-soft);
   }
+  .birdweather-token-actions {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; gap: 8px;
+  }
+  .birdweather-token-editor[hidden],
+  .birdweather-token-actions[hidden] { display: none; }
+  .birdweather-station-link,
+  .birdweather-forget {
+    min-height: 28px; border: 0; border-radius: 5px; padding: 6px 10px;
+    background: var(--paper); color: var(--ink); box-shadow: var(--raised);
+    font: 8px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.06em;
+  }
+  .birdweather-station-link {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 0; text-decoration: none;
+  }
+  .birdweather-station-link[aria-busy="true"] { opacity: 0.56; }
   .birdweather-details .menu-row { padding: 6px 3px; }
   .birdweather-details .access-copy { flex-wrap: wrap; }
   .birdweather-details .access-copy > .hint { flex-basis: 100%; }
   .birdweather-privacy button { min-width: 28px; padding-left: 8px; padding-right: 8px; }
-  .birdweather-station,
-  .birdweather-status {
-    min-height: 12px; margin: 2px 3px; color: var(--ink-2);
-    font: 9px/1.45 ui-monospace, Menlo, monospace;
+  .birdweather-forget {
+    cursor: pointer;
   }
-  .birdweather-station a,
-  .birdweather-actions a {
-    color: var(--ink-2); text-underline-offset: 2px;
-  }
-  .birdweather-actions {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-    padding: 8px 3px 1px;
-  }
-  .birdweather-actions a {
-    margin-left: auto; font: 8.5px/1.35 ui-monospace, Menlo, monospace;
-  }
-  .birdweather-actions .chip {
-    min-height: 26px; border: 0; border-radius: 4px; padding: 6px 10px;
-    background: var(--paper); color: var(--ink); box-shadow: var(--raised); cursor: pointer;
-    font: 9px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.08em;
-  }
-  .birdweather-actions .chip:active { box-shadow: var(--recess); }
-  .birdweather-actions .chip:focus-visible {
+  .birdweather-station-link:hover,
+  .birdweather-forget:hover { background: var(--paper-2); }
+  .birdweather-station-link:active,
+  .birdweather-forget:active { box-shadow: var(--recess); }
+  .birdweather-station-link:focus-visible,
+  .birdweather-forget:focus-visible {
     outline: 2px solid var(--ink-soft); outline-offset: 2px;
   }
-  .birdweather-actions .chip:disabled,
   .birdweather-details button:disabled,
   .birdweather-details input:disabled { opacity: 0.45; cursor: wait; }
   .birdweather-forget { color: var(--danger) !important; }
-  .birdweather-status.err { color: var(--danger); }
-  .birdweather-status:empty { min-height: 0; margin-block: 0; }
-  .settings-retention > .birdweather-control + .menu-row {
-    margin-top: 8px; box-shadow: inset 0 1px 0 rgba(26,22,18,0.06);
+  .settings-retention > .birdweather-control,
+  .settings-retention > .archive-settings-control {
+    margin-top: 5px; padding-top: 5px;
+    box-shadow: inset 0 1px 0 rgba(26,22,18,0.06);
+  }
+  .settings-retention > .archive-settings-control + .menu-row {
+    margin-top: 5px; box-shadow: inset 0 1px 0 rgba(26,22,18,0.06);
   }
   @media (prefers-reduced-motion: reduce) {
     .birdweather-details-shell {
@@ -873,23 +929,23 @@
     width: 100%; height: 18px; background: transparent; cursor: pointer;
   }
   .slider-track input[type="range"]::-webkit-slider-runnable-track {
-    height: 4px; background: var(--paper-2); border-radius: 999px;
+    height: 4px; background: var(--control-track); border-radius: 999px;
     box-shadow: var(--recess);
   }
   .slider-track input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 16px; height: 16px; margin-top: -6px;
-    background: var(--paper); border-radius: 999px;
+    background: var(--control-thumb); border-radius: 999px;
     box-shadow: var(--raised);
     cursor: pointer;
   }
   .slider-track input[type="range"]::-moz-range-track {
-    height: 4px; background: var(--paper-2); border-radius: 999px;
+    height: 4px; background: var(--control-track); border-radius: 999px;
     box-shadow: var(--recess);
   }
   .slider-track input[type="range"]::-moz-range-thumb {
     width: 16px; height: 16px;
-    background: var(--paper); border-radius: 999px;
+    background: var(--control-thumb); border-radius: 999px;
     box-shadow: var(--raised); border: 0;
     cursor: pointer;
   }
@@ -897,7 +953,7 @@
   /* Segmented picker (same pill-on-recess pattern as the time picker) */
   .seg {
     display: inline-flex; padding: 4px;
-    background: var(--paper-2); border-radius: 999px;
+    background: var(--control-track); border-radius: 999px;
     box-shadow: var(--recess);
     position: relative;
   }
@@ -913,6 +969,34 @@
      active option only carries the ink change - same motion as the
      window picker and the bottom slider. */
   .seg button[aria-current="true"] { color: var(--ink); }
+  .settings-theme-seg button {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 26px; padding: 0;
+  }
+  .settings-theme-seg button svg {
+    display: block; width: 13px; height: 13px;
+  }
+  .settings-theme-seg button .tip {
+    position: absolute; z-index: 8; top: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap;
+    padding: 3px 8px; border-radius: 4px;
+    background: var(--paper); color: var(--ink-2); box-shadow: var(--raised);
+    font: 9px/1.2 ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em; text-transform: lowercase;
+    opacity: 0; pointer-events: none;
+    transition: opacity 150ms cubic-bezier(.23,1,.32,1);
+  }
+  .settings-theme-seg button:hover .tip,
+  .settings-theme-seg button:focus-visible .tip { opacity: 1; }
+  .settings-theme-seg button:focus-visible {
+    outline: 2px solid var(--ink-soft); outline-offset: 2px;
+  }
+  .settings-theme-seg button:focus-visible .tip { transition-duration: 0ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .settings-theme-seg button .tip,
+    .settings-theme-seg .seg-pill,
+    [data-labels-switch]::after { transition: none; }
+  }
 
   /* Inline live-audio player - sits at the top of the unlocked drawer.
      A single play/stop button with a quiet running-indicator dot. */
@@ -1586,6 +1670,7 @@ body.postcard-open { overflow: hidden; }
 .postcard-sheet::after { display: none; }
 #postcard-modal.is-open .postcard-sheet { transform: translateY(0) rotate(var(--sheet-turn, 0deg)); opacity: 1; }
 #postcard-modal.is-positioned .postcard-sheet { transition: none; transform: translateY(0) rotate(var(--sheet-turn, 0deg)); opacity: 0; }
+#postcard-modal.is-classic-entering .postcard-sheet { transition: none; }
 
 /* The grip belongs to the compact drawer only. Keeping it out of desktop
    layout preserves the two-column postcard grid exactly. */
@@ -2577,8 +2662,8 @@ body.postcard-open { overflow: hidden; }
      inside the same shell as the rest of the app so the header,
      menu button, and time-window pill stay put - feels native. */
   .admin-screen {
-    position: fixed; inset: 60px 0 60px 0;
-    background: var(--bg);
+    position: fixed; inset: 0 0 60px 0;
+    background: var(--paper);
     overflow-y: auto;
     z-index: 5;
     opacity: 0; pointer-events: none;
@@ -2586,10 +2671,22 @@ body.postcard-open { overflow: hidden; }
   }
   .admin-screen[aria-hidden="false"] { opacity: 1; pointer-events: auto; }
   .admin-frame {
-    max-width: 1100px; margin: 0 auto; padding: 0 28px 40px;
+    max-width: 1100px; margin: 0 auto; padding: 60px 28px 40px;
   }
   .admin-title {
-    text-align: center; margin: 0 auto 28px;
+    text-align: center; margin: 0 auto 28px; padding: 0;
+  }
+  .admin-screen[data-admin-section="settings"] .admin-title {
+    position: sticky; top: 18px; z-index: 6; isolation: isolate;
+  }
+  .admin-screen[data-admin-section="settings"] .admin-title::before {
+    position: absolute; top: -18px; right: auto; bottom: -10px; left: 50%; z-index: -1;
+    width: 100vw; transform: translateX(-50%);
+    background: var(--paper); box-shadow: none;
+    opacity: 1; content: ""; pointer-events: auto;
+  }
+  .admin-screen[data-admin-section="settings"][data-title-pinned="true"] .admin-title::before {
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 9%, transparent);
   }
   .admin-title h1 {
     margin: 0;
@@ -2788,7 +2885,6 @@ body.postcard-open { overflow: hidden; }
     display: grid; gap: 12px;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
-  .admin-actions-grid.archive-open { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-action {
     position: relative;
     background: var(--paper); border-radius: 10px;
@@ -2798,11 +2894,7 @@ body.postcard-open { overflow: hidden; }
   /* The whole card is the control wherever the card has exactly one thing to
      do, which is the pattern the services page already sets. */
   a.admin-action { display: block; text-decoration: none; cursor: pointer; }
-  a.admin-action:hover,
-  .archive-card.is-pressable:hover { transform: translateY(-2px); box-shadow: var(--edge), 0 6px 16px rgba(26,22,18,0.07); }
-  .archive-card.is-pressable { cursor: pointer; }
-  .archive-card.is-pressable:active { transform: translateY(0); }
-  .archive-card.is-pressable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  a.admin-action:hover { transform: translateY(-2px); box-shadow: var(--edge), 0 6px 16px rgba(26,22,18,0.07); }
   .admin-action h4 { margin: 0 0 4px; font: 14px ui-serif, "Iowan Old Style", Georgia, serif; color: var(--ink); }
   .admin-action p {
     margin: 0 0 10px; font: 10px/1.4 ui-monospace, Menlo, monospace;
@@ -2833,12 +2925,14 @@ body.postcard-open { overflow: hidden; }
     display: block; margin-top: 8px;
     color: var(--ink-soft); font: 9px/1.35 ui-monospace, Menlo, monospace;
   }
-  .archive-card h4 { padding-right: 52px; }
-  .archive-card.is-open { grid-column: 1 / -1; }
-  .archive-card[aria-busy="true"] { opacity: 0.72; }
+  .archive-settings-control[aria-busy="true"] { opacity: 0.72; }
+  .archive-settings-details {
+    min-height: 0; overflow: visible;
+    margin: 2px 6px 0; padding: 5px 8px 6px;
+    border-radius: 8px; background: var(--paper-2); box-shadow: var(--recess);
+  }
   .archive-detail {
-    margin-top: 12px; padding-top: 12px;
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--hairline) 55%, transparent);
+    margin-top: 0; padding-top: 0; box-shadow: none;
   }
   .archive-detail.is-controls {
     margin-top: 7px; padding-top: 0; box-shadow: none;
@@ -2859,6 +2953,17 @@ body.postcard-open { overflow: hidden; }
     display: flex; align-items: center; gap: 10px; min-height: 26px;
     margin-top: 12px;
   }
+  .archive-setup-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; gap: 8px; min-height: 30px;
+  }
+  .archive-setup-row.is-action-only { display: flex; justify-content: flex-end; }
+  .archive-setup-command { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .archive-setup-command .code { flex: 1 1 auto; }
+  .archive-settings-details .archive-setup-row .code { min-width: 0; margin-top: 0; }
+  .archive-setup-row .code pre { padding: 8px 36px 8px 10px; }
+  .archive-settings-details .archive-setup-row .code .copy { top: 50%; transform: translateY(-50%); }
+  .archive-setup-row .archive-inline-state { grid-column: 1 / -1; }
   .archive-inline-state {
     color: var(--ink-soft); font: 9px/1.35 ui-monospace, Menlo, monospace;
   }
@@ -2880,12 +2985,9 @@ body.postcard-open { overflow: hidden; }
     display: flex; align-items: center; gap: 10px; padding: 4px 0 6px;
     color: var(--ink-soft); font: 9px/1.35 ui-monospace, Menlo, monospace;
   }
-  .archive-card .archive-schedule {
-    position: absolute; top: 14px; right: 12px;
-  }
-  .archive-card .archive-schedule[disabled] { opacity: 0.38; cursor: wait; }
-  .archive-card .archive-run-button {
+  .archive-settings-control .archive-run-button {
     position: static; display: inline-flex; align-items: center;
+    height: 26px; line-height: 26px;
   }
   .archive-button {
     height: 26px; border: 0; border-radius: 999px; cursor: pointer;
@@ -2903,13 +3005,17 @@ body.postcard-open { overflow: hidden; }
   .archive-button[disabled] { opacity: 0.4; cursor: wait; }
   /* The code block carries its own copy affordance in the corner, the way the
      service badge sits on the icon's line. */
-  .admin-action .code {
+  .admin-action .code,
+  .archive-settings-details .code {
     position: relative; cursor: pointer; margin-top: 10px;
     border-radius: 8px; transition: box-shadow 160ms ease;
   }
-  .admin-action .code:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink-soft) 30%, transparent); }
-  .admin-action .code:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .admin-action .code .copy {
+  .admin-action .code:hover,
+  .archive-settings-details .code:hover { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink-soft) 30%, transparent); }
+  .admin-action .code:focus-visible,
+  .archive-settings-details .code:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .admin-action .code .copy,
+  .archive-settings-details .code .copy {
     position: absolute; top: 8px; right: 8px; z-index: 1;
     display: grid; place-items: center;
     width: 24px; height: 24px; color: var(--ink-soft);
@@ -2918,12 +3024,18 @@ body.postcard-open { overflow: hidden; }
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hairline) 55%, transparent);
     opacity: 0; transition: opacity 160ms ease, color 160ms ease;
   }
-  .admin-action .code .copy svg { width: 11px; height: 11px; display: block; }
+  .admin-action .code .copy svg,
+  .archive-settings-details .code .copy svg { width: 11px; height: 11px; display: block; }
   .admin-action .code:hover .copy,
   .admin-action .code:focus-visible .copy,
-  .admin-action .code[data-copied] .copy { opacity: 1; }
-  .admin-action .code[data-copied] .copy { color: var(--ink); }
-  .admin-action .code[data-copy-error] .copy { opacity: 1; color: var(--accent-2); }
+  .admin-action .code[data-copied] .copy,
+  .archive-settings-details .code:hover .copy,
+  .archive-settings-details .code:focus-visible .copy,
+  .archive-settings-details .code[data-copied] .copy { opacity: 1; }
+  .admin-action .code[data-copied] .copy,
+  .archive-settings-details .code[data-copied] .copy { color: var(--ink); }
+  .admin-action .code[data-copy-error] .copy,
+  .archive-settings-details .code[data-copy-error] .copy { opacity: 1; color: var(--accent-2); }
   .admin-action.deploy pre {
     background: var(--paper-2); color: var(--ink);
     box-shadow: var(--recess);
@@ -2952,9 +3064,11 @@ body.postcard-open { overflow: hidden; }
   /* Mobile compact: drawer takes near-full width, admin pads tighter,
      section heads + cards downsize. */
   @media (max-width: 700px) {
-    .admin-screen { inset: 52px 0 60px 0; }
-    .admin-frame { padding: 0 14px 32px; }
+    .admin-screen { inset: 0 0 60px 0; }
+    .admin-frame { padding: 52px 14px 32px; }
     .admin-title { margin-bottom: 18px; }
+    .admin-screen[data-admin-section="settings"] .admin-title { top: 10px; }
+    .admin-screen[data-admin-section="settings"] .admin-title::before { top: -10px; }
     .admin-title h1 { font-size: 22px; }
     .admin-grid { gap: 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     /* Same sheet as a service card: same radius, same edge, same padding, so the
@@ -2964,7 +3078,6 @@ body.postcard-open { overflow: hidden; }
     .admin-section-head { margin: 18px 0 8px; font-size: 10px; letter-spacing: 0.12em; }
     table.admin-tbl th, table.admin-tbl td { padding: 7px 8px; font-size: 11px; }
     .admin-actions-grid { gap: 10px; grid-template-columns: 1fr; }
-    .admin-actions-grid.archive-open { grid-template-columns: 1fr; }
     .admin-action { padding: 12px 14px; }
     /* Slider track bottom nav: tuck closer to bottom edge */
     .slider { bottom: 14px; min-height: 34px; padding: 3px; }
@@ -3659,6 +3772,15 @@ body.av-local #dd-items  { display: block; }
 .admin-settings input.secret:focus-visible {
   box-shadow: var(--recess), 0 0 0 2px var(--ink-soft);
 }
+.admin-settings input.settings-text {
+  background: var(--paper-2); border: 0; border-radius: 8px;
+  outline: 0; box-shadow: var(--recess); color: var(--ink);
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 9px 12px; width: min(300px, 46vw); box-sizing: border-box;
+}
+.admin-settings input.settings-text:focus-visible {
+  box-shadow: var(--recess), 0 0 0 2px var(--ink-soft);
+}
 .station-coords {
   font: 11px ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--ink-soft); letter-spacing: 0.06em;
@@ -3889,4 +4011,55 @@ body.av-local #dd-items  { display: block; }
 :root[data-grain="off"] #v1::after { display: none; }
 @media (prefers-contrast: more), (forced-colors: active) {
   #v1::after { display: none; }
+}
+
+/* Classic Atlas cards restore the pre-stamp field-guide grid while the
+   current Atlas continues to own filtering, sorting, family groups, and
+   postcard content. The id and layout attribute intentionally outrank the
+   stamp stylesheet, which loads after this file. */
+#atlasGrid[data-layout="classic"] {
+  display: grid;
+  position: relative;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-auto-rows: auto;
+  grid-auto-flow: row;
+  justify-content: stretch;
+  align-items: stretch;
+  gap: 22px;
+}
+#atlasGrid[data-layout="classic"][data-mode="family"] { display: block; }
+#atlasGrid[data-layout="classic"] .atlas-fam-grid {
+  display: grid;
+  position: relative;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-auto-rows: auto;
+  grid-auto-flow: row;
+  justify-content: stretch;
+  align-items: stretch;
+  gap: 22px;
+}
+
+/* The current postcard remains intact in Classic mode, but its stamp corner
+   and the space reserved for that corner disappear. */
+#postcard-modal[data-atlas-source="classic"] .postcard-stamp-slot { display: none; }
+#postcard-modal[data-atlas-source="classic"] .postcard-identity {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border-radius: 9px;
+}
+
+@media (max-width: 700px) {
+  #atlasGrid[data-layout="classic"],
+  #atlasGrid[data-layout="classic"] .atlas-fam-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  #atlasGrid[data-layout="classic"] .bird-card:hover {
+    transform: none;
+    box-shadow: var(--edge-lg);
+  }
 }

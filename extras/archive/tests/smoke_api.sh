@@ -23,6 +23,17 @@ EOF
 chmod 0755 /tmp/archive-api-bin/sudo
 export PATH="/tmp/archive-api-bin:$PATH"
 
+# Model an initialized station with LAN password protection disabled. HTTP
+# runtimes deliberately ignore the CLI metadata bypass and fail closed when
+# the root-managed state is absent, so the smoke must provide real metadata.
+state_dir=/run/archive-api-state
+mkdir -p "$state_dir"
+chmod 0755 "$state_dir"
+printf 'v1\t0\t0\t-\n' >"$state_dir/admin-auth.state"
+chown root:caddy "$state_dir/admin-auth.state"
+chmod 0640 "$state_dir/admin-auth.state"
+
+AV_ADMIN_STATE_FILE="$state_dir/admin-auth.state" \
 AV_ARCHIVE_CONTROL=/tmp/archive-control-test php -S 127.0.0.1:8899 -t /source \
   >/tmp/archive-api-server.log 2>&1 &
 server_pid=$!

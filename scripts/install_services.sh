@@ -83,7 +83,7 @@ EOF
   fi
 
   # Refresh an archive the owner has already opted into. First-time setup
-  # remains a deliberate Tools action.
+  # remains a deliberate Settings action.
   if [ -x /usr/local/sbin/avian-archive-control ] \
     && [ -x "${HOME}/bird-archive/archive_to_drive.sh" ]; then
     /usr/local/sbin/avian-archive-control install >/dev/null

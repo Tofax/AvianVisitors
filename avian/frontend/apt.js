@@ -86,6 +86,15 @@
   var EMPTY_WINDOW_COPY = 'no detections heard in this window';
   var staticHead = document.querySelector('.static-head');
   var staticTitle = document.getElementById('staticTitle');
+  function applySiteName(value) {
+    var name = typeof value === 'string' ? value.trim() : '';
+    if (!name) name = 'BirdNET-Pi';
+    document.querySelectorAll('[data-site-name]').forEach(function (element) {
+      element.textContent = name;
+    });
+    document.title = name;
+    return name;
+  }
   function setTitleForView(i) {
     var next = VIEW_TITLES[i];
     if (!staticTitle || staticTitle.textContent === next) return;
@@ -234,6 +243,31 @@
     syncAtlasAlwaysAll();
   }
 
+  // The stamp wall remains the default Atlas. Classic cards are a local
+  // display preference only, so choosing them never enters the station config
+  // save path or changes filtering, sorting, recordings, or deep links.
+  var ATLAS_STYLE_KEY = 'bird:atlasStyle:v1';
+  var sessionAtlasStyle = null;
+  function atlasStyle() {
+    if (sessionAtlasStyle !== null) return sessionAtlasStyle;
+    return readLS(ATLAS_STYLE_KEY, 'stamps') === 'classic' ? 'classic' : 'stamps';
+  }
+  function atlasUsesClassicCards() {
+    return atlasStyle() === 'classic';
+  }
+  function syncAtlasStyle() {
+    var classic = atlasUsesClassicCards();
+    document.querySelectorAll('[data-atlas-classic]').forEach(function (sw) {
+      sw.setAttribute('aria-checked', classic ? 'true' : 'false');
+    });
+    if (DATA && DATA.lifelist) renderAtlas(false);
+  }
+  function applyAtlasStyle(classic) {
+    sessionAtlasStyle = classic ? 'classic' : 'stamps';
+    writeLS(ATLAS_STYLE_KEY, sessionAtlasStyle);
+    syncAtlasStyle();
+  }
+
   // Remember the last confirmed illustration pose independently for each
   // species. Keep a validated in-memory copy so the preference still works
   // for this visit when storage is unavailable (private mode / quota errors).
@@ -361,6 +395,10 @@
     if (ev.key === ATLAS_ALWAYS_ALL_KEY || ev.key === null) {
       sessionAtlasAlwaysAll = null;
       syncAtlasAlwaysAll();
+    }
+    if (ev.key === ATLAS_STYLE_KEY || ev.key === null) {
+      sessionAtlasStyle = null;
+      syncAtlasStyle();
     }
   });
   var winBtns = [].slice.call(winPick.querySelectorAll('button'));
@@ -3573,6 +3611,8 @@
   // Font Awesome Free 6 glyphs (icons CC BY 4.0), path data verbatim.
   var ICON_COPY = '<svg viewBox="0 0 448 512" fill="currentColor" aria-hidden="true"><path d="M384 336l-192 0c-8.8 0-16-7.2-16-16l0-256c0-8.8 7.2-16 16-16l140.1 0L400 115.9 400 320c0 8.8-7.2 16-16 16zM192 384l192 0c35.3 0 64-28.7 64-64l0-204.1c0-12.7-5.1-24.9-14.1-33.9L366.1 14.1c-9-9-21.2-14.1-33.9-14.1L192 0c-35.3 0-64 28.7-64 64l0 256c0 35.3 28.7 64 64 64zM64 128c-35.3 0-64 28.7-64 64L0 448c0 35.3 28.7 64 64 64l192 0c35.3 0 64-28.7 64-64l0-32-48 0 0 32c0 8.8-7.2 16-16 16L64 464c-8.8 0-16-7.2-16-16l0-256c0-8.8 7.2-16 16-16l32 0 0-48-32 0z"/></svg>';
   var ICON_CHECK = '<svg viewBox="0 0 448 512" fill="currentColor" aria-hidden="true"><path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/></svg>';
+  var ICON_EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.7 12s3.4-5.7 9.3-5.7 9.3 5.7 9.3 5.7-3.4 5.7-9.3 5.7S2.7 12 2.7 12z"/><circle cx="12" cy="12" r="2.5"/></svg>';
+  var ICON_EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 3l18 18M10.7 6.4A10.9 10.9 0 0 1 12 6.3c5.9 0 9.3 5.7 9.3 5.7a14.6 14.6 0 0 1-2.2 2.8M6.2 7.5A15.1 15.1 0 0 0 2.7 12s3.4 5.7 9.3 5.7a10.4 10.4 0 0 0 3.1-.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
   var ICON_CLOSE = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3.2 3.2 L8.8 8.8 M8.8 3.2 L3.2 8.8"/></svg>';
   var ICON_PLAY = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L10 6 L3 10 Z"/></svg>';
   var ICON_PAUSE = '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="2" width="2.5" height="8"/><rect x="6.5" y="2" width="2.5" height="8"/></svg>';
@@ -3795,8 +3835,32 @@
     });
   }
 
+  function clearAtlasPackedState(root) {
+    if (!root) return;
+    var grids = [root].concat([].slice.call(root.querySelectorAll('.atlas-fam-grid')));
+    grids.forEach(function (grid) {
+      grid.classList.remove('is-packed');
+      grid.style.removeProperty('height');
+      grid.style.removeProperty('--pack-gap');
+    });
+    root.querySelectorAll('.bird-card').forEach(function (card) {
+      ['left', 'top', 'position', 'grid-column', 'grid-row', '--slot-w', '--slot-h'].forEach(function (name) {
+        card.style.removeProperty(name);
+      });
+      var fit = card.querySelector('.stamp-fit');
+      if (fit) fit.style.removeProperty('--fit-scale');
+    });
+  }
+
   function packAtlasGrids(root) {
     if (!root) return;
+    var atlasRoot = root.id === 'atlasGrid' ? root :
+      (root.closest ? root.closest('#atlasGrid') : null);
+    if (atlasRoot && atlasRoot.dataset.layout === 'classic') {
+      clearAtlasPackedState(root);
+      queueAtlasOverflowState();
+      return;
+    }
     var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1280;
     var mobile = viewportWidth <= 700;
     // Grow the complete issue gradually from phone to desktop dimensions.
@@ -4069,6 +4133,7 @@
       });
       fresh.replaceWith(prior);
     });
+    grid.dataset.layout = 'stamps';
     if (familyMode) {
       // Flat mode gives the root an absolute-positioning context and a fixed
       // pixel height. Family mode packs its nested grids instead, so carrying
@@ -4079,6 +4144,17 @@
       grid.setAttribute('data-mode', 'family');
     } else grid.removeAttribute('data-mode');
     grid.dataset.sort = sortMode;
+    grid.replaceChildren(template.content);
+  }
+
+  function commitClassicAtlasMarkup(grid, html, sortMode, familyMode) {
+    clearAtlasPackedState(grid);
+    var template = document.createElement('template');
+    template.innerHTML = html;
+    grid.dataset.layout = 'classic';
+    grid.dataset.sort = sortMode;
+    if (familyMode) grid.setAttribute('data-mode', 'family');
+    else grid.removeAttribute('data-mode');
     grid.replaceChildren(template.content);
   }
 
@@ -4402,19 +4478,163 @@
     setTimeout(function () { clearInterval(t); }, 120000);
   }
 
+  var atlasCardAudio = null;
+  var atlasCardAudioButton = null;
+  function setAtlasCardButtonState(btn, state) {
+    if (!btn) return;
+    btn.setAttribute('data-state', state);
+    if (state === 'playing') {
+      btn.setAttribute('data-active', 'true');
+      btn.innerHTML = ICON_PAUSE + '<span>stop</span>';
+    } else if (state === 'loading') {
+      btn.setAttribute('data-active', 'true');
+      btn.innerHTML = ICON_PLAY + '<span>...</span>';
+    } else if (state === 'missing') {
+      btn.setAttribute('data-active', 'false');
+      btn.innerHTML = ICON_PLAY + '<span>no audio</span>';
+      setTimeout(function () {
+        if (btn.getAttribute('data-state') === 'missing') {
+          btn.innerHTML = ICON_PLAY + '<span>play</span>';
+          btn.setAttribute('data-state', 'idle');
+        }
+      }, 2200);
+    } else {
+      btn.setAttribute('data-active', 'false');
+      btn.innerHTML = ICON_PLAY + '<span>play</span>';
+    }
+  }
+  function clearAtlasCardProgress(card) {
+    if (!card) return;
+    var sw = card.querySelector('.spectro-wrap');
+    if (sw) sw.style.setProperty('--prog', '0%');
+    card.removeAttribute('data-playing');
+  }
+  function stopAtlasCardAudio() {
+    audioRelease(stopAtlasCardAudio);
+    var audio = atlasCardAudio;
+    var btn = atlasCardAudioButton;
+    atlasCardAudio = null;
+    atlasCardAudioButton = null;
+    if (audio) {
+      try { audio.pause(); } catch (e) { }
+    }
+    if (btn) {
+      clearAtlasCardProgress(btn.closest('.bird-card'));
+      setAtlasCardButtonState(btn, 'idle');
+    }
+  }
+  function activateAtlasCardAudio(btn) {
+    var card = btn && btn.closest('.bird-card');
+    if (!card) return;
+    if (btn === atlasCardAudioButton) { stopAtlasCardAudio(); return; }
+    stopAtlasCardAudio();
+    audioClaim(stopAtlasCardAudio);   // stop any modal-recording / live-stream audio
+    setAtlasCardButtonState(btn, 'loading');
+    atlasCardAudioButton = btn;
+    // Render the spectrogram client-side from the recording's audio so
+    // it matches the active theme. paintSpectrogram paints with the
+    // --paper/--ink palette per data-theme (the same canvas the modal
+    // recordings use), instead of a fixed-colour PNG that can't follow
+    // light/dark mode. Decoded buffers are cached per URL.
+    var spectroWrap = card.querySelector('.spectro-wrap');
+    if (spectroWrap && !spectroWrap.firstChild) {
+      var canvas = document.createElement('canvas');
+      spectroWrap.appendChild(canvas);
+      var aurl = card.dataset.audio;
+      if (_decodedCache[aurl]) {
+        paintSpectrogram(canvas, _decodedCache[aurl]);
+      } else {
+        var actx = getSpecCtx();
+        if (actx) {
+          fetch(aurl)
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+            .then(function (b) { return actx.decodeAudioData(b); })
+            .then(function (buf) {
+              _decodedCache[aurl] = buf;
+              // Guard on document containment, not spectroWrap.contains:
+              // a 30s refreshAll() poll can rebuild the atlas and detach
+              // this card mid-decode. The detached wrap still "contains"
+              // its canvas, but a detached node measures 0x0, which would
+              // trap paintSpectrogram in its size-retry loop forever.
+              if (document.contains(canvas)) paintSpectrogram(canvas, buf);
+            })
+            .catch(function () { if (spectroWrap.contains(canvas)) spectroWrap.removeChild(canvas); });
+        } else {
+          spectroWrap.removeChild(canvas);
+        }
+      }
+    }
+    // Start audio.
+    var audio = new Audio(card.dataset.audio);
+    audio.addEventListener('canplay', function () {
+      if (atlasCardAudioButton !== btn || atlasCardAudio !== audio) return;
+      setAtlasCardButtonState(btn, 'playing');
+      card.setAttribute('data-playing', 'true');
+      audio.play();
+    });
+    // Progress bar on the spectrogram strip.
+    audio.addEventListener('timeupdate', function () {
+      if (atlasCardAudioButton !== btn || atlasCardAudio !== audio) return;
+      var pct = audio.duration ? (audio.currentTime / audio.duration * 100) : 0;
+      if (spectroWrap) spectroWrap.style.setProperty('--prog', pct.toFixed(1) + '%');
+    });
+    audio.addEventListener('ended', function () {
+      if (atlasCardAudioButton === btn && atlasCardAudio === audio) stopAtlasCardAudio();
+    });
+    audio.addEventListener('error', function () {
+      if (atlasCardAudioButton === btn && atlasCardAudio === audio) {
+        audioRelease(stopAtlasCardAudio);
+        setAtlasCardButtonState(btn, 'missing');
+        clearAtlasCardProgress(card);
+        atlasCardAudio = null;
+        atlasCardAudioButton = null;
+      }
+    });
+    atlasCardAudio = audio;
+    audio.load();
+  }
+  function wireAtlasCardAudio(grid) {
+    if (!grid || grid.__atlasCardAudioWired) return;
+    grid.__atlasCardAudioWired = true;
+    grid.addEventListener('click', function (ev) {
+      var btn = ev.target.closest && ev.target.closest('[data-action="play"]');
+      if (!btn || !grid.contains(btn)) return;
+      activateAtlasCardAudio(btn);
+    });
+  }
+  function wireAtlasSpectrogramScrub(grid) {
+    if (!grid || grid.__atlasSpectrogramScrubWired) return;
+    grid.__atlasSpectrogramScrubWired = true;
+    grid.addEventListener('click', function (ev) {
+      var sw = ev.target.closest && ev.target.closest('.spectro-wrap');
+      if (!sw || !sw.firstChild) return;
+      var card = sw.closest('.bird-card');
+      var btn = card && card.querySelector('[data-action="play"]');
+      if (!btn) return;
+      if (atlasCardAudioButton === btn && atlasCardAudio && atlasCardAudio.duration) {
+        var rect = sw.getBoundingClientRect();
+        var pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        atlasCardAudio.currentTime = pct * atlasCardAudio.duration;
+      } else {
+        btn.click();
+      }
+    });
+  }
+
   function renderAtlas(animate) {
     var grid = document.getElementById('atlasGrid');
     if (!grid) return;
-    var priorRects = atlasRects(grid);
+    stopAtlasCardAudio();
+    var classic = atlasUsesClassicCards();
+    var priorRects = classic ? {} : atlasRects(grid);
 
     function showAtlasEmpty(message, hint) {
       // A packed wall owns an inline pixel height. If a later time window has
       // no birds, carrying that height into the empty state leaves several
       // screens of blank paper beneath the message.
-      grid.classList.remove('is-packed');
-      grid.style.removeProperty('height');
-      grid.style.removeProperty('--pack-gap');
+      clearAtlasPackedState(grid);
       grid.removeAttribute('data-mode');
+      grid.dataset.layout = classic ? 'classic' : 'stamps';
       grid.dataset.sort = window.__atlasSort || 'life';
       grid.innerHTML = '<div class="atlas-empty' + (hint ? '' : ' window-empty') + '">' +
         '<p>' + message + '</p>' +
@@ -4507,6 +4727,33 @@
       // a card from flashing the placeholder before dims.json lands.
       var needsArt = tablesReady && !DIMS[slugify(s.sci)];
       var fresh = justGenerated[s.sci] ? '&t=' + justGenerated[s.sci] : '';
+      if (classic) {
+        var common = s.com || s.sci;
+        var imageSrc = needsArt ? './nest-eggs.webp' : sketchSrc + fresh;
+        var birdWiki = wikiUrl(s.sci);
+        var birdEbird = ebirdUrl(s.sci);
+        return ''
+          + '<article class="bird-card classic-atlas-card' + (needsArt ? ' needs-art' : '') + '"'
+          + ' data-sci="' + escHtml(s.sci) + '" data-com="' + escHtml(s.com || '') + '" data-audio="' + escHtml(audioSrc) + '"'
+          + ' data-acc="' + (accession[s.sci] || 0) + '"'
+          + ' data-fresh="' + (isLifer ? '1' : '0') + '" data-win="' + win + '" data-total="' + total + '">'
+          + (isLifer ? '<span class="lifer-badge" title="new to the life list in this window">lifer</span>' : '')
+          + '<div class="stat">' + statRows + '</div>'
+          + '<div class="img-wrap">'
+          + '<img loading="lazy" decoding="async" src="' + escHtml(imageSrc) + '" alt="' + escHtml(common) + '">'
+          + '</div>'
+          + '<h3>' + escHtml(common) + '</h3>'
+          + '<div class="sci">' + escHtml(s.sci) + '</div>'
+          + '<div class="spectro-wrap" aria-hidden="true"></div>'
+          + '<div class="actions">'
+          + '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
+          + ICON_PLAY + '<span>play</span>'
+          + '</button>'
+          + '<a class="chip ext" href="' + escHtml(birdWiki) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
+          + (birdEbird ? '<a class="chip ext" href="' + escHtml(birdEbird) + '" target="_blank" rel="noopener" aria-label="eBird">ebird</a>' : '')
+          + '</div>'
+          + '</article>';
+      }
       // Each species prints as a stamp whose design is set by its family.
       // The card stays the click target so the detail modal, highlighting
       // and deep links keep working untouched.
@@ -4540,7 +4787,7 @@
       function flush() {
         if (!run.length) return;
         out += '<section class="fam-block">'
-             + '<h2 class="atlas-fam"><span>' + cur + '</span><i></i>'
+             + '<h2 class="atlas-fam"><span>' + escHtml(cur) + '</span><i></i>'
              + '<em>' + run.length + ' species</em></h2>'
              + '<div class="atlas-fam-grid">' + run.join('') + '</div></section>';
         run = [];
@@ -4551,29 +4798,40 @@
         run.push(cardHtml[i]);
       });
       flush();
-      commitAtlasMarkup(grid, out, sortMode, true);
+      if (classic) commitClassicAtlasMarkup(grid, out, sortMode, true);
+      else commitAtlasMarkup(grid, out, sortMode, true);
     } else {
-      commitAtlasMarkup(grid, cardHtml.join(''), sortMode, false);
+      if (classic) commitClassicAtlasMarkup(grid, cardHtml.join(''), sortMode, false);
+      else commitAtlasMarkup(grid, cardHtml.join(''), sortMode, false);
     }
 
-    packAtlasGrids(grid);
-    requestAnimationFrame(function () {
-      animateAtlasFlip(grid, priorRects);
-      queueCompactHeader();
-    });
+    if (classic) {
+      // Classic cards use the historical responsive grid. Leave stamp-only
+      // geometry, visual effects, FLIP motion, and stick-on arrivals dormant.
+      requestAnimationFrame(function () {
+        queueAtlasOverflowState();
+        queueCompactHeader();
+      });
+    } else {
+      packAtlasGrids(grid);
+      requestAnimationFrame(function () {
+        animateAtlasFlip(grid, priorRects);
+        queueCompactHeader();
+      });
 
-    // The stamp designs that use a real pixel treatment (cyanotype, halftone,
-    // low-poly, engraving) paint onto a canvas once it has been laid out.
-    if (window.FX) {
-      requestAnimationFrame(function () { window.FX.run(grid); });
-      setTimeout(function () { window.FX.run(grid); }, 400);
+      // The stamp designs that use a real pixel treatment (cyanotype, halftone,
+      // low-poly, engraving) paint onto a canvas once it has been laid out.
+      if (window.FX) {
+        requestAnimationFrame(function () { window.FX.run(grid); });
+        setTimeout(function () { window.FX.run(grid); }, 400);
+      }
+
+      // Species heard since the last time the atlas was opened are stuck on
+      // one at a time, oldest arrival first, instead of wearing a badge.
+      // Runs once per page load, and only once the atlas is actually on
+      // screen, so the moment is never spent behind another view.
+      maybeStickNewStamps(grid, accession);
     }
-
-    // Species heard since the last time the atlas was opened are stuck on
-    // one at a time, oldest arrival first, instead of wearing a badge.
-    // Runs once per page load, and only once the atlas is actually on
-    // screen, so the moment is never spent behind another view.
-    maybeStickNewStamps(grid, accession);
 
     // Wire audio playback + spectrogram load.
     // - Only one card plays at a time. Clicking play on a different card
@@ -4582,135 +4840,14 @@
     //   for every card visible on initial render).
     // - If the recording endpoint 404s (no detection yet for this
     //   species), the button reverts and shows "no audio".
-    var currentAudio = null;
-    var currentBtn = null;
-    function setBtnState(btn, state) {
-      btn.setAttribute('data-state', state);
-      if (state === 'playing') {
-        btn.setAttribute('data-active', 'true');
-        btn.innerHTML = ICON_PAUSE + '<span>stop</span>';
-      } else if (state === 'loading') {
-        btn.setAttribute('data-active', 'true');
-        btn.innerHTML = ICON_PLAY + '<span>...</span>';
-      } else if (state === 'missing') {
-        btn.setAttribute('data-active', 'false');
-        btn.innerHTML = ICON_PLAY + '<span>no audio</span>';
-        setTimeout(function () {
-          if (btn.getAttribute('data-state') === 'missing') {
-            btn.innerHTML = ICON_PLAY + '<span>play</span>';
-            btn.setAttribute('data-state', 'idle');
-          }
-        }, 2200);
-      } else {
-        btn.setAttribute('data-active', 'false');
-        btn.innerHTML = ICON_PLAY + '<span>play</span>';
-      }
-    }
-    function clearProgressOn(card) {
-      if (!card) return;
-      var sw = card.querySelector('.spectro-wrap');
-      if (sw) sw.style.setProperty('--prog', '0%');
-      card.removeAttribute('data-playing');
-    }
-    function stopCurrent() {
-      audioRelease(stopCurrent);
-      if (currentAudio) {
-        try { currentAudio.pause(); } catch (e) { }
-        currentAudio = null;
-      }
-      if (currentBtn) {
-        var card = currentBtn.closest('.bird-card');
-        clearProgressOn(card);
-        setBtnState(currentBtn, 'idle');
-        currentBtn = null;
-      }
-    }
-    grid.querySelectorAll('[data-action="play"]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var card = btn.closest('.bird-card');
-        if (btn === currentBtn) { stopCurrent(); return; }
-        stopCurrent();
-        audioClaim(stopCurrent);   // stop any modal-recording / live-stream audio
-        setBtnState(btn, 'loading');
-        currentBtn = btn;
-        // Render the spectrogram client-side from the recording's audio so
-        // it matches the active theme. paintSpectrogram paints with the
-        // --paper/--ink palette per data-theme (the same canvas the modal
-        // recordings use), instead of a fixed-colour PNG that can't follow
-        // light/dark mode. Decoded buffers are cached per URL.
-        var spectroWrap = card.querySelector('.spectro-wrap');
-        if (spectroWrap && !spectroWrap.firstChild) {
-          var canvas = document.createElement('canvas');
-          spectroWrap.appendChild(canvas);
-          var aurl = card.dataset.audio;
-          if (_decodedCache[aurl]) {
-            paintSpectrogram(canvas, _decodedCache[aurl]);
-          } else {
-            var actx = getSpecCtx();
-            if (actx) {
-              fetch(aurl)
-                .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
-                .then(function (b) { return actx.decodeAudioData(b); })
-                .then(function (buf) {
-                  _decodedCache[aurl] = buf;
-                  // Guard on document containment, not spectroWrap.contains:
-                  // a 30s refreshAll() poll can rebuild the atlas and detach
-                  // this card mid-decode. The detached wrap still "contains"
-                  // its canvas, but a detached node measures 0x0, which would
-                  // trap paintSpectrogram in its size-retry loop forever.
-                  if (document.contains(canvas)) paintSpectrogram(canvas, buf);
-                })
-                .catch(function () { if (spectroWrap.contains(canvas)) spectroWrap.removeChild(canvas); });
-            } else {
-              spectroWrap.removeChild(canvas);
-            }
-          }
-        }
-        // Start audio.
-        var audio = new Audio(card.dataset.audio);
-        audio.addEventListener('canplay', function () {
-          if (currentBtn !== btn) return; // user clicked away
-          setBtnState(btn, 'playing');
-          card.setAttribute('data-playing', 'true');
-          audio.play();
-        });
-        // Progress bar on the spectrogram strip.
-        audio.addEventListener('timeupdate', function () {
-          if (currentBtn !== btn) return;
-          var pct = audio.duration ? (audio.currentTime / audio.duration * 100) : 0;
-          if (spectroWrap) spectroWrap.style.setProperty('--prog', pct.toFixed(1) + '%');
-        });
-        audio.addEventListener('ended', function () {
-          if (currentBtn === btn) stopCurrent();
-        });
-        audio.addEventListener('error', function () {
-          if (currentBtn === btn) {
-            setBtnState(btn, 'missing');
-            clearProgressOn(card);
-            currentAudio = null; currentBtn = null;
-          }
-        });
-        currentAudio = audio;
-        audio.load();
-      });
-    });
+    // The Atlas root survives every render, including keyed stamp-card reuse.
+    // One delegated play handler therefore covers both layouts without ever
+    // accumulating listeners on a retained card or button.
+    wireAtlasCardAudio(grid);
 
-    // Spectrogram click = scrub to that position (if playing) or restart.
-    grid.addEventListener('click', function (ev) {
-      var sw = ev.target.closest && ev.target.closest('.spectro-wrap');
-      if (!sw || !sw.firstChild) return;
-      var card = sw.closest('.bird-card');
-      var btn = card.querySelector('[data-action="play"]');
-      // If this card is the active one, scrub.
-      if (currentBtn === btn && currentAudio && currentAudio.duration) {
-        var rect = sw.getBoundingClientRect();
-        var pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-        currentAudio.currentTime = pct * currentAudio.duration;
-      } else {
-        // Otherwise start playback from the top.
-        btn.click();
-      }
-    });
+    // One delegated scrub listener survives all card rebuilds. Repeated Atlas
+    // refreshes must not multiply the seek or restart action.
+    wireAtlasSpectrogramScrub(grid);
     if (animate) playAtlasEntrance();
   }
 
@@ -4804,6 +4941,7 @@
       DATA.stats = parts[0];
       DATA.firstseen = parts[1];
       DATA.statsRecent = parts[2];
+      if (parts[2] && typeof parts[2].site_name === 'string') applySiteName(parts[2].site_name);
       DATA.rhythm = parts[3];
       DATA.hourly = parts[4];
       renderStatsContext(animate);
@@ -4819,6 +4957,7 @@
     return fetchJson('./avian/api/birdnet-api.php?action=recent&hours=' + forHours)
       .then(function (j) {
         if (forHours !== currentHours) return; // window changed mid-flight
+        if (typeof j.site_name === 'string') applySiteName(j.site_name);
         DATA.recent = j; renderWindowDependent(animate);
       })
       .catch(function (e) { console.warn('recent fetch failed', e); });
@@ -4846,6 +4985,7 @@
       if (forHours === currentHours && parts[4]) {
         DATA.recent = parts[4];
         if (stillLiveStats) DATA.statsRecent = parts[4];
+        if (typeof parts[4].site_name === 'string') applySiteName(parts[4].site_name);
       }
       // A failed rhythm poll keeps the last-known chart rather than blanking it.
       if (stillLiveStats && parts[5]) DATA.rhythm = parts[5];
@@ -5199,7 +5339,7 @@
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
-  function showAdminLocked(message, recovery) {
+  function showAdminLocked(message, recovery, revealDrawer) {
     var wasAdminOn = document.body.classList.contains('admin-on');
     var previousAdminSect = adminSect;
     if (previousAdminSect) pendingAdminSection = previousAdminSect;
@@ -5222,8 +5362,14 @@
     document.body.classList.add('av-forwarded');
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
     if (adminBody) adminBody.replaceChildren();
-    if (adminEl) adminEl.setAttribute('aria-hidden', 'true');
+    if (adminEl) {
+      adminEl.setAttribute('aria-hidden', 'true');
+      adminEl.scrollTop = 0;
+      adminEl.removeAttribute('data-admin-section');
+      adminEl.setAttribute('data-title-pinned', 'false');
+    }
     if (settingsInfoCleanup) settingsInfoCleanup();
+    if (settingsAccessCleanup) settingsAccessCleanup();
     document.body.classList.remove('admin-on');
     adminSect = null;
     items.classList.remove('show');
@@ -5236,9 +5382,9 @@
     if (wasAdminOn) queueVisibleAtlasPack();
     lockHint.textContent = recovery
       ? 'Admin password is missing or invalid. Over SSH, run sudo /usr/local/sbin/avian-admin-control password-reset.'
-      : (message || 'Your admin session expired. Unlock to continue.');
-    lockHint.classList.toggle('lock-err', true);
-    if (pendingAdminSection) {
+      : (typeof message === 'string' ? message : 'Your admin session expired. Unlock to continue.');
+    lockHint.classList.toggle('lock-err', !!lockHint.textContent);
+    if (pendingAdminSection && revealDrawer !== false) {
       openDd();
       setTimeout(function () { focusEl(document.getElementById('lockPass')); }, 0);
     }
@@ -5278,7 +5424,7 @@
   }
 
   function signalAdminLock(message) {
-    var event = { type: 'lock', at: Date.now(), message: message || 'Admin controls locked.' };
+    var event = { type: 'lock', at: Date.now(), message: typeof message === 'string' ? message : 'Admin controls locked.' };
     try { localStorage.setItem(ADMIN_LOCK_KEY, JSON.stringify(event)); } catch (e) {}
     if (adminChannel) {
       try { adminChannel.postMessage(event); } catch (e) {}
@@ -5326,7 +5472,11 @@
     if (notice) pendingAdminNotice = { message: notice, error: true };
     publishAdminActivity(Date.now(), true);
     signalAdminSessionReplacement();
-    showAdminLocked('Updating admin session...', false);
+    closeDd();
+    // A same-tab policy or password update restores the Settings view as soon
+    // as the replacement HttpOnly session lands. Keep the navigation drawer
+    // closed throughout that handoff instead of briefly opening a lock form.
+    showAdminLocked('', false, false);
     tryAutoUnlock();
   }
 
@@ -5345,7 +5495,7 @@
       adminLastActivityAt = Math.max(adminLastActivityAt, data.at);
       scheduleAdminIdleLock();
     } else if (data.type === 'lock') {
-      showAdminLocked(data.message || 'Admin controls locked in another tab.', false);
+      showAdminLocked(typeof data.message === 'string' ? data.message : 'Admin controls locked in another tab.', false);
       // A stale request from another tab can report its old session after a
       // policy or password change has already installed a fresh shared cookie.
       // Recheck the server. A real logout stays locked because that probe is 401.
@@ -5525,7 +5675,7 @@
       if (r.status === 401) {
         return r.json().catch(function () { return {}; }).then(function (j) {
           if (probeGeneration !== adminUnlockProbeGeneration) return;
-          showAdminLocked('Unlock Settings, System, Logs, and Tools.', !!j.recovery);
+          showAdminLocked('', !!j.recovery);
         });
       }
     }).catch(function () { });
@@ -5573,7 +5723,7 @@
       if (r.status === 200) {
         return r.json().then(function (j) {
           lockHint.classList.remove('lock-err');
-          lockHint.textContent = 'unlock Settings, System, Logs, and Tools.';
+          lockHint.textContent = '';
           publishAdminActivity(Date.now(), true);
           renderMenu(j.items || [], j.auth || {});
         });
@@ -5605,6 +5755,18 @@
   //   - small ADVANCED TOOLS grid for the rest of BirdNET-Pi (still
   //     opens externally; rebuilding all of these in our design is on
   //     the follow-up list)
+  function menuItemMarkup(it) {
+    var label = escHtml(it && it.label || '');
+    var href = escHtml(it && it.href || '');
+    var attrs = it && it.native ? '' : ' target="_blank" rel="noopener"';
+    var classes = [];
+    if (!it || !it.native) classes.push('ext');
+    if (it && it.full) classes.push('full');
+    var cls = classes.length ? ' class="' + classes.join(' ') + '"' : '';
+    var dot = it && it.dot ? '<i class="notif-dot"></i>' : '';
+    return '<a' + cls + ' href="' + href + '"' + attrs + '><span>' + label + dot + '</span></a>';
+  }
+
   function renderMenu(menu, auth) {
     adminUnlockProbeGeneration += 1;
     adminAccessState = 'unlocked';
@@ -5634,15 +5796,7 @@
     // Build the diagnostic shortcuts (system / logs / tools). With
     // native:true they navigate in-page; otherwise they keep the old
     // open-in-new-tab behavior for the legacy BirdNET-Pi screens.
-    var linksHtml = menu.map(function (it) {
-      var label = (it.label || '');
-      var attrs = it.native ? '' : ' target="_blank" rel="noopener"';
-      var cls = it.native ? '' : ' class="ext"';
-      // A dot marks a section with something waiting (e.g. instant
-      // cutouts ready for their upgrade pass in settings).
-      var dot = it.dot ? '<i class="notif-dot"></i>' : '';
-      return '<a' + cls + ' href="' + it.href + '"' + attrs + '><span>' + label + dot + '</span></a>';
-    }).join('');
+    var linksHtml = menu.map(menuItemMarkup).join('');
     if (adminAuthMeta.lan_policy) localAudio = false;
     var liveAudioHtml = localAudio ?
       '<div class="live-audio" id="liveAudio" data-on="false" data-state="idle">'
@@ -5657,9 +5811,7 @@
       // real time. No separate toggle.
       + '<canvas class="live-spectro" id="liveSpectro" width="600" height="120" aria-label="live spectrogram"></canvas>'
       + '<div class="live-status" id="liveStatus" role="status" aria-live="polite" aria-atomic="true"></div>'
-      : (adminAuthMeta.lan_policy
-        ? '<p class="live-policy-note">Live audio is unavailable while local password protection is on.</p>'
-        : '');
+      : '';
     items.innerHTML = liveAudioHtml + '<div class="menu-links">' + linksHtml + '</div>';
 
     if (adminLock) {
@@ -5668,8 +5820,8 @@
       adminLock.onclick = function () {
         adminLock.disabled = true;
         lockAdminSession().then(function () {
-          showAdminLocked('Admin controls locked.', false);
-          signalAdminLock('Admin controls locked.');
+          showAdminLocked('', false);
+          signalAdminLock('');
         }).catch(function () {
           adminLock.disabled = false;
         });
@@ -5919,7 +6071,7 @@
     if (!Object.keys(pending).length) return;
     setSaveState('saving...');
     clearTimeout(autoSaveT);
-    autoSaveT = setTimeout(saveSettings, delay || 700);
+    autoSaveT = setTimeout(saveSettings, typeof delay === 'number' ? delay : 700);
   }
 
   // The range filter scores each species against where and when the
@@ -5956,6 +6108,15 @@
       + '  <input type="password" class="secret" data-key="' + key + '" autocomplete="off" '
       + 'placeholder="' + (isSet ? 'saved, paste to replace' : 'paste key') + '">'
       + '</div>';
+  }
+  function settingsText(key, label, value, maxLength) {
+    return ''
+      + '<label class="menu-row settings-text-row">'
+      + '  <span class="label">' + adminEsc(label) + '</span>'
+      + '  <input type="text" class="settings-text" data-key="' + adminAttr(key) + '"'
+      + '    value="' + adminAttr(value || '') + '" maxlength="' + (maxLength || 60) + '"'
+      + '    autocomplete="off" spellcheck="false">'
+      + '</label>';
   }
   function settingsToggle(key, label, hint, on) {
     return ''
@@ -6014,6 +6175,7 @@
       + '</button>';
   }
   var settingsInfoCleanup = null;
+  var settingsAccessCleanup = null;
   function wireSettingsInfo(scope) {
     if (settingsInfoCleanup) settingsInfoCleanup();
     var buttons = [].slice.call(scope.querySelectorAll('[data-settings-info]'));
@@ -6087,33 +6249,55 @@
     };
   }
   // Client-side theme switcher row. Reuses the .seg look but is tagged
-  // data-theme-seg so wireSettingsControls skips it - it applies instantly
-  // and is NOT part of the Pi config save flow.
+  // data-theme-seg so wireSettingsControls skips it. It applies instantly
+  // and is not part of the Pi config save flow.
   function themeRow() {
     var cur = themePreference();
-    var btn = function (v, label) {
-      return '<button type="button" data-theme="' + v + '" aria-current="' + (cur === v ? 'true' : 'false') + '">' + label + '</button>';
+    var icons = {
+      auto: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="8.5" rx="1.5"/><path d="M5.25 13.5h5.5M8 11v2.5"/></svg>',
+      light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v1.25M8 13.25v1.25M1.5 8h1.25M13.25 8h1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M12.6 3.4l-.9.9M4.3 11.7l-.9.9"/></svg>',
+      dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.2 10.6A5.5 5.5 0 0 1 5.4 3.8a5.5 5.5 0 1 0 6.8 6.8Z"/></svg>'
+    };
+    var btn = function (v, label, tip) {
+      var id = 'theme' + v.charAt(0).toUpperCase() + v.slice(1) + 'Tip';
+      return '<button type="button" data-theme="' + v + '" aria-current="' + (cur === v ? 'true' : 'false') + '" aria-label="' + label + '" aria-describedby="' + id + '">'
+        + icons[v] + '<span class="tip" id="' + id + '" role="tooltip">' + tip + '</span></button>';
     };
     return ''
       + '<div class="menu-row">'
-      + '  <div><span class="label">Theme</span><span class="hint">auto follows your system</span></div>'
-      + '  <div class="seg" data-theme-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('auto', 'auto') + btn('light', 'light') + btn('dark', 'dark') + '</div>'
+      + '  <div><span class="label">Theme</span></div>'
+      + '  <div class="seg settings-theme-seg" data-theme-seg role="group" aria-label="Theme"><i class="seg-pill" aria-hidden="true"></i>'
+      + btn('auto', 'Follow system theme', 'follow system') + btn('light', 'Use light theme', 'light') + btn('dark', 'Use dark theme', 'dark') + '</div>'
       + '</div>';
   }
-  // Client-side collage-labels switcher; same instant-apply pattern as
-  // the theme row (data-labels-seg keeps it out of the Pi config flow).
+  // Client-side collage-label switch. It applies instantly and remains a
+  // browser preference rather than part of the Pi config save flow.
   function labelsRow() {
     // Same default as labelsOn(), or the switch reads off on a fresh device
     // while the collage is drawing names.
     var cur = readLS('bird:labels', 'on');
-    var btn = function (v, label) {
-      return '<button type="button" data-labels="' + v + '" aria-current="' + (cur === v ? 'true' : 'false') + '">' + label + '</button>';
-    };
     return ''
       + '<div class="menu-row">'
       + '  <div><span class="label">Bird names</span><span class="hint">show names alongside birds in the collage</span></div>'
-      + '  <div class="seg" data-labels-seg><i class="seg-pill" aria-hidden="true"></i>' + btn('off', 'off') + btn('on', 'on') + '</div>'
+      + '  <button type="button" class="switch" role="switch" aria-label="Show bird names"'
+      + '    aria-checked="' + (cur === 'on' ? 'true' : 'false') + '" data-labels-switch></button>'
       + '</div>';
+  }
+  function wireLabelsPreference(scope) {
+    var labelsSwitch = scope.querySelector('[data-labels-switch]');
+    if (!labelsSwitch) return;
+    labelsSwitch.addEventListener('click', function () {
+      var on = labelsSwitch.getAttribute('aria-checked') !== 'true';
+      labelsSwitch.setAttribute('aria-checked', on ? 'true' : 'false');
+      writeLS('bird:labels', on ? 'on' : 'off');
+      if (document.fonts && document.fonts.load) {
+        document.fonts.load('600 16px Hand').then(function () {
+          labelFontReady = true; renderCollageFromData();
+        }).catch(function () { labelFontReady = true; renderCollageFromData(); });
+      } else {
+        labelFontReady = true; renderCollageFromData();
+      }
+    });
   }
   function atlasAlwaysAllRow() {
     var on = atlasAlwaysAll();
@@ -6122,6 +6306,15 @@
       + '  <div><span class="label">Always show full atlas</span><span class="hint">show every unlocked stamp</span></div>'
       + '  <button type="button" class="switch" role="switch" aria-label="Always show full atlas"'
       + '    aria-checked="' + (on ? 'true' : 'false') + '" data-atlas-always-all></button>'
+      + '</div>';
+  }
+  function atlasClassicRow() {
+    var on = atlasUsesClassicCards();
+    return ''
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Classic Atlas cards</span></div>'
+      + '  <button type="button" class="switch" role="switch" aria-label="Classic Atlas cards"'
+      + '    aria-checked="' + (on ? 'true' : 'false') + '" data-atlas-classic></button>'
       + '</div>';
   }
   function lanAuthRow(security) {
@@ -6134,48 +6327,48 @@
       : configured
       ? 'lock Settings, System, Logs, and Tools on direct local connections'
       : 'From SSH, run: sudo /usr/local/sbin/avian-admin-control password-reset';
-    var details = hint + '. Collage, Atlas, Stats, and recordings stay public. '
-      + 'Live audio is unavailable while this setting is on. On plain HTTP, this blocks casual access '
+    var details = hint + '. Collage, Atlas, Stats, and recordings stay public. On plain HTTP, this blocks casual access '
       + 'but does not protect your password from a hostile network.';
+    var canChangePassword = on && configured;
     return ''
-      + '<div class="lan-auth-control" data-lan-auth-control>'
+      + '<div class="lan-auth-control" data-lan-auth-control' + (canChangePassword ? ' data-password-change' : '') + '>'
       + '  <div class="menu-row">'
       + '    <div class="access-copy"><span class="label">Require password on local network</span>'
       + settingsInfoMarkup('lanAuthTip', 'About local password protection', details)
       + '    </div>'
+      + '    <div class="lan-auth-head-actions">'
+      + (canChangePassword
+        ? '      <button type="button" class="settings-disclosure" data-password-change-open aria-controls="passwordChangeForm" aria-expanded="false">change admin password</button>'
+        : '')
       + '    <button type="button" class="switch" role="switch" data-lan-auth'
       + '      aria-label="Require password on local network" aria-describedby="lanAuthTip"'
       + '      aria-checked="' + (on ? 'true' : 'false') + '"'
       + ((!configured && !on) ? ' disabled' : '') + '></button>'
+      + '    </div>'
       + '  </div>'
       + (reconciliationNeeded
         ? '  <button type="button" class="chip lan-auth-reconcile" data-lan-auth-reconcile>reapply saved access setting</button>'
         : '')
       + '  <form class="lan-auth-confirm" data-lan-auth-confirm hidden>'
       + '    <label for="lanAuthPassword">Confirm your admin password</label>'
-      + '    <div><input id="lanAuthPassword" type="password" autocomplete="current-password">'
+      + '    <div><span class="lan-password-field"><input id="lanAuthPassword" type="password" autocomplete="current-password">'
+      + '      <button type="button" class="lan-password-visibility" data-lan-password-visibility aria-label="Show admin password" aria-pressed="false">'
+      + '        <span class="eye-show">' + ICON_EYE + '</span><span class="eye-hide">' + ICON_EYE_OFF + '</span></button></span>'
       + '      <button type="submit" class="chip">turn on</button>'
       + '      <button type="button" class="chip" data-lan-auth-cancel>cancel</button></div>'
       + '  </form>'
       + '  <p class="lan-auth-status" data-lan-auth-status role="status" aria-live="polite" aria-atomic="true"></p>'
-      + '</div>';
-  }
-
-  function passwordChangeRow(security) {
-    security = security || {};
-    if (!security.lan_admin_auth || !security.password_configured) return '';
-    return ''
-      + '<div class="password-change-control" data-password-change>'
-      + '  <button type="button" class="chip" data-password-change-open>change admin password</button>'
-      + '  <form class="password-change-form" data-password-change-form hidden>'
-      + '    <span class="hint">New password: 12 to 64 letters or numbers.</span>'
-      + '    <label>Current password<input type="password" data-password-current autocomplete="current-password" minlength="1" maxlength="64" required></label>'
-      + '    <label>New password<input type="password" data-password-new autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
-      + '    <label>Confirm new password<input type="password" data-password-confirm autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
-      + '    <div><button type="submit" class="chip">change password</button>'
-      + '      <button type="button" class="chip" data-password-change-cancel>cancel</button></div>'
-      + '  </form>'
-      + '  <p class="lan-auth-status" data-password-change-status role="status" aria-live="polite" aria-atomic="true"></p>'
+      + (canChangePassword
+        ? '  <form id="passwordChangeForm" class="password-change-form" data-password-change-form hidden>'
+          + '    <span class="hint">New password: 12 to 64 letters or numbers.</span>'
+          + '    <label>Current password<input type="password" data-password-current autocomplete="current-password" minlength="1" maxlength="64" required></label>'
+          + '    <label>New password<input type="password" data-password-new autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+          + '    <label>Confirm new password<input type="password" data-password-confirm autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+          + '    <div><button type="submit" class="chip">change password</button>'
+          + '      <button type="button" class="chip" data-password-change-cancel>cancel</button></div>'
+          + '  </form>'
+          + '  <p class="lan-auth-status" data-password-change-status role="status" aria-live="polite" aria-atomic="true"></p>'
+        : '')
       + '</div>';
   }
 
@@ -6195,8 +6388,8 @@
       + 'Audio is separate and stays off for a new station unless you turn it on.';
     var audioDetails = 'This sends the complete recording BirdNET analyzed, not only the detected call. '
       + 'It may contain people or other nearby sounds.';
-    var privacyDetails = 'Higher levels check more BirdNET candidates for human sounds and suppress detections in and next to matching windows. '
-      + 'This does not redact the full recording, so audio uploads may still contain people.';
+    var privacyDetails = 'BirdNET still analyzes the audio. Level 0 checks the top 10 model candidates for Human, 1 about 60, 2 about 120, and 3 about 180. '
+      + 'A match suppresses local bird detections for that 3-second window and its neighbors. Full recordings are not redacted.';
     return ''
       + '<div class="birdweather-control" data-birdweather-control data-token-configured="' + (configured ? 'true' : 'false') + '">'
       + '  <div class="menu-row birdweather-head">'
@@ -6204,7 +6397,7 @@
       + settingsInfoMarkup('birdweatherTip', 'About BirdWeather sharing', sharingDetails)
       + '    </div>'
       + '    <div class="birdweather-head-actions">'
-      + '      <button type="button" class="birdweather-disclosure" data-birdweather-disclosure aria-controls="birdweatherDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>details</button>'
+      + '      <button type="button" class="settings-disclosure" data-birdweather-disclosure aria-controls="birdweatherDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>details</button>'
       + '      <button type="button" class="switch" role="switch" data-birdweather-toggle'
       + '        aria-label="Share detections with BirdWeather" aria-describedby="birdweatherTip"'
       + '        aria-checked="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '></button>'
@@ -6213,10 +6406,16 @@
       + (available ? '' : '  <p class="birdweather-unavailable" role="status">BirdWeather controls are unavailable on this station.</p>')
       + '  <div id="birdweatherDetails" class="birdweather-details-shell" data-birdweather-details-shell data-open="' + (enabled ? 'true' : 'false') + '" data-settled="' + (enabled ? 'true' : 'false') + '" aria-hidden="' + (enabled ? 'false' : 'true') + '"' + (enabled ? '' : ' hidden inert') + '>'
       + '  <form class="birdweather-details" data-birdweather-details>'
-      + '    <label class="birdweather-token">Station token'
-      + '      <input type="password" data-birdweather-token autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="160"'
-      + '        placeholder="' + (configured ? 'saved, paste to replace' : 'paste station token') + '">'
-      + '    </label>'
+      + '    <div class="birdweather-token">'
+      + '      <div class="birdweather-token-editor" data-birdweather-token-editor' + (configured ? ' hidden' : '') + '>'
+      + '        <a id="birdweatherTokenLabel" href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">Station token</a>'
+      + '        <input type="text" data-birdweather-token aria-labelledby="birdweatherTokenLabel" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="161" placeholder="station token">'
+      + '      </div>'
+      + '      <div class="birdweather-token-actions" data-birdweather-token-actions' + (configured ? '' : ' hidden') + '>'
+      + '        <a class="birdweather-station-link" data-birdweather-station href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">view station on BirdWeather</a>'
+      + '        <button type="button" class="birdweather-forget" data-birdweather-forget>forget token</button>'
+      + '      </div>'
+      + '    </div>'
       + '    <div class="menu-row">'
       + '      <div class="access-copy"><span class="label">Upload analyzed recordings</span>'
       + settingsInfoMarkup('birdweatherAudioTip', 'About BirdWeather audio uploads', audioDetails)
@@ -6228,17 +6427,10 @@
       + '    <div class="menu-row">'
       + '      <div class="access-copy"><span class="label">Human-sound filter</span>'
       + settingsInfoMarkup('birdweatherPrivacyTip', 'About the local human-sound filter', privacyDetails)
-      + '        <span class="hint">higher checks more candidates before sharing</span>'
       + '      </div>'
       + '      <div class="seg birdweather-privacy" data-birdweather-privacy><i class="seg-pill" aria-hidden="true"></i>' + privacyButtons + '</div>'
       + '    </div>'
-      + '    <div class="birdweather-station" data-birdweather-station></div>'
-      + '    <div class="birdweather-actions">'
-      + '      <button type="submit" class="chip" data-birdweather-save>save settings</button>'
-      + '      <button type="button" class="chip birdweather-forget" data-birdweather-forget' + (configured && !enabled ? '' : ' hidden') + '>forget token</button>'
-      + '      <a href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">BirdWeather privacy and station settings</a>'
-      + '    </div>'
-      + '    <p class="birdweather-status" data-birdweather-status role="status" aria-live="polite" aria-atomic="true"></p>'
+      + '    <p class="birdweather-status sr-only" data-birdweather-status role="status" aria-live="polite" aria-atomic="true"></p>'
       + '  </form>'
       + '  </div>'
       + '</div>';
@@ -6252,59 +6444,76 @@
     var disclosure = control.querySelector('[data-birdweather-disclosure]');
     var detailsShell = control.querySelector('[data-birdweather-details-shell]');
     var details = control.querySelector('[data-birdweather-details]');
+    var tokenEditor = control.querySelector('[data-birdweather-token-editor]');
+    var tokenActions = control.querySelector('[data-birdweather-token-actions]');
     var tokenInput = control.querySelector('[data-birdweather-token]');
     var audioSwitch = control.querySelector('[data-birdweather-audio]');
     var privacy = control.querySelector('[data-birdweather-privacy]');
-    var station = control.querySelector('[data-birdweather-station]');
+    var stationLink = control.querySelector('[data-birdweather-station]');
     var status = control.querySelector('[data-birdweather-status]');
-    var save = control.querySelector('[data-birdweather-save]');
     var forget = control.querySelector('[data-birdweather-forget]');
     var probeSequence = 0;
-    var busy = false;
     var draftEnable = false;
     var detailsTransitionTimer = 0;
+    var writeTimer = 0;
+    var writing = false;
+    var forgetting = false;
+    var writeQueue = {};
+    var tokenEditRevision = 0;
+    var tokenSubmissionRevision = -1;
+    var tokenFocusRevision = -1;
+    if (!state.token_configured && +state.privacy_threshold === 0) state.privacy_threshold = 1;
 
-    function note(message, error) {
+    function note(message, error, tokenError) {
       status.textContent = message || '';
       status.classList.toggle('err', !!error);
+      tokenInput.setAttribute('aria-invalid', tokenError ? 'true' : 'false');
+      if (tokenInput.setCustomValidity) tokenInput.setCustomValidity(tokenError ? (message || 'BirdWeather rejected that token') : '');
+      if (tokenError && !tokenEditor.hidden && !tokenInput.disabled && tokenInput.reportValidity) tokenInput.reportValidity();
     }
-    function selectedPrivacy() {
-      var selected = privacy.querySelector('button[aria-current="true"]');
-      return selected ? +selected.dataset.v : 1;
+    function owns(object, key) {
+      return Object.prototype.hasOwnProperty.call(object, key);
     }
-    function setBusy(next) {
-      busy = next;
-      [mainSwitch, disclosure, tokenInput, audioSwitch, save, forget].forEach(function (element) {
-        if (element) element.disabled = next;
+    function selectPrivacy(value) {
+      privacy.querySelectorAll('button').forEach(function (button) {
+        button.setAttribute('aria-current', +button.dataset.v === +value ? 'true' : 'false');
       });
-      privacy.querySelectorAll('button').forEach(function (button) { button.disabled = next; });
+      syncPill(privacy);
     }
-    function showStation(remote) {
-      station.replaceChildren();
-      if (!state.token_configured) {
-        station.textContent = 'Create a BirdWeather station, then paste its token here.';
+    function setWriting(next) {
+      writing = next;
+      control.setAttribute('aria-busy', next ? 'true' : 'false');
+      tokenInput.readOnly = next;
+      mainSwitch.setAttribute('aria-disabled', next ? 'true' : 'false');
+      audioSwitch.setAttribute('aria-disabled', next ? 'true' : 'false');
+      privacy.querySelectorAll('button').forEach(function (button) {
+        button.setAttribute('aria-disabled', next ? 'true' : 'false');
+      });
+      if (forget) forget.disabled = next || forgetting;
+    }
+    function tokenInputHasFocus() {
+      return typeof document !== 'undefined' && document.activeElement === tokenInput;
+    }
+    function showTokenState(remote) {
+      var configured = !!state.token_configured;
+      stationLink.removeAttribute('aria-busy');
+      tokenEditor.hidden = configured;
+      tokenActions.hidden = !configured;
+      forget.hidden = !configured;
+      if (!configured) {
+        stationLink.href = 'https://app.birdweather.com/account/stations';
+        stationLink.removeAttribute('data-station-id');
         return;
       }
+      tokenInput.value = '';
       remote = remote || state.station;
-      if (!remote) {
-        station.textContent = state.configuration_valid === false
-          ? 'The saved token is invalid. Paste a replacement.'
-          : 'Open details to check the public station page.';
-        return;
-      }
-      if (remote.state === 'connected' && Number.isInteger(+remote.station_id) && +remote.station_id > 0) {
-        var link = document.createElement('a');
-        link.href = 'https://app.birdweather.com/stations/' + (+remote.station_id);
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.textContent = 'View station #' + (+remote.station_id) + ' on BirdWeather';
-        station.appendChild(link);
-      } else if (remote.state === 'connected') {
-        station.textContent = 'Connected. The public station page appears after the first report.';
-      } else if (remote.state === 'invalid') {
-        station.textContent = 'BirdWeather rejected the saved token. Paste a replacement.';
+      var stationId = remote && remote.state === 'connected' ? +remote.station_id : 0;
+      if (Number.isInteger(stationId) && stationId > 0) {
+        stationLink.href = 'https://app.birdweather.com/stations/' + stationId;
+        stationLink.setAttribute('data-station-id', String(stationId));
       } else {
-        station.textContent = 'BirdWeather could not be reached.';
+        stationLink.href = 'https://app.birdweather.com/account/stations';
+        stationLink.removeAttribute('data-station-id');
       }
     }
     function detailsAreOpen() {
@@ -6355,19 +6564,25 @@
     });
     function applyState(next) {
       probeSequence += 1;
-      draftEnable = false;
+      var priorStation = state && state.token_configured && state.station;
+      var priorConfigured = !!(state && state.token_configured);
       state = next || state;
-      mainSwitch.setAttribute('aria-checked', state.enabled ? 'true' : 'false');
-      audioSwitch.setAttribute('aria-checked', state.upload_audio ? 'true' : 'false');
+      if (!state.station && priorConfigured && state.token_configured && priorStation) state.station = priorStation;
+      if (!owns(writeQueue, 'enabled')) {
+        mainSwitch.setAttribute('aria-checked', state.enabled ? 'true' : 'false');
+      }
+      if (!owns(writeQueue, 'upload_audio')) {
+        audioSwitch.setAttribute('aria-checked', state.upload_audio ? 'true' : 'false');
+      }
+      if (!owns(writeQueue, 'privacy_threshold')) selectPrivacy(state.privacy_threshold);
       control.setAttribute('data-token-configured', state.token_configured ? 'true' : 'false');
-      tokenInput.placeholder = state.token_configured ? 'saved, paste to replace' : 'paste station token';
-      forget.hidden = !state.token_configured || !!state.enabled;
-      showStation(state.station);
+      showTokenState(state.station);
+      if (state.enabled) draftEnable = false;
     }
     function probeStation() {
-      if (!state.token_configured) { showStation(null); return; }
+      if (!state.token_configured) { showTokenState(null); return; }
       var mine = ++probeSequence;
-      station.textContent = 'Checking BirdWeather...';
+      stationLink.setAttribute('aria-busy', 'true');
       adminFetch('./avian/api/birdweather.php?probe=1', {
         credentials: 'same-origin', cache: 'no-store',
       }).then(function (response) {
@@ -6379,20 +6594,50 @@
         if (mine !== probeSequence) return;
         state.station = body.station;
         state.configuration_valid = body.configuration_valid;
-        showStation(body.station);
+        stationLink.removeAttribute('aria-busy');
+        showTokenState(body.station);
       }).catch(function (error) {
         if (mine !== probeSequence || adminAuthCancelled(error)) return;
-        showStation({ state: 'unavailable' });
+        stationLink.removeAttribute('aria-busy');
+        showTokenState({ state: 'unavailable' });
       });
     }
-    function post(payload, priorEnabled) {
-      if (busy) return Promise.resolve(false);
-      probeSequence += 1;
+    function queueWrite(patch, delay) {
+      Object.keys(patch).forEach(function (key) { writeQueue[key] = patch[key]; });
+      note('', false, false);
+      clearTimeout(writeTimer);
+      writeTimer = setTimeout(flushWrites, typeof delay === 'number' ? delay : 0);
+    }
+    function readCanonicalState() {
+      return adminFetch('./avian/api/birdweather.php', {
+        credentials: 'same-origin', cache: 'no-store',
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok || !body.ok) throw new Error(body.error || 'BirdWeather state could not be re-read');
+          return body;
+        });
+      }).then(function (body) {
+        applyState(body);
+        return body;
+      });
+    }
+    function flushWrites() {
+      clearTimeout(writeTimer);
+      writeTimer = 0;
+      if (writing || !Object.keys(writeQueue).length) return;
+      var payload = writeQueue;
+      writeQueue = {};
       var requestBody = JSON.stringify(payload);
-      if (Object.prototype.hasOwnProperty.call(payload, 'token')) payload.token = '';
-      tokenInput.value = '';
-      setBusy(true);
-      note('saving...', false);
+      var submittedToken = owns(payload, 'token') ? payload.token : null;
+      var submittedFocusRevision = tokenFocusRevision;
+      var focusSubmittedToken = submittedToken !== null
+        && submittedFocusRevision === tokenSubmissionRevision;
+      var focusAfterWrite = null;
+      var messageAfterWrite = '';
+      var tokenErrorAfterWrite = false;
+      if (submittedToken !== null || owns(payload, 'forget_token')) probeSequence += 1;
+      if (submittedToken !== null) payload.token = '';
+      setWriting(true);
       return adminFetch('./avian/api/birdweather.php', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
@@ -6409,23 +6654,102 @@
         });
       }).then(function (body) {
         requestBody = '';
+        var focusStationAfterApply = focusSubmittedToken && tokenInputHasFocus();
         applyState(body);
-        note('saved', false);
+        if (submittedToken !== null || owns(payload, 'forget_token')) tokenInput.value = '';
+        if (body.station) showTokenState(body.station);
+        else if (submittedToken !== null && body.token_configured) probeStation();
+        if (owns(payload, 'forget_token')) {
+          openDetails(true, false);
+          focusAfterWrite = tokenInput;
+        } else if (submittedToken !== null && body.token_configured && focusStationAfterApply) {
+          focusAfterWrite = stationLink;
+        } else if (owns(payload, 'enabled') && !!body.enabled === !!payload.enabled) {
+          if (body.enabled) {
+            if (!body.station) probeStation();
+          } else {
+            openDetails(false, false);
+          }
+        }
+        tokenSubmissionRevision = -1;
         return true;
       }).catch(function (error) {
         requestBody = '';
         if (adminAuthCancelled(error)) return false;
+        var focusStationAfterApply = focusSubmittedToken && tokenInputHasFocus();
+        var recovery = Promise.resolve();
         if (error.saved && error.settings) {
           applyState(error.settings);
-        } else if (typeof priorEnabled === 'boolean') {
-          mainSwitch.setAttribute('aria-checked', priorEnabled ? 'true' : 'false');
+        } else if (error.saved) {
+          recovery = readCanonicalState().catch(function () {
+            // The write is durable even when the canonical re-read fails. Do
+            // not leave a saved credential visible or make Forget look undone.
+            var fallback = Object.assign({}, state);
+            ['enabled', 'upload_audio', 'privacy_threshold'].forEach(function (key) {
+              if (owns(payload, key)) fallback[key] = payload[key];
+            });
+            if (submittedToken !== null) {
+              fallback.token_configured = true;
+              fallback.configuration_valid = true;
+              fallback.station = null;
+            } else if (owns(payload, 'forget_token')) {
+              fallback.enabled = false;
+              fallback.upload_audio = false;
+              fallback.token_configured = false;
+              fallback.configuration_valid = true;
+              fallback.station = null;
+            }
+            applyState(fallback);
+          });
+        } else {
+          applyState(state);
         }
-        note(error.message || 'BirdWeather setting failed', true);
-        return false;
+        return recovery.then(function () {
+          if (error.saved && (submittedToken !== null || owns(payload, 'forget_token'))) tokenInput.value = '';
+          if (error.saved && submittedToken !== null && state.token_configured && focusStationAfterApply) {
+            focusAfterWrite = stationLink;
+          }
+          if (error.saved && owns(payload, 'forget_token') && !state.token_configured) {
+            openDetails(true, false);
+            focusAfterWrite = tokenInput;
+          }
+          messageAfterWrite = error.message || 'BirdWeather setting failed';
+          tokenErrorAfterWrite = submittedToken !== null && !error.saved;
+          tokenSubmissionRevision = -1;
+          return false;
+        });
       }).then(function (ok) {
-        setBusy(false);
+        submittedToken = null;
+        forgetting = false;
+        setWriting(false);
+        note(messageAfterWrite, !!messageAfterWrite, tokenErrorAfterWrite);
+        if (focusAfterWrite && focusAfterWrite.focus) focusAfterWrite.focus();
+        if (tokenFocusRevision === submittedFocusRevision) tokenFocusRevision = -1;
+        if (Object.keys(writeQueue).length) queueWrite({}, 0);
         return ok;
       });
+    }
+    function saveToken(focusOnSuccess) {
+      // Match the API normalization boundary: ordinary surrounding spaces are
+      // paste noise, while tabs and other control characters must reach the
+      // server unchanged so its strict validator can reject them.
+      var value = tokenInput.value.replace(/^ +| +$/g, '');
+      if (!value) {
+        tokenInput.focus();
+        return;
+      }
+      if (tokenSubmissionRevision === tokenEditRevision
+        && (writing || owns(writeQueue, 'token'))) return;
+      tokenSubmissionRevision = tokenEditRevision;
+      tokenFocusRevision = focusOnSuccess ? tokenEditRevision : -1;
+      var patch = { token: value };
+      if (!state.token_configured) {
+        var selected = privacy.querySelector('button[aria-current="true"]');
+        patch.upload_audio = audioSwitch.getAttribute('aria-checked') === 'true';
+        patch.privacy_threshold = selected ? +selected.dataset.v : 1;
+      }
+      if (draftEnable) patch.enabled = true;
+      queueWrite(patch, 0);
     }
 
     disclosure.addEventListener('click', function () {
@@ -6433,70 +6757,65 @@
       openDetails(open, open);
     });
     mainSwitch.addEventListener('click', function () {
-      if (busy) return;
+      if (writing || forgetting) return;
       var prior = mainSwitch.getAttribute('aria-checked') === 'true';
       var desired = !prior;
       if (desired) {
         draftEnable = true;
         openDetails(true, false);
         if (!state.token_configured || state.configuration_valid === false) {
-          note(state.token_configured
-            ? 'Paste a valid station token, then save settings.'
-            : 'Add the station token, then save settings.', false);
-          tokenInput.focus();
+          if (state.token_configured) forget.focus();
+          else tokenInput.focus();
           return;
         }
       } else {
         draftEnable = false;
       }
-      post({
-        enabled: desired,
-        upload_audio: audioSwitch.getAttribute('aria-checked') === 'true',
-        privacy_threshold: selectedPrivacy(),
-      }, prior).then(function (ok) {
-        if (ok && !desired) openDetails(false, false);
-        else if (ok && desired) probeStation();
-      });
+      queueWrite({ enabled: desired }, 0);
     });
     audioSwitch.addEventListener('click', function () {
-      audioSwitch.setAttribute('aria-checked',
-        audioSwitch.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
-      note('Save settings to apply this change.', false);
+      if (writing || forgetting) return;
+      var enabled = audioSwitch.getAttribute('aria-checked') !== 'true';
+      audioSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
+      queueWrite({ upload_audio: enabled }, 0);
     });
     privacy.querySelectorAll('button').forEach(function (button) {
       button.addEventListener('click', function () {
+        if (writing || forgetting) return;
         privacy.querySelectorAll('button').forEach(function (candidate) {
           candidate.setAttribute('aria-current', candidate === button ? 'true' : 'false');
         });
         syncPill(privacy);
-        note('Save settings to apply this change.', false);
+        queueWrite({ privacy_threshold: +button.dataset.v }, 0);
       });
     });
     details.addEventListener('submit', function (event) {
       event.preventDefault();
-      var value = tokenInput.value.trim();
-      var payload = {
-        enabled: draftEnable || mainSwitch.getAttribute('aria-checked') === 'true',
-        upload_audio: audioSwitch.getAttribute('aria-checked') === 'true',
-        privacy_threshold: selectedPrivacy(),
-      };
-      if (payload.enabled && !state.token_configured && !value) {
-        note('Add the station token, then save settings.', true);
-        tokenInput.focus();
-        return;
-      }
-      if (value) payload.token = value;
-      value = '';
-      post(payload).then(function (ok) { if (ok && !state.station) probeStation(); });
+      saveToken(true);
+    });
+    tokenInput.addEventListener('input', function () {
+      tokenEditRevision += 1;
+      note('', false);
+    });
+    tokenInput.addEventListener('change', function () { saveToken(false); });
+    tokenInput.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      saveToken(true);
     });
     forget.addEventListener('click', function () {
+      if (writing || forgetting) return;
       if (!confirm('Forget the saved BirdWeather station token? Sharing must stay off until a new token is added.')) return;
-      post({
+      forgetting = true;
+      forget.disabled = true;
+      probeSequence += 1;
+      state.station = null;
+      delete writeQueue.token;
+      queueWrite({
         enabled: false,
         upload_audio: false,
-        privacy_threshold: selectedPrivacy(),
         forget_token: true,
-      }, false);
+      }, 0);
     });
     applyState(state);
     if (state.enabled) probeStation();
@@ -6508,15 +6827,34 @@
     var sw = control.querySelector('[data-lan-auth]');
     var form = control.querySelector('[data-lan-auth-confirm]');
     var password = control.querySelector('#lanAuthPassword');
+    var passwordVisibility = control.querySelector('[data-lan-password-visibility]');
     var status = control.querySelector('[data-lan-auth-status]');
     var cancel = control.querySelector('[data-lan-auth-cancel]');
     var reconcile = control.querySelector('[data-lan-auth-reconcile]');
     var submit = form.querySelector('[type="submit"]');
     var desired = true;
 
+    function showPassword(show) {
+      password.type = show ? 'text' : 'password';
+      if (!passwordVisibility) return;
+      passwordVisibility.setAttribute('aria-pressed', show ? 'true' : 'false');
+      passwordVisibility.setAttribute('aria-label', show ? 'Hide admin password' : 'Show admin password');
+    }
+
     function note(message, error) {
       status.textContent = message || '';
       status.classList.toggle('err', !!error);
+    }
+    function closePasswordChange() {
+      var passwordForm = control.querySelector('[data-password-change-form]');
+      var passwordOpen = control.querySelector('[data-password-change-open]');
+      if (!passwordForm || !passwordOpen) return;
+      passwordForm.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ''; });
+      passwordForm.hidden = true;
+      passwordOpen.hidden = false;
+      passwordOpen.setAttribute('aria-expanded', 'false');
+      var passwordStatus = control.querySelector('[data-password-change-status]');
+      if (passwordStatus) { passwordStatus.textContent = ''; passwordStatus.classList.remove('err'); }
     }
     function save(enabled, authorization) {
       if (enabled && stopLiveAudioNow) stopLiveAudioNow();
@@ -6566,6 +6904,9 @@
     }
 
     sw.addEventListener('click', function () {
+      closePasswordChange();
+      closeDd();
+      showPassword(false);
       var on = sw.getAttribute('aria-checked') === 'true';
       if (on) {
         if (!confirm('Turn off local admin password? Anyone on this network will be able to open Settings, System, Logs, and Tools.')) return;
@@ -6583,6 +6924,9 @@
       }
     });
     if (reconcile) reconcile.addEventListener('click', function () {
+      closePasswordChange();
+      closeDd();
+      showPassword(false);
       desired = sw.getAttribute('aria-checked') === 'true';
       submit.textContent = 'reapply';
       form.hidden = false;
@@ -6591,6 +6935,7 @@
     });
     cancel.addEventListener('click', function () {
       password.value = '';
+      showPassword(false);
       form.hidden = true;
       note('', false);
       sw.focus();
@@ -6605,9 +6950,14 @@
         return;
       }
       password.value = '';
+      showPassword(false);
       value = '';
       save(desired, authorization);
       authorization = '';
+    });
+    if (passwordVisibility) passwordVisibility.addEventListener('click', function () {
+      showPassword(password.type === 'password');
+      password.focus();
     });
   }
 
@@ -6631,8 +6981,21 @@
       confirmNext.value = '';
     }
     open.addEventListener('click', function () {
+      var lanForm = control.querySelector('[data-lan-auth-confirm]');
+      var lanPassword = control.querySelector('#lanAuthPassword');
+      if (lanPassword) { lanPassword.value = ''; lanPassword.type = 'password'; }
+      var lanVisibility = control.querySelector('[data-lan-password-visibility]');
+      if (lanVisibility) {
+        lanVisibility.setAttribute('aria-pressed', 'false');
+        lanVisibility.setAttribute('aria-label', 'Show admin password');
+      }
+      if (lanForm) lanForm.hidden = true;
+      var lanStatus = control.querySelector('[data-lan-auth-status]');
+      if (lanStatus) { lanStatus.textContent = ''; lanStatus.classList.remove('err'); }
+      closeDd();
       form.hidden = false;
       open.hidden = true;
+      open.setAttribute('aria-expanded', 'true');
       note('', false);
       current.focus();
     });
@@ -6640,6 +7003,7 @@
       clear();
       form.hidden = true;
       open.hidden = false;
+      open.setAttribute('aria-expanded', 'false');
       note('', false);
       open.focus();
     });
@@ -6715,9 +7079,67 @@
       });
     });
   }
+  function wireSettingsAccessDismissal(scope) {
+    if (settingsAccessCleanup) settingsAccessCleanup();
+    var control = scope.querySelector('[data-lan-auth-control]');
+    if (!control) return;
+    var lanForm = control.querySelector('[data-lan-auth-confirm]');
+    var lanSwitch = control.querySelector('[data-lan-auth]');
+    var passwordForm = control.querySelector('[data-password-change-form]');
+    var passwordOpen = control.querySelector('[data-password-change-open]');
+    function closeLan(returnFocus) {
+      if (!lanForm || lanForm.hidden) return false;
+      var input = lanForm.querySelector('#lanAuthPassword');
+      if (input) { input.value = ''; input.type = 'password'; }
+      var visibility = lanForm.querySelector('[data-lan-password-visibility]');
+      if (visibility) {
+        visibility.setAttribute('aria-pressed', 'false');
+        visibility.setAttribute('aria-label', 'Show admin password');
+      }
+      lanForm.hidden = true;
+      var status = control.querySelector('[data-lan-auth-status]');
+      if (status) { status.textContent = ''; status.classList.remove('err'); }
+      if (returnFocus && lanSwitch) lanSwitch.focus();
+      return true;
+    }
+    function closePassword(returnFocus) {
+      if (!passwordForm || passwordForm.hidden) return false;
+      passwordForm.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ''; });
+      passwordForm.hidden = true;
+      if (passwordOpen) {
+        passwordOpen.hidden = false;
+        passwordOpen.setAttribute('aria-expanded', 'false');
+        if (returnFocus) passwordOpen.focus();
+      }
+      var status = control.querySelector('[data-password-change-status]');
+      if (status) { status.textContent = ''; status.classList.remove('err'); }
+      return true;
+    }
+    function outside(event) {
+      if (!event.target || typeof event.target.closest !== 'function') return;
+      if (lanForm && !lanForm.hidden && !lanForm.contains(event.target)
+        && event.target !== lanSwitch && !event.target.closest('[data-lan-auth-reconcile]')) closeLan(false);
+      if (passwordForm && !passwordForm.hidden && !passwordForm.contains(event.target)
+        && event.target !== passwordOpen) closePassword(false);
+    }
+    function escape(event) {
+      if (event.key !== 'Escape') return;
+      var closed = closePassword(true) || closeLan(true);
+      if (closed) { event.preventDefault(); event.stopPropagation(); }
+    }
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', escape, true);
+    settingsAccessCleanup = function () {
+      closePassword(false);
+      closeLan(false);
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('keydown', escape, true);
+      settingsAccessCleanup = null;
+    };
+  }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-atlas-always-all]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio])').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -6737,7 +7159,7 @@
       // the analyzer, and a drag fires input a hundred times.
       sl.addEventListener('change', function () { queueSave(300); });
     });
-    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-labels-seg]):not([data-birdweather-privacy])').forEach(function (seg) {
+    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-birdweather-privacy])').forEach(function (seg) {
       seg.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
           seg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
@@ -6758,16 +7180,37 @@
         else { clearTimeout(autoSaveT); setSaveState(''); }
       });
     });
+    scope.querySelectorAll('input.settings-text').forEach(function (inp) {
+      function stage() {
+        pending[inp.dataset.key] = inp.value.trim();
+      }
+      inp.addEventListener('input', function () {
+        stage();
+        queueSave(800);
+      });
+      inp.addEventListener('change', function () {
+        stage();
+        saveSettings();
+      });
+      inp.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        stage();
+        saveSettings();
+        inp.blur();
+      });
+    });
   }
 
   function saveSettings() {
-    if (Object.keys(pending).length === 0) return;
-    if (settingsSaveBusy) { queueSave(300); return; }
+    if (Object.keys(pending).length === 0) return Promise.resolve(true);
+    if (settingsSaveBusy) { queueSave(300); return Promise.resolve(false); }
     if (autoSaveT) clearTimeout(autoSaveT);
     autoSaveT = null;
     var submitted = pending;
     pending = {};
     var body = JSON.stringify(submitted);
+    var saved = false;
     settingsSaveBusy = true;
     setSaveState('saving...');
     return adminFetch('./avian/api/config.php', {
@@ -6778,6 +7221,11 @@
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
         if (res.ok && res.j.ok) {
+          saved = true;
+          if (Object.prototype.hasOwnProperty.call(submitted, 'SITE_NAME')
+            && !Object.prototype.hasOwnProperty.call(pending, 'SITE_NAME')) {
+            applySiteName(submitted.SITE_NAME);
+          }
           setSaveState('saved ✓', 'ok');
           setTimeout(function () { setSaveState(''); }, 1800);
         } else {
@@ -6793,7 +7241,30 @@
       .then(function () {
         settingsSaveBusy = false;
         submitted = {};
+        return saved;
       });
+  }
+
+  function flushPendingSettings() {
+    return new Promise(function (resolve) {
+      function settle() {
+        if (settingsSaveBusy) {
+          setTimeout(settle, 25);
+          return;
+        }
+        if (!Object.keys(pending).length) {
+          resolve(true);
+          return;
+        }
+        saveSettings().then(function (ok) {
+          if (!ok) { resolve(false); return; }
+          settle();
+        });
+      }
+      if (autoSaveT) clearTimeout(autoSaveT);
+      autoSaveT = null;
+      settle();
+    });
   }
 
   // ---- Hash routing + atlas detail modal ----
@@ -7674,6 +8145,7 @@
     populatePostcard(sci);
     var postcard = document.getElementById('postcard-modal');
     if (!postcard) return;
+    setPostcardAtlasSource(atlasUsesClassicCards() ? 'classic' : 'stamps');
     preparePostcardShell();
     revealPostcardShell();
   }
@@ -7964,15 +8436,36 @@
   var adminTitle = document.getElementById('adminTitle');
   var adminPollT = null;
   var adminSect = null;
+  var adminTitleFrame = 0;
   var ADMIN_TITLES = {
     settings: 'Settings',
     system: 'System',
     logs: 'Logs',
     tools: 'Tools',
   };
+  function syncAdminTitlePin() {
+    adminTitleFrame = 0;
+    if (!adminEl) return;
+    var pinned = adminEl.getAttribute('data-title-pinned') === 'true';
+    // Both desktop and mobile titles travel 42px from their resting row to
+    // the fixed control line. The smaller exit threshold prevents chatter
+    // without leaving a backdrop behind a title that has already moved down.
+    var pinAt = 42;
+    var threshold = pinned ? pinAt - 8 : pinAt;
+    adminEl.setAttribute('data-title-pinned',
+      adminSect === 'settings' && adminEl.scrollTop > threshold ? 'true' : 'false');
+  }
+  function queueAdminTitlePin() {
+    if (adminTitleFrame) return;
+    adminTitleFrame = requestAnimationFrame(syncAdminTitlePin);
+  }
+  if (adminEl) adminEl.addEventListener('scroll', queueAdminTitlePin, { passive: true });
   function adminEsc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function adminAttr(s) {
+    return adminEsc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function adminCopyText(text) {
     function legacyCopy() {
@@ -8027,24 +8520,29 @@
     if (adminAccessState !== 'unlocked') {
       pendingAdminSection = section;
       if (adminAccessState === 'locked') {
-        showAdminLocked('Unlock Settings, System, Logs, and Tools.', false);
+        showAdminLocked('', false);
       }
       return;
     }
     if (adminSect === 'settings' && section !== 'settings') {
       discardPendingSettings();
       if (settingsInfoCleanup) settingsInfoCleanup();
+      if (settingsAccessCleanup) settingsAccessCleanup();
     }
     adminViewGeneration += 1;
     document.body.classList.add('admin-on');
     adminEl.setAttribute('aria-hidden', 'false');
     adminTitle.textContent = ADMIN_TITLES[section] || section;
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
+    if (adminSect !== section) adminEl.scrollTop = 0;
     adminSect = section;
+    adminEl.setAttribute('data-admin-section', section);
+    syncAdminTitlePin();
     if (section === 'settings') renderAdminSettings();
     else if (section === 'system') renderAdminSystem();
     else if (section === 'logs') renderAdminLogs();
     else if (section === 'tools') renderAdminTools();
+    else adminBody.innerHTML = adminUnreachableHtml('unknown admin section');
   }
   function closeAdmin() {
     var wasAdminOn = document.body.classList.contains('admin-on');
@@ -8052,12 +8550,16 @@
     if (previousAdminSect === 'settings') {
       discardPendingSettings();
       if (settingsInfoCleanup) settingsInfoCleanup();
+      if (settingsAccessCleanup) settingsAccessCleanup();
     }
     adminViewGeneration += 1;
     document.body.classList.remove('admin-on');
     adminEl.setAttribute('aria-hidden', 'true');
     if (adminPollT) { clearInterval(adminPollT); adminPollT = null; }
     adminSect = null;
+    adminEl.scrollTop = 0;
+    adminEl.removeAttribute('data-admin-section');
+    syncAdminTitlePin();
     if (wasAdminOn) queueVisibleAtlasPack();
   }
 
@@ -8288,8 +8790,399 @@
     window.addEventListener('resize', draw);
   }
 
+  function archiveConfiguredState(state) {
+    return !!(state && state.installed && state.dependencies && state.dependencies.rclone
+      && state.dependencies.sqlite3 && state.remote && state.remote.configured);
+  }
+
+  function archiveSettingsRow(initialState) {
+    var configured = archiveConfiguredState(initialState);
+    var enabled = configured && initialState.timer && initialState.timer.enabled === 'enabled';
+    var remoteName = initialState && initialState.remote && initialState.remote.name || 'gdrive';
+    var archiveDetails = 'Back up completed days to Google Drive. Before first use, run rclone config on the Pi, name the remote '
+      + adminEsc(remoteName) + ', choose drive.file, then return here and use the button beside the command.';
+    return ''
+      + '<div class="archive-settings-control" data-archive-control aria-busy="' + (initialState ? 'false' : 'true') + '">'
+      + '  <div class="menu-row archive-settings-head">'
+      + '    <div class="access-copy"><span class="label">Nightly Drive backup</span>'
+      + settingsInfoMarkup('archiveBackupTip', 'About Nightly Drive backup', archiveDetails)
+      + '    </div>'
+      + '    <div class="archive-settings-head-actions">'
+      + '      <button type="button" class="settings-disclosure" data-archive-disclosure aria-controls="archiveSettingsDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '">details</button>'
+      + '      <button type="button" class="switch" role="switch" data-archive-toggle aria-label="Nightly Drive backup" aria-describedby="archiveBackupTip" aria-checked="' + (enabled ? 'true' : 'false') + '"></button>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div id="archiveSettingsDetails" class="birdweather-details-shell archive-details-shell" data-archive-details-shell'
+      + '    data-open="' + (enabled ? 'true' : 'false') + '" data-settled="' + (enabled ? 'true' : 'false') + '"'
+      + '    aria-hidden="' + (enabled ? 'false' : 'true') + '"' + (enabled ? '' : ' hidden inert') + '>'
+      + '    <div class="archive-settings-details" data-archive-details></div>'
+      + '  </div>'
+      + '</div>';
+  }
+
+  function wireArchiveControl(scope, initialState) {
+    var control = scope.querySelector('[data-archive-control]');
+    if (!control) return;
+    var mainSwitch = control.querySelector('[data-archive-toggle]');
+    var disclosure = control.querySelector('[data-archive-disclosure]');
+    var detailsShell = control.querySelector('[data-archive-details-shell]');
+    var details = control.querySelector('[data-archive-details]');
+    var archiveState = initialState && initialState.ok ? initialState : null;
+    var archiveFailureKind = initialState && initialState.failure_kind || '';
+    var archiveNotice = initialState && initialState.error || '';
+    var archiveNoticeAction = archiveNotice ? 'refresh' : '';
+    var archiveNoticeError = !!archiveNotice;
+    var archiveOpen = !!(archiveState && archiveState.timer && archiveState.timer.enabled === 'enabled');
+    var archiveBusy = false;
+    var archiveBusyAction = '';
+    var archiveSequence = 0;
+    var transitionTimer = 0;
+
+    function archiveApi(action, confirmValue) {
+      var body = { action: action };
+      if (confirmValue) body.confirm = confirmValue;
+      return adminFetch('./avian/api/archive.php', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+        body: JSON.stringify(body),
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (result) {
+          if (!response.ok || !result.ok) throw new Error(result.error || (response.ok ? 'archive controls unavailable' : ('HTTP ' + response.status)));
+          return result;
+        });
+      });
+    }
+
+    function saveArchiveRetention(values) {
+      return adminFetch('./avian/api/config.php', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+        body: JSON.stringify(values),
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (result) {
+          if (!response.ok || !result.ok) throw new Error(result.error || 'could not save recording retention');
+          return result;
+        });
+      });
+    }
+
+    function retentionControls(preserve, fullDisk, disabled) {
+      var preserveSwitch = scope.querySelector('.switch[data-key="preserve"]');
+      var fullDiskSeg = scope.querySelector('.seg[data-key="FULL_DISK"]');
+      if (preserveSwitch) {
+        if (typeof preserve === 'boolean') preserveSwitch.setAttribute('aria-checked', preserve ? 'true' : 'false');
+        preserveSwitch.disabled = !!disabled;
+      }
+      if (fullDiskSeg) {
+        if (fullDisk) {
+          fullDiskSeg.querySelectorAll('button').forEach(function (button) {
+            button.setAttribute('aria-current', button.dataset.v === fullDisk ? 'true' : 'false');
+          });
+          syncPill(fullDiskSeg);
+        }
+        fullDiskSeg.querySelectorAll('button').forEach(function (button) { button.disabled = !!disabled; });
+      }
+    }
+
+    function prepareArchiveRetention() {
+      return flushPendingSettings().then(function (saved) {
+        if (!saved) throw new Error('could not finish saving current settings');
+        return adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' });
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (result) {
+          if (!response.ok) throw new Error(result.error || 'could not read recording retention');
+          var previous = {
+            MAX_FILES_SPECIES: result.values && Number.isFinite(+result.values.MAX_FILES_SPECIES)
+              ? +result.values.MAX_FILES_SPECIES : 0,
+            FULL_DISK: result.values && result.values.FULL_DISK || 'purge',
+          };
+          return saveArchiveRetention({ preserve: true, FULL_DISK: 'keep' }).then(function () {
+            delete pending.preserve;
+            delete pending.FULL_DISK;
+            retentionControls(true, 'keep', true);
+            return previous;
+          });
+        });
+      });
+    }
+
+    function archiveCode(command) {
+      return '<div class="code" role="button" tabindex="0" title="click to copy" aria-label="copy command">'
+        + '<span class="copy" aria-hidden="true">' + ICON_COPY + '</span>'
+        + '<pre>' + adminEsc(command) + '</pre>'
+        + '</div>';
+    }
+
+    function archiveToggle(label, on, action, disabled, disabledTitle) {
+      return '<div class="archive-control-row">'
+        + '<span class="archive-label">' + adminEsc(label) + '</span>'
+        + '<button type="button" class="switch" role="switch" aria-label="' + adminEsc(label) + '"'
+        + ' aria-checked="' + (on ? 'true' : 'false') + '" data-archive-action="' + action + '"'
+        + (disabled && disabledTitle ? ' title="' + adminAttr(disabledTitle) + '"' : '')
+        + (disabled ? ' disabled' : '') + '></button>'
+        + '</div>';
+    }
+
+    function archiveActionRow(button, action) {
+      return '<div class="archive-action-row">' + button
+        + (archiveNotice && archiveNoticeAction === action
+          ? '<span class="archive-inline-state' + (archiveNoticeError ? ' is-error' : '') + '">' + adminEsc(archiveNotice) + '</span>'
+          : '')
+        + '</div>';
+    }
+
+    function archiveDetail(state) {
+      var configured = archiveConfiguredState(state);
+      if (!configured && !archiveOpen) return '';
+      var inner = '<div class="archive-detail' + (configured ? ' is-controls' : '') + '">';
+      if (!state) {
+        if (archiveFailureKind === 'helper') {
+          inner += '<p>Refresh the archive helper after updating.</p>'
+            + archiveCode('cd ~/BirdNET-Pi && ./scripts/install_services.sh')
+            + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
+        } else {
+          inner += '<p>Could not reach this station.</p>'
+            + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh">try again</button>', 'network-retry')
+            + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
+        }
+      } else if (!state.dependencies || !state.dependencies.rclone || !state.dependencies.sqlite3) {
+        inner += '<p>Install rclone and sqlite3.</p>'
+          + archiveCode('sudo apt install rclone sqlite3')
+          + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh"'
+            + (archiveBusy ? ' disabled' : '') + '>check again</button>', 'refresh');
+      } else if (!state.remote || !state.remote.configured) {
+        var setupAction = state.installed ? 'refresh' : 'install';
+        var setupLabel = state.installed ? 'check again'
+          : (archiveBusyAction === 'install' ? 'setting up...' : 'set up archive');
+        inner += '<div class="archive-setup-row">'
+          + '<div class="archive-setup-command">'
+          + archiveCode('rclone config')
+          + '</div>'
+          + '<button type="button" class="archive-setup-button" data-archive-action="' + setupAction + '"'
+          + (archiveBusy ? ' disabled' : '') + '>' + setupLabel + '</button>'
+          + (archiveNotice && archiveNoticeAction === setupAction
+            ? '<span class="archive-inline-state' + (archiveNoticeError ? ' is-error' : '') + '">' + adminEsc(archiveNotice) + '</span>'
+            : '')
+          + '</div>';
+      } else if (!state.installed) {
+        inner += '<div class="archive-setup-row is-action-only">'
+          + '<button type="button" class="archive-setup-button" data-archive-action="install"'
+          + (archiveBusy ? ' disabled' : '') + '>'
+          + (archiveBusyAction === 'install' ? 'setting up...' : 'set up archive') + '</button>'
+          + (archiveNotice && archiveNoticeAction === 'install'
+            ? '<span class="archive-inline-state' + (archiveNoticeError ? ' is-error' : '') + '">' + adminEsc(archiveNotice) + '</span>'
+            : '')
+          + '</div>';
+      } else {
+        var enabled = state.timer && state.timer.enabled === 'enabled';
+        var running = state.service && (state.service.active === 'active' || state.service.active === 'activating');
+        inner += '<div class="archive-run-row">'
+          + '<button type="button" class="archive-button quiet archive-run-button" data-archive-action="run"'
+          + (running || archiveBusy ? ' disabled' : '') + '>' + (running ? 'running...' : 'run now') + '</button>'
+          + '</div>';
+        var canPurge = state.last && state.last.state === 'OK' && state.last.verified_files > 0;
+        if (enabled) {
+          inner += archiveToggle('Clear verified local files', !!state.purge,
+            state.purge ? 'purge-off' : 'purge-on', archiveBusy || running || !canPurge,
+            'Run the archive once before enabling local cleanup.');
+        }
+        if (archiveNoticeError) inner += '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>';
+      }
+      return inner + '</div>';
+    }
+
+    function detailsAreOpen() {
+      return detailsShell.getAttribute('data-open') === 'true';
+    }
+    function finishOpen() {
+      if (detailsAreOpen()) detailsShell.setAttribute('data-settled', 'true');
+    }
+    function finishClose() {
+      if (detailsAreOpen()) return;
+      detailsShell.hidden = true;
+      detailsShell.setAttribute('data-settled', 'false');
+    }
+    function openDetails(open) {
+      clearTimeout(transitionTimer);
+      archiveOpen = open;
+      detailsShell.setAttribute('data-settled', 'false');
+      if (open) {
+        detailsShell.hidden = false;
+        detailsShell.inert = false;
+        detailsShell.setAttribute('aria-hidden', 'false');
+        void detailsShell.offsetHeight;
+        detailsShell.setAttribute('data-open', 'true');
+        transitionTimer = setTimeout(finishOpen, 230);
+      } else {
+        detailsShell.setAttribute('data-open', 'false');
+        detailsShell.setAttribute('aria-hidden', 'true');
+        detailsShell.inert = true;
+        transitionTimer = setTimeout(finishClose, 180);
+      }
+      disclosure.setAttribute('aria-expanded', open ? 'true' : 'false');
+      paintArchive();
+    }
+
+    detailsShell.addEventListener('transitionend', function (event) {
+      if (event.target !== detailsShell || event.propertyName !== 'grid-template-rows') return;
+      clearTimeout(transitionTimer);
+      if (detailsAreOpen()) finishOpen();
+      else finishClose();
+    });
+
+    function paintArchive() {
+      var configured = archiveConfiguredState(archiveState);
+      var enabled = configured && archiveState.timer && archiveState.timer.enabled === 'enabled';
+      control.setAttribute('aria-busy', archiveBusy ? 'true' : 'false');
+      mainSwitch.disabled = archiveBusy;
+      mainSwitch.setAttribute('aria-checked', enabled ? 'true' : 'false');
+      details.innerHTML = archiveDetail(archiveState);
+      retentionControls(null, null, archiveBusy || enabled);
+    }
+
+    function loadArchiveStatus() {
+      var request = ++archiveSequence;
+      return adminFetch('./avian/api/archive.php', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (result) {
+            if (request !== archiveSequence) return;
+            if (!response.ok || !result.ok) {
+              var error = new Error(result.error || (response.ok ? 'archive controls unavailable' : ('HTTP ' + response.status)));
+              error.archiveKind = response.status === 503 && result.hint ? 'helper' : 'request';
+              throw error;
+            }
+            archiveState = result;
+            archiveFailureKind = '';
+            if (archiveNoticeAction === 'run' && archiveNotice === 'started'
+              && (!result.service || (result.service.active !== 'active' && result.service.active !== 'activating'))
+              && result.last && result.last.state !== 'never') {
+              archiveNotice = '';
+              archiveNoticeAction = '';
+            }
+            paintArchive();
+          });
+        }).catch(function (error) {
+          if (request !== archiveSequence || adminAuthCancelled(error)) return;
+          archiveState = null;
+          archiveFailureKind = error.archiveKind || 'network';
+          archiveNoticeAction = 'refresh';
+          archiveNotice = error.message || 'archive controls unavailable';
+          archiveNoticeError = true;
+          paintArchive();
+        });
+    }
+
+    function performArchiveAction(action) {
+      if (archiveBusy) return;
+      if (action === 'purge-on'
+        && !confirm('Clear local recordings only after each file is copied and checksum-verified? Today always stays on this Pi.')) return;
+      archiveBusy = true;
+      archiveBusyAction = action;
+      archiveNoticeAction = action;
+      archiveNoticeError = false;
+      archiveNotice = action === 'run' ? 'starting...'
+        : action === 'install' ? 'installing...'
+          : action === 'enable' ? 'enabling...'
+            : action === 'disable' ? 'disabling...'
+              : 'saving...';
+      paintArchive();
+      var prepared = action === 'enable' || action === 'run';
+      var timerWasEnabled = !!(archiveState && archiveState.timer && archiveState.timer.enabled === 'enabled');
+      var previousRetention = null;
+      var work = prepared
+        ? prepareArchiveRetention().then(function (previous) {
+          previousRetention = previous;
+          return archiveApi(action);
+        }).catch(function (error) {
+          if (!previousRetention || (action === 'run' && timerWasEnabled)) throw error;
+          return saveArchiveRetention(previousRetention).then(function () {
+            retentionControls(previousRetention.MAX_FILES_SPECIES >= 10000, previousRetention.FULL_DISK, false);
+            throw error;
+          });
+        })
+        : archiveApi(action, action === 'purge-on' ? 'verified-local-files' : '');
+      work.then(function (result) {
+        archiveState = result;
+        archiveNotice = action === 'run' ? 'started'
+          : action === 'install' ? 'installed'
+            : action === 'enable' ? 'enabled'
+              : action === 'disable' ? 'disabled' : 'saved';
+        archiveNoticeError = false;
+        if (action === 'enable' || action === 'install' || action === 'run') archiveOpen = true;
+        if (action === 'disable') archiveOpen = false;
+      }).catch(function (error) {
+        if (adminAuthCancelled(error)) return;
+        archiveNotice = error.message || 'archive action failed';
+        archiveNoticeError = true;
+      }).then(function () {
+        archiveBusy = false;
+        archiveBusyAction = '';
+        if (archiveOpen !== detailsAreOpen()) openDetails(archiveOpen);
+        else paintArchive();
+        return loadArchiveStatus();
+      });
+    }
+
+    function copyArchiveCode(box) {
+      var pre = box && box.querySelector('pre');
+      var tag = box && box.querySelector('.copy');
+      if (!pre || !tag) return;
+      adminCopyText(pre.textContent).then(function () {
+        tag.innerHTML = ICON_CHECK;
+        box.setAttribute('data-copied', '1');
+        setTimeout(function () { tag.innerHTML = ICON_COPY; box.removeAttribute('data-copied'); }, 1400);
+      }).catch(function () { box.setAttribute('data-copy-error', '1'); });
+    }
+
+    disclosure.addEventListener('click', function () { openDetails(!detailsAreOpen()); });
+    mainSwitch.addEventListener('click', function () {
+      if (archiveBusy) return;
+      if (!archiveConfiguredState(archiveState)) {
+        openDetails(true);
+        return;
+      }
+      var enabled = archiveState.timer && archiveState.timer.enabled === 'enabled';
+      if (!enabled) openDetails(true);
+      performArchiveAction(enabled ? 'disable' : 'enable');
+    });
+    control.addEventListener('click', function (event) {
+      var code = event.target.closest('.code');
+      if (code) { copyArchiveCode(code); return; }
+      var button = event.target.closest('[data-archive-action]');
+      if (!button || button.disabled) return;
+      var action = button.dataset.archiveAction;
+      if (action === 'refresh') {
+        archiveBusy = true;
+        archiveBusyAction = 'refresh';
+        archiveNoticeAction = 'refresh';
+        archiveNotice = 'checking...';
+        archiveNoticeError = false;
+        paintArchive();
+        loadArchiveStatus().then(function () {
+          archiveBusy = false;
+          archiveBusyAction = '';
+          if (archiveState) archiveNotice = '';
+          paintArchive();
+        });
+        return;
+      }
+      performArchiveAction(action);
+    });
+    control.addEventListener('keydown', function (event) {
+      var code = event.target.closest('.code');
+      if (code && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        copyArchiveCode(code);
+      }
+    });
+
+    paintArchive();
+    adminPollT = setInterval(loadArchiveStatus, 10000);
+  }
+
   function renderAdminSettings() {
     if (settingsInfoCleanup) settingsInfoCleanup();
+    if (settingsAccessCleanup) settingsAccessCleanup();
     adminBody.innerHTML = '<p style="font:11px ui-monospace,monospace;color:var(--ink-soft);text-align:center">loading settings...</p>';
     Promise.all([
       adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
@@ -8307,11 +9200,26 @@
           if (adminAuthCancelled(error)) throw error;
           return { ok: false };
         }),
+      adminFetch('./avian/api/archive.php', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (body) {
+            if (response.ok && body.ok) return body;
+            return {
+              ok: false,
+              error: body.error || 'archive controls unavailable',
+              failure_kind: response.status === 503 && body.hint ? 'helper' : 'request',
+            };
+          });
+        }).catch(function (error) {
+          if (adminAuthCancelled(error)) throw error;
+          return { ok: false, error: 'archive controls unavailable', failure_kind: 'network' };
+        }),
     ])
       .then(function (parts) {
         var cfg = parts[0];
         var gen = parts[1] || {};
         var birdweather = parts[2] || { ok: false };
+        var archive = parts[3] || { ok: false, failure_kind: 'network' };
         var v = cfg.values || {};
         var sec = cfg.secrets || {};
         var security = cfg.security || {};
@@ -8339,9 +9247,8 @@
           + themeRow()
           + labelsRow()
           + atlasAlwaysAllRow()
-          + '</section><section>'
-          + lanAuthRow(security)
-          + passwordChangeRow(security)
+          + atlasClassicRow()
+          + settingsText('SITE_NAME', 'Station name', v.SITE_NAME || 'BirdNET-Pi', 60)
           + '</section><section>'
           + settingsSlider('CONFIDENCE', 'Confidence threshold', 'min score to log a detection', v.CONFIDENCE, 0.1, 0.95, 0.05, 2, 0.7)
           + settingsSlider('SF_THRESH', 'Range filter', 'min likelihood a species is here this week', v.SF_THRESH, 0.001, 0.5, 0.001, 3, 0.03)
@@ -8352,7 +9259,9 @@
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'for regional species filters', sec.EBIRD_API_KEY)
           + '</section><section class="settings-retention">'
+          + lanAuthRow(security)
           + birdweatherRow(birdweather)
+          + archiveSettingsRow(archive)
           + settingsToggle('preserve', 'Preserve all recordings', "don't auto-delete", preserve)
           + settingsSegmented('FULL_DISK', 'When disk fills', '', v.FULL_DISK, [
             { v: 'keep', label: 'keep' },
@@ -8384,7 +9293,9 @@
         wireSettingsControls(adminBody);
         wireLanAuthControl(adminBody, security);
         wirePasswordChange(adminBody);
+        wireSettingsAccessDismissal(adminBody);
         wireBirdweatherControl(adminBody, birdweather);
+        wireArchiveControl(adminBody, archive);
         wireSettingsInfo(adminBody);
         if (pendingAdminNotice) {
           var noticeTarget = adminBody.querySelector('[data-lan-auth-status]');
@@ -8414,30 +9325,19 @@
             x.setAttribute('aria-current', x === b ? 'true' : 'false');
           });
         });
-        // Labels switcher applies + persists immediately too. The second
-        // render after the handwriting face loads swaps the measured
-        // fallback metrics for the real ones.
-        var labelsSeg = adminBody.querySelector('[data-labels-seg]');
-        if (labelsSeg) labelsSeg.addEventListener('click', function (ev) {
-          var b = ev.target.closest('button[data-labels]');
-          if (!b) return;
-          writeLS('bird:labels', b.getAttribute('data-labels'));
-          [].forEach.call(labelsSeg.querySelectorAll('button'), function (x) {
-            x.setAttribute('aria-current', x === b ? 'true' : 'false');
-          });
-          if (document.fonts && document.fonts.load) {
-            document.fonts.load('600 16px Hand').then(function () {
-              labelFontReady = true; renderCollageFromData();
-            }).catch(function () { labelFontReady = true; renderCollageFromData(); });
-          } else {
-            labelFontReady = true; renderCollageFromData();
-          }
-        });
+        // Bird names apply and persist immediately without entering the Pi
+        // settings queue. Loading the handwriting face triggers the second
+        // render with its final measured metrics.
+        wireLabelsPreference(adminBody);
         // Atlas-only preference: apply immediately without touching the
         // shared time picker or sending a station settings request.
         var atlasAllSwitch = adminBody.querySelector('[data-atlas-always-all]');
         if (atlasAllSwitch) atlasAllSwitch.addEventListener('click', function () {
           applyAtlasAlwaysAll(atlasAllSwitch.getAttribute('aria-checked') !== 'true');
+        });
+        var atlasClassicSwitch = adminBody.querySelector('[data-atlas-classic]');
+        if (atlasClassicSwitch) atlasClassicSwitch.addEventListener('click', function () {
+          applyAtlasStyle(atlasClassicSwitch.getAttribute('aria-checked') !== 'true');
         });
       })
       .catch(function (err) {
@@ -8706,11 +9606,6 @@
     }
     html += dataCard('detections', 'every detection as csv: date, species, confidence, file', 'detections');
     html += dataCard('recordings', 'every clip as tar, by date and species. can run to many gb', 'recordings');
-    html += '<div class="admin-action archive-card" id="archiveCard" aria-busy="true">'
-      + '<button type="button" class="run" disabled>checking</button>'
-      + '<h4>Nightly Drive archive</h4>'
-      + '<p>verified nightly copies and daily stats</p>'
-      + '</div>';
     html += '</div>';
     adminBody.innerHTML = html;
     adminBody.querySelectorAll('[data-admin-export]').forEach(function (link) {
@@ -8747,300 +9642,6 @@
           });
       });
     });
-
-    // The archive stays an optional extra, but Tools owns its setup and
-    // day-to-day controls. Google authorization is the only terminal step;
-    // local deletion remains a separate opt-in after one verified safe run.
-    var archiveOpen = false;
-    var archiveBusy = false;
-    var archiveBusyAction = '';
-    var archiveNotice = '';
-    var archiveNoticeAction = '';
-    var archiveNoticeError = false;
-    var archiveFailureKind = '';
-    var archiveState = null;
-    var archiveCard = document.getElementById('archiveCard');
-    var archiveSequence = 0;
-
-    function archiveApi(action, confirmValue) {
-      var body = { action: action };
-      if (confirmValue) body.confirm = confirmValue;
-      return adminFetch('./avian/api/archive.php', {
-        method: 'POST', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
-        body: JSON.stringify(body),
-      }).then(function (r) {
-        return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok || !j.ok) throw new Error(j.error || (r.ok ? 'archive controls unavailable' : ('HTTP ' + r.status)));
-          return j;
-        });
-      });
-    }
-
-    function saveArchiveRetention(values) {
-      return adminFetch('./avian/api/config.php', {
-        method: 'POST', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' }, body: JSON.stringify(values),
-      }).then(function (r) {
-        return r.json().catch(function () { return {}; }).then(function (j) {
-          if (!r.ok || !j.ok) throw new Error(j.error || 'could not save recording retention');
-          return j;
-        });
-      });
-    }
-
-    function prepareArchiveRetention() {
-      return adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' })
-        .then(function (r) {
-          return r.json().catch(function () { return {}; }).then(function (j) {
-            if (!r.ok) throw new Error(j.error || 'could not read recording retention');
-            var previous = {
-              MAX_FILES_SPECIES: (j.values && Number.isFinite(+j.values.MAX_FILES_SPECIES))
-                ? +j.values.MAX_FILES_SPECIES : 0,
-              FULL_DISK: (j.values && j.values.FULL_DISK) || 'purge',
-            };
-            return saveArchiveRetention({ preserve: true, FULL_DISK: 'keep' })
-              .then(function () { return previous; });
-          });
-        });
-    }
-
-    function archiveCode(command) {
-      return '<div class="code" role="button" tabindex="0" title="click to copy" aria-label="copy command">'
-        + '<span class="copy" aria-hidden="true">' + ICON_COPY + '</span>'
-        + '<pre>' + adminEsc(command) + '</pre>'
-        + '</div>';
-    }
-
-    function archiveToggle(label, on, action, disabled, disabledTitle) {
-      return '<div class="archive-control-row">'
-        + '<span class="archive-label">' + adminEsc(label) + '</span>'
-        + '<button type="button" class="switch" role="switch" aria-label="' + adminEsc(label) + '"'
-        + ' aria-checked="' + (on ? 'true' : 'false') + '" data-archive-action="' + action + '"'
-        + (disabled && disabledTitle ? ' title="' + adminEsc(disabledTitle) + '"' : '')
-        + (disabled ? ' disabled' : '') + '></button>'
-        + '</div>';
-    }
-
-    function archiveActionRow(button, action) {
-      return '<div class="archive-action-row">' + button
-        + (archiveNotice && archiveNoticeAction === action ? '<span class="archive-inline-state' + (archiveNoticeError ? ' is-error' : '') + '">'
-          + adminEsc(archiveNotice) + '</span>' : '')
-        + '</div>';
-    }
-
-    function archiveConfigured(s) {
-      return !!(s && s.installed && s.dependencies && s.dependencies.rclone
-        && s.dependencies.sqlite3 && s.remote && s.remote.configured);
-    }
-
-    function archiveDetail(s) {
-      var configured = archiveConfigured(s);
-      if (!configured && !archiveOpen) return '';
-      var inner = '<div class="archive-detail' + (configured ? ' is-controls' : '') + '">';
-      if (!s) {
-        if (archiveFailureKind === 'helper') {
-          inner += '<p>Refresh the archive helper after updating.</p>'
-            + archiveCode('cd ~/BirdNET-Pi && ./scripts/install_services.sh')
-            + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
-        } else {
-          inner += '<p>Could not reach this station.</p>'
-            + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh">try again</button>', 'network-retry')
-            + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
-        }
-      } else if (!s.installed) {
-        inner += '<p>Install the archive service. It stays off until you enable it.</p>'
-          + archiveActionRow('<button type="button" class="archive-button" data-archive-action="install"'
-            + (archiveBusy ? ' disabled' : '') + '>'
-            + (archiveBusyAction === 'install' ? 'installing...' : 'install archive') + '</button>', 'install');
-      } else if (!s.dependencies || !s.dependencies.rclone || !s.dependencies.sqlite3) {
-        inner += '<p>Install rclone and sqlite3.</p>'
-          + archiveCode('sudo apt install rclone sqlite3')
-          + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh"'
-            + (archiveBusy ? ' disabled' : '') + '>check again</button>', 'refresh');
-      } else if (!s.remote || !s.remote.configured) {
-        inner += '<p>Connect Google Drive. Name the remote <code>' + adminEsc(s.remote.name || 'gdrive')
-          + '</code> and choose the <code>drive.file</code> scope.</p>'
-          + archiveCode('rclone config')
-          + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh"'
-            + (archiveBusy ? ' disabled' : '') + '>check again</button>', 'refresh');
-      } else {
-        var enabled = s.timer && s.timer.enabled === 'enabled';
-        var running = s.service && (s.service.active === 'active' || s.service.active === 'activating');
-        inner += '<div class="archive-run-row">'
-          + '<button type="button" class="run archive-run-button" data-archive-action="run"'
-          + (running || archiveBusy ? ' disabled' : '') + '>' + (running ? 'running...' : 'run now') + '</button>'
-          + '</div>';
-        var canPurge = s.last && s.last.state === 'OK' && s.last.verified_files > 0;
-        if (enabled) {
-          inner += archiveToggle('Clear verified local files', !!s.purge,
-            s.purge ? 'purge-off' : 'purge-on', archiveBusy || running || !canPurge,
-            'Run the archive once before enabling local cleanup.');
-        }
-        if (archiveNoticeError) inner += '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>';
-      }
-      return inner + '</div>';
-    }
-
-    function paintArchive() {
-      if (!archiveCard) return;
-      var configured = archiveConfigured(archiveState);
-      var enabled = configured && archiveState.timer && archiveState.timer.enabled === 'enabled';
-      archiveCard.setAttribute('aria-busy', archiveBusy ? 'true' : 'false');
-      archiveCard.classList.toggle('is-open', archiveOpen && !configured);
-      archiveCard.classList.toggle('is-configured', configured);
-      archiveCard.classList.toggle('is-pressable', !configured && !archiveOpen && !archiveBusy);
-      if (!configured && !archiveOpen) {
-        archiveCard.setAttribute('role', 'button');
-        archiveCard.setAttribute('tabindex', '0');
-        archiveCard.setAttribute('aria-expanded', 'false');
-        archiveCard.setAttribute('aria-label', 'Set up Nightly Drive archive');
-      } else {
-        archiveCard.removeAttribute('role');
-        archiveCard.removeAttribute('tabindex');
-        archiveCard.removeAttribute('aria-expanded');
-        archiveCard.removeAttribute('aria-label');
-      }
-      archiveCard.parentElement.classList.toggle('archive-open', archiveOpen && !configured);
-      archiveCard.innerHTML = (configured
-        ? '<button type="button" class="switch archive-schedule" role="switch" aria-label="Nightly Drive archive"'
-          + ' aria-checked="' + (enabled ? 'true' : 'false') + '" data-archive-action="'
-          + (enabled ? 'disable' : 'enable') + '"' + (archiveBusy ? ' disabled' : '') + '></button>'
-        : '<span class="run" aria-hidden="true">set up</span>')
-        + '<h4>Nightly Drive archive</h4>'
-        + '<p>verified nightly copies and daily stats</p>'
-        + archiveDetail(archiveState);
-    }
-
-    function loadArchiveStatus() {
-      var request = ++archiveSequence;
-      return adminFetch('./avian/api/archive.php', { credentials: 'same-origin', cache: 'no-store' })
-        .then(function (r) {
-          return r.json().catch(function () { return {}; }).then(function (j) {
-            if (request !== archiveSequence) return;
-            if (!r.ok || !j.ok) {
-              var error = new Error(j.error || (r.ok ? 'archive controls unavailable' : ('HTTP ' + r.status)));
-              error.archiveKind = r.status === 503 && j.hint ? 'helper' : 'request';
-              throw error;
-            }
-            archiveState = j;
-            archiveFailureKind = '';
-            if (archiveNoticeAction === 'run' && archiveNotice === 'started'
-              && (!j.service || (j.service.active !== 'active' && j.service.active !== 'activating'))
-              && j.last && j.last.state !== 'never') {
-              archiveNotice = '';
-              archiveNoticeAction = '';
-            }
-            paintArchive();
-          });
-        })
-        .catch(function (e) {
-          if (request !== archiveSequence) return;
-          if (adminAuthCancelled(e)) return;
-          archiveState = null;
-          archiveFailureKind = e.archiveKind || 'network';
-          archiveNoticeAction = 'refresh';
-          archiveNotice = e.message || 'archive controls unavailable';
-          archiveNoticeError = true;
-          paintArchive();
-        });
-    }
-
-    function performArchiveAction(action) {
-      if (archiveBusy) return;
-      if (action === 'purge-on' && !confirm('Clear local recordings only after each file is copied and checksum-verified? Today always stays on this Pi.')) return;
-      archiveBusy = true;
-      archiveBusyAction = action;
-      archiveNoticeAction = action;
-      archiveNoticeError = false;
-      archiveNotice = action === 'run' ? 'starting...'
-        : action === 'install' ? 'installing...'
-          : action === 'enable' ? 'enabling...'
-            : action === 'disable' ? 'disabling...'
-              : 'saving...';
-      paintArchive();
-      var prepared = action === 'enable' || action === 'run';
-      var previousRetention = null;
-      var work = prepared
-        ? prepareArchiveRetention().then(function (previous) {
-          previousRetention = previous;
-          return archiveApi(action);
-        }).catch(function (error) {
-          if (!previousRetention) throw error;
-          return saveArchiveRetention(previousRetention).then(function () { throw error; });
-        })
-        : archiveApi(action, action === 'purge-on' ? 'verified-local-files' : '');
-      work.then(function (j) {
-        archiveState = j;
-        archiveNotice = action === 'run' ? 'started'
-          : action === 'install' ? 'installed'
-            : action === 'enable' ? 'enabled'
-              : action === 'disable' ? 'disabled' : 'saved';
-        archiveNoticeError = false;
-      }).catch(function (e) {
-        if (adminAuthCancelled(e)) return;
-        archiveNotice = e.message || 'archive action failed';
-        archiveNoticeError = true;
-      }).then(function () {
-        archiveBusy = false;
-        archiveBusyAction = '';
-        return loadArchiveStatus();
-      });
-    }
-
-    function copyArchiveCode(box) {
-      var pre = box && box.querySelector('pre');
-      var tag = box && box.querySelector('.copy');
-      if (!pre || !tag) return;
-      adminCopyText(pre.textContent).then(function () {
-        tag.innerHTML = ICON_CHECK;
-        box.setAttribute('data-copied', '1');
-        setTimeout(function () { tag.innerHTML = ICON_COPY; box.removeAttribute('data-copied'); }, 1400);
-      }).catch(function () { box.setAttribute('data-copy-error', '1'); });
-    }
-
-    if (archiveCard) {
-      archiveCard.addEventListener('click', function (e) {
-        var code = e.target.closest('.code');
-        if (code) { copyArchiveCode(code); return; }
-        var button = e.target.closest('[data-archive-action]');
-        if (!button) {
-          if (!archiveConfigured(archiveState) && !archiveOpen && !archiveBusy) {
-            archiveOpen = true;
-            paintArchive();
-          }
-          return;
-        }
-        if (button.disabled) return;
-        var action = button.dataset.archiveAction;
-        if (action === 'refresh') {
-          archiveBusy = true;
-          archiveBusyAction = 'refresh';
-          archiveNoticeAction = 'refresh';
-          archiveNotice = 'checking...';
-          archiveNoticeError = false;
-          paintArchive();
-          loadArchiveStatus().then(function () {
-            archiveBusy = false;
-            archiveBusyAction = '';
-            if (archiveState) archiveNotice = '';
-            paintArchive();
-          });
-          return;
-        }
-        performArchiveAction(action);
-      });
-      archiveCard.addEventListener('keydown', function (e) {
-        var code = e.target.closest('.code');
-        if (code && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); copyArchiveCode(code); }
-        if (e.target === archiveCard && (e.key === 'Enter' || e.key === ' ')
-          && !archiveConfigured(archiveState) && !archiveOpen && !archiveBusy) {
-          e.preventDefault(); archiveOpen = true; paintArchive();
-        }
-      });
-    }
-    loadArchiveStatus();
-    adminPollT = setInterval(loadArchiveStatus, 10000);
 
     // Whether a unit is up is the first thing you want off this page, so the
     // badge carries it and the card only has to be hovered to offer the fix.
@@ -9211,11 +9812,11 @@
   // Initial load: if URL has a sci hash, jump to atlas, highlight, and
   // open the modal.
   if (readHash()) { go(2); highlightAtlas(readHash()); openDetailModal(readHash()); }
-  // Admin overlay routing: #admin=system|logs|tools opens the admin
+  // Admin overlay routing accepts only the four native admin sections.
   // screen with that sub-tab. Clearing the hash closes it.
   function readAdminHash() {
-    var m = location.hash.match(/^#admin=([a-z]+)/);
-    return m ? m[1] : null;
+    var m = location.hash.match(/^#admin=([a-z]+)$/);
+    return m && Object.prototype.hasOwnProperty.call(ADMIN_TITLES, m[1]) ? m[1] : null;
   }
   // #about - brief explainer popup; reached via /about (302 -> /#about)
   // or the masthead eyebrow. aria-hidden drives the CSS fade/slide.
@@ -9915,6 +10516,8 @@
   var activePostcardLanded = null;
   var activePostcardCard = null;
   var activePostcardAnimation = null;
+  var activeClassicPostcardAnimation = null;
+  var activeClassicPostcardSource = null;
   var postcardCloseTimer = 0;
   var postcardDrawerHandle = postcardModal && postcardModal.querySelector('.postcard-drawer-handle');
   var postcardDrawerMedia = window.matchMedia ? window.matchMedia('(max-width: 860px)') : null;
@@ -10007,6 +10610,15 @@
 
   function postcardDrawerSheet() {
     return postcardModal && postcardModal.querySelector('.postcard-sheet');
+  }
+
+  function setPostcardAtlasSource(source) {
+    if (!postcardModal) postcardModal = document.getElementById('postcard-modal');
+    if (!postcardSlot && postcardModal) postcardSlot = postcardModal.querySelector('.postcard-stamp-slot');
+    if (!postcardModal) return;
+    var classic = source === 'classic';
+    postcardModal.setAttribute('data-atlas-source', classic ? 'classic' : 'stamps');
+    if (classic && postcardSlot) postcardSlot.replaceChildren();
   }
 
   function releasePostcardDrawerPointer() {
@@ -10221,6 +10833,84 @@
       });
     });
   }
+  function releaseClassicPostcardMotion() {
+    var animation = activeClassicPostcardAnimation;
+    var source = activeClassicPostcardSource;
+    activeClassicPostcardAnimation = null;
+    activeClassicPostcardSource = null;
+    if (animation) {
+      animation.onfinish = null;
+      animation.oncancel = null;
+      try { animation.cancel(); } catch (err) {}
+    }
+    if (source) source.style.opacity = '';
+    if (postcardModal) postcardModal.classList.remove('is-classic-entering');
+  }
+  function finishClassicPostcardMotion(animation) {
+    if (activeClassicPostcardAnimation !== animation) return;
+    activeClassicPostcardAnimation = null;
+    animation.onfinish = null;
+    animation.oncancel = null;
+    try { animation.cancel(); } catch (err) {}
+    if (postcardModal) postcardModal.classList.remove('is-classic-entering');
+  }
+  function revealClassicPostcardShell(sourceCard, sourceRect, animate) {
+    var sheet = postcardDrawerSheet();
+    var reduced = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!sheet || !sourceRect || !sourceRect.width || !sourceRect.height) {
+      revealPostcardShell();
+      return;
+    }
+
+    // Keyboard activation and reduced-motion both keep the spatial state
+    // change, but skip the travel. The class disables the sheet's ordinary
+    // entrance transition for the same frame that publishes its final state.
+    if (!animate || reduced) {
+      postcardModal.classList.add('is-classic-entering', 'is-open');
+      postcardModal.classList.remove('is-positioned', 'is-blurring');
+      requestAnimationFrame(function () {
+        if (postcardModal) postcardModal.classList.remove('is-classic-entering');
+      });
+      return;
+    }
+    if (typeof sheet.animate !== 'function') {
+      revealPostcardShell();
+      return;
+    }
+
+    var target = sheet.getBoundingClientRect();
+    if (!target.width || !target.height) {
+      revealPostcardShell();
+      return;
+    }
+    var scaleX = Math.max(.16, Math.min(1, sourceRect.width / target.width));
+    var scaleY = Math.max(.16, Math.min(1, sourceRect.height / target.height));
+    var dx = sourceRect.left + sourceRect.width / 2 - (target.left + target.width / 2);
+    var dy = sourceRect.top + sourceRect.height / 2 - (target.top + target.height / 2);
+    var turn = parseFloat(getComputedStyle(postcardModal).getPropertyValue('--sheet-turn')) || 0;
+    var startTransform = 'translate3d(' + dx.toFixed(1) + 'px,' + dy.toFixed(1)
+      + 'px,0) scale(' + scaleX.toFixed(4) + ',' + scaleY.toFixed(4) + ') rotate(' + turn + 'deg)';
+    var endTransform = 'translate3d(0,0,0) scale(1,1) rotate(' + turn + 'deg)';
+
+    postcardModal.classList.add('is-classic-entering', 'is-open');
+    postcardModal.classList.remove('is-positioned', 'is-blurring');
+    sourceCard.style.opacity = '0';
+    activeClassicPostcardSource = sourceCard;
+    var animation = sheet.animate([
+      { transform: startTransform, opacity: .74, offset: 0 },
+      { transform: endTransform, opacity: 1, offset: 1 }
+    ], {
+      duration: 260,
+      easing: 'cubic-bezier(.23,1,.32,1)',
+      fill: 'both'
+    });
+    activeClassicPostcardAnimation = animation;
+    animation.onfinish = function () { finishClassicPostcardMotion(animation); };
+    animation.oncancel = function () {
+      if (activeClassicPostcardAnimation === animation) releaseClassicPostcardMotion();
+    };
+  }
   function releasePostcardFlight() {
     if (activePostcardAnimation) {
       activePostcardAnimation.onfinish = null;
@@ -10247,6 +10937,7 @@
     // sheet closes. While open, one node owns the complete visual state, so
     // there is no delayed shadow/rotation snap at the end of the flight.
     releasePostcardFlight();
+    releaseClassicPostcardMotion();
     settlePostcardPanels(postcardPanelTarget);
     postcardModal.classList.remove('is-positioned');
     requestAnimationFrame(function () {
@@ -10264,6 +10955,23 @@
       resetPostcardDrawer();
     }, 340);
   }
+  function openClassicPostcard(card, options) {
+    if (!postcardModal) postcardModal = document.getElementById('postcard-modal');
+    if (!postcardSlot && postcardModal) postcardSlot = postcardModal.querySelector('.postcard-stamp-slot');
+    if (!postcardModal || !postcardSlot || !card) return jumpToSci(card && card.dataset.sci);
+    options = options || {};
+    if (!options.preserveHash) clearSciHash();
+    clearTimeout(postcardCloseTimer);
+    postcardCloseTimer = 0;
+    releasePostcardFlight();
+    releaseClassicPostcardMotion();
+    var sourceRect = card.getBoundingClientRect();
+    activePostcardSci = card.dataset.sci || '';
+    setPostcardAtlasSource('classic');
+    populatePostcard(activePostcardSci);
+    preparePostcardShell();
+    revealClassicPostcardShell(card, sourceRect, options.animate !== false);
+  }
   function openPostcard(card, options) {
     if (!postcardModal) postcardModal = document.getElementById('postcard-modal');
     if (!postcardSlot && postcardModal) postcardSlot = postcardModal.querySelector('.postcard-stamp-slot');
@@ -10273,6 +10981,8 @@
     clearTimeout(postcardCloseTimer);
     postcardCloseTimer = 0;
     releasePostcardFlight();
+    releaseClassicPostcardMotion();
+    setPostcardAtlasSource('stamps');
     var fit = card.querySelector('.stamp-fit');
     if (!fit) return jumpToSci(card.dataset.sci);
     activePostcardSci = card.dataset.sci || '';
@@ -10405,6 +11115,9 @@
     if (card) {
       if (ev.target.closest('.actions, .spectro-wrap')) return;
       if (card.classList.contains('stamp-card')) return openPostcard(card);
+      if (card.classList.contains('classic-atlas-card')) {
+        return openClassicPostcard(card, { animate: ev.detail !== 0 });
+      }
       return jumpToSci(card.dataset.sci);
     }
     var row = ev.target.closest('li[data-sci]');

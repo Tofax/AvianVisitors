@@ -13,7 +13,7 @@
 function systemTheme(){try{return window.matchMedia&&window.matchMedia(q).matches?'dark':'light';}catch(e){return'light';}}
 function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
 var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemTheme());})();</script>
-<link rel="stylesheet" href="./styles.css?v=r176">
+  <link rel="stylesheet" href="./styles.css?v=r188">
   <link rel="stylesheet" href="./stamps.css?v=r355">
   <link rel="stylesheet" href="./stamp-batch-root.css?v=r254">
   <link rel="stylesheet" href="./stamp-batch-a.css?v=r257">
@@ -58,7 +58,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
       <input id="lockPass" type="password" placeholder="admin password" autocomplete="current-password" aria-describedby="lockHint lockTransport">
       <button type="submit" aria-label="Unlock admin controls">→</button>
     </form>
-    <p class="lock-hint" id="lockHint" role="status" aria-live="polite" aria-atomic="true">unlock Settings, System, Logs, and Tools.</p>
+    <p class="lock-hint" id="lockHint" role="status" aria-live="polite" aria-atomic="true"></p>
     <p class="lock-transport" id="lockTransport" hidden>Plain HTTP does not protect this password from other devices on the network.</p>
   </div>
   <nav class="menu-items" id="dd-items"></nav>
@@ -81,7 +81,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 
 <main class="stage">
   <header class="static-head">
-    <button type="button" class="pre" id="aboutLink">your birds</button>
+    <button type="button" class="pre" id="aboutLink" data-site-name>your birds</button>
     <h1 id="staticTitle">Heard Recently</h1>
   </header>
   <div class="views" id="views">
@@ -305,7 +305,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
   <div class="modal-backdrop" data-close="1"></div>
   <div class="about-card" role="document">
     <button type="button" class="modal-close" data-close="1" aria-label="close">×</button>
-    <p class="about-eyebrow">your birds</p>
+    <p class="about-eyebrow" data-site-name>your birds</p>
     <h2 id="aboutTitle">The birds outside your window</h2>
     <p class="about-body">A tiny microphone identifies every passing bird with Cornell's <a href="https://birdnet.cornell.edu/" target="_blank" rel="noopener">BirdNET</a>. Each species shows up as an illustration in the collage, sized by how often it's been heard.</p>
     <button type="button" class="about-explore" data-close="1">explore the birds →</button>
@@ -388,6 +388,6 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r235"></script>
-<script src="./apt.js?v=r196"></script>
+<script src="./apt.js?v=r214"></script>
 </body>
 </html>
