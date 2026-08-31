@@ -266,7 +266,7 @@ def shoot(url, out, *, title=None, subtitle=None, vw=600, vh=800, dsf=2,
             if subtitle is not None:
                 page.evaluate("s=>{const e=document.querySelector('.static-head h1'); if(e)e.textContent=s;}", subtitle)
             # Set the empty-state line for a birdless frame (the mic hasn't heard
-            # anything yet, or BirdWeather has no recent detections nearby) and
+            # anything yet, or BirdWeather has no recent detections) and
             # darken it so it survives the e-ink dither and the matting step's ink
             # detection (a no-op once there are birds). empty_text=None hides the
             # line entirely: the gen 3 frame shows the bare nest, no words.
@@ -298,12 +298,13 @@ def shoot_birdweather(out, species, *, title=None, subtitle=None, timeout_ms=450
     cutout_local = os.path.join(here, "..", "avian", "assets", "illustrations")
     # BirdWeather's flat 7-day counts need a steeper exponent for the same hero
     # hierarchy; the slightly smaller titles match the mic frame's optical weight.
-    # A birdless BirdWeather frame says "no recent detections nearby", not "listening".
+    # A birdless BirdWeather frame says "no recent detections", not "listening".
     for k, v in (("count_exp", 1.0), ("headline_px", 39), ("eyebrow_px", 17),
-                 ("empty_text", "no recent detections nearby")):
+                 ("empty_text", "no recent detections")):
         look.setdefault(k, v)
     return shoot(f"http://127.0.0.1:{port}/", out,
-                 title=title or "Avian Visitors", subtitle=subtitle or "Heard Today",
+                 title="Avian Visitors" if title is None else title,
+                 subtitle="Heard Today" if subtitle is None else subtitle,
                  species=species, cutout_base=RAW_ILLUSTRATIONS, cutout_local=cutout_local,
                  timeout_ms=timeout_ms, **look)
 
@@ -329,8 +330,9 @@ def main():
     ap.add_argument("--small-floor", type=float, default=0.04)
     ap.add_argument("--window-hours", type=int)
     ap.add_argument("--bird-weather", action="store_true",
-                    help="render from BirdWeather data for --zip instead of a local mic")
-    ap.add_argument("--zip", help="ZIP / postal code, required with --bird-weather")
+                    help="render from BirdWeather data for --zip or --station-id")
+    ap.add_argument("--zip", help="ZIP / postal code; use one BirdWeather locator")
+    ap.add_argument("--station-id", help="public numeric BirdWeather station ID")
     ap.add_argument("--bw-days", type=int, default=7, help="--bird-weather lookback window in days")
     ap.add_argument("--bw-country", default="us", help="--bird-weather geocoder country code")
     ap.add_argument("--width", type=int, default=600)
@@ -342,15 +344,23 @@ def main():
                     help="show common names along the birds")
     ap.add_argument("--timeout", type=int, default=45000)
     a = ap.parse_args()
+    if (a.zip or a.station_id) and not a.bird_weather:
+        print("--zip and --station-id only apply with --bird-weather", file=sys.stderr)
+        sys.exit(2)
     if a.bird_weather:
-        if not a.zip:
-            print("--bird-weather needs --zip", file=sys.stderr)
+        if bool(a.zip) == bool(a.station_id):
+            print("--bird-weather needs exactly one of --zip or --station-id", file=sys.stderr)
             sys.exit(2)
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import birdweather
-        species = birdweather.species_for_zip(a.zip, country=a.bw_country, days=a.bw_days)
+        if a.station_id:
+            species = birdweather.species_for_station(a.station_id, days=a.bw_days)
+            source = f"BirdWeather station {birdweather.station_id(a.station_id)}"
+        else:
+            species = birdweather.species_for_zip(a.zip, country=a.bw_country, days=a.bw_days)
+            source = f"ZIP {a.zip}"
         if not species:
-            print(f"no drawable birds near {a.zip}; nothing to render", file=sys.stderr)
+            print(f"no drawable birds for {source}; nothing to render", file=sys.stderr)
             sys.exit(3)
         # Pass the CLI's look flags through; shoot_birdweather fills the bird-weather
         # defaults (steeper count exponent, smaller titles) for anything left unset.

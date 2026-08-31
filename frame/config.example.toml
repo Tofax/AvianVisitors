@@ -14,10 +14,11 @@ shoot = true
 # Or read a PNG a sibling process drops next to us:
 # image = "~/.birdframe/frame.png"
 
-# Or render from BirdWeather for any ZIP, no mic (what install.sh --bird-weather
-# writes). The panel still refreshes only when the local top birds change:
+# Or render from BirdWeather, no mic. Choose one locator. The panel still
+# refreshes only when that source's top birds change:
 # species_source = "birdweather"
 # zip = "94107"
+# bw_station_id = "12345"  # public number at the end of the station-page URL; use instead of zip
 # bw_days = 7          # BirdWeather lookback window, in days
 # bw_country = "us"    # geocoder country for the ZIP
 # shoot = true         # this Pi renders the collage
@@ -27,6 +28,7 @@ hours = 24             # window shown on the frame
 # --- Titles and look (used when this Pi renders, i.e. shoot = true) ----------
 shoot_title = "Avian Visitors"
 shoot_subtitle = "Heard Today"
+# Set shoot_title = "" to hide the frame title without hiding bird names.
 bird_names = false       # run `birdframe-names on` to show them
 # shoot_headline_px = 42
 # shoot_eyebrow_px = 18
