@@ -68,14 +68,26 @@
   }
   .static-head .pre {
     display: inline-block;
-    background: none; border: 0; padding: 0 0 1px;
-    font: italic 400 clamp(13px, 1.4vw, 18px)/1.22 ui-serif, "Iowan Old Style", Georgia, serif;
-    color: var(--ink-2); letter-spacing: 0.06em; margin-bottom: 6px;
-    cursor: pointer; overflow: hidden; max-height: 30px;
-    transition: color 140ms ease, opacity 260ms ease,
-                max-height 360ms cubic-bezier(.22,1,.36,1),
-                margin 360ms cubic-bezier(.22,1,.36,1),
-                transform 360ms cubic-bezier(.22,1,.36,1);
+    background: none;
+    border: 0;
+    padding: 0 0 1px;
+
+    font: italic 400 clamp(15px, 1.35vw, 19px)/1.22
+    ui-serif, "Iowan Old Style", Georgia, serif;
+
+    color: var(--ink-2);
+    letter-spacing: 0.055em;
+    margin-bottom: 5px;
+
+    cursor: pointer;
+    overflow: hidden;
+    max-height: 30px;
+
+    transition: color 140ms ease,
+    opacity 260ms ease,
+    max-height 360ms cubic-bezier(.22,1,.36,1),
+    margin 360ms cubic-bezier(.22,1,.36,1),
+    transform 360ms cubic-bezier(.22,1,.36,1);
   }
   .static-head .pre:hover {
     color: var(--ink);
@@ -83,14 +95,21 @@
     text-decoration-thickness: 1px;
   }
   .static-head h1 {
-    margin: 0; padding: 0;
-    font: 700 clamp(24px, 3.2vw, 40px)/1 ui-serif, "Iowan Old Style", "Bookman Old Style", Georgia, serif;
-    letter-spacing: 0.06em; color: var(--ink); text-transform: uppercase;
+    margin: 0;
+    padding: 0;
+
+    font: 700 clamp(19px, 1.75vw, 24px)/1
+    ui-serif, "Iowan Old Style", "Bookman Old Style", Georgia, serif;
+
+    letter-spacing: 0.055em;
+    color: var(--ink);
+    text-transform: uppercase;
     font-style: normal;
+
     transition: opacity 240ms cubic-bezier(.7,.05,.2,1),
-                font-size 440ms cubic-bezier(.22,1,.36,1),
-                letter-spacing 440ms cubic-bezier(.22,1,.36,1),
-                transform 440ms cubic-bezier(.22,1,.36,1);
+    font-size 440ms cubic-bezier(.22,1,.36,1),
+    letter-spacing 440ms cubic-bezier(.22,1,.36,1),
+    transform 440ms cubic-bezier(.22,1,.36,1);
   }
   .static-head.swap-out h1 { opacity: 0; }
   /* A scrolling view folds the editorial title into the control line. The

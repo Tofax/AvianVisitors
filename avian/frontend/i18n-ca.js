@@ -1,6 +1,6 @@
 window.I18N_CA = {
   // Vistes principals
-  heardRecently: 'Escoltats recentment',
+  heardRecently: 'Últims cants',
   avianAtlas: "Atles d'ocells",
   emptyWindow: "No s'han detectat ocells en aquest període",
 
