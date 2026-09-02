@@ -91,7 +91,9 @@ sudo apt-get update -qq
 sudo apt-get install -y python3-venv python3-dev build-essential libatlas3-base libopenblas0
 
 echo "3/5  Creating venv and installing Python deps..."
-python3 -m venv .venv
+if [ ! -x .venv/bin/python ]; then
+  python3 -m venv .venv
+fi
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements-frame.txt
 if [ "$NEEDS_BROWSER" = 1 ]; then

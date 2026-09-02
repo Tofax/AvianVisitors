@@ -25,14 +25,22 @@ sudo -E HOME=$HOME USER=$USER ./install_services.sh || exit 1
 source /etc/birdnet/birdnet.conf
 
 install_birdnet() {
+  local bird_tmp_created=0
+
   TMP_SIZE=$(df --output=avail /tmp | tail -n 1)
   if [[ $TMP_SIZE -lt 300000 ]]; then
-    mkdir -p $HOME/bird_tmp
-    export TMPDIR=$HOME/bird_tmp
+    if [ ! -d "$HOME/bird_tmp" ]; then
+      mkdir -p "$HOME/bird_tmp"
+      bird_tmp_created=1
+    fi
+    export TMPDIR="$HOME/bird_tmp"
   fi
+
   cd ~/BirdNET-Pi || exit 1
   echo "Establishing a python virtual environment"
-  python3 -m venv birdnet
+  if [ ! -x birdnet/bin/python ]; then
+    python3 -m venv birdnet
+  fi
   source ./birdnet/bin/activate
   pip3 install wheel
   get_tf_whl
@@ -44,7 +52,9 @@ install_birdnet() {
     [ $LOOP_COUNT == 0 ] && exit 1
     sleep 5
   done
-  rm -rf $HOME/bird_tmp
+  if [ "$bird_tmp_created" -eq 1 ]; then
+    rm -rf "$HOME/bird_tmp"
+  fi
 }
 
 [ -d ${RECS_DIR} ] || mkdir -p ${RECS_DIR} &> /dev/null
