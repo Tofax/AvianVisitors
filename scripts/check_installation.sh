@@ -196,7 +196,7 @@ fi
 # Renderer Python environment
 # ------------------------------------------------------------
 
-FRAME_PYTHON="${BIRDNET_HOME}/frame/.venv/bin/python"
+FRAME_PYTHON="${BIRDNET_HOME}/frame/server/.venv/bin/python"
 
 if [ -x "${FRAME_PYTHON}" ]; then
   pass "Frame Python virtual environment exists"
