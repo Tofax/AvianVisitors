@@ -88,7 +88,7 @@ grep -q "^dtoverlay=spi0-0cs" "$CONFIG_TXT" || echo "dtoverlay=spi0-0cs" | sudo 
 
 echo "2/5  Installing system packages (build tools to compile spidev, libatlas3-base for numpy)..."
 sudo apt-get update -qq
-sudo apt-get install -y python3-venv python3-dev build-essential libatlas3-base
+sudo apt-get install -y python3-venv python3-dev build-essential libatlas3-base libopenblas0
 
 echo "3/5  Creating venv and installing Python deps..."
 python3 -m venv .venv
