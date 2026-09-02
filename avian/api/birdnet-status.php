@@ -45,6 +45,7 @@ $CONF_PATH     = "$BIRDNETPI_DIR/birdnet.conf";
 $STREAM_DIR      = "$BIRDSONGS_DIR/StreamData";
 $FRAME_PATH      = "$BIRDSONGS_DIR/Extracted/frame/frame.png";
 $FRAME_SIGNATURE = "$BIRDSONGS_DIR/Extracted/frame/.render-signature";
+$FRAME_HEARTBEAT = "$BIRDSONGS_DIR/Extracted/frame/.birdpic-heartbeat.json";
 $FRAME_DEFAULTS  = '/etc/default/avian-frame-render';
 $ADMIN_CONTROL   = getenv('AV_ADMIN_CONTROL') ?: '/usr/local/sbin/avian-admin-control';
 
@@ -212,6 +213,110 @@ function read_conf_summary(string $p): array {
     return ['readable' => true, 'values' => $vals];
 }
 
+function write_birdpic_heartbeat(string $path, array $payload): array {
+    $result = (string)($payload['result'] ?? '');
+    if (!in_array($result, ['ok', 'error'], true)) {
+        throw new InvalidArgumentException('invalid result');
+    }
+
+    $updated = !empty($payload['updated']);
+    $reason = isset($payload['reason']) ? substr((string)$payload['reason'], 0, 80) : null;
+    $error = isset($payload['error']) ? substr((string)$payload['error'], 0, 500) : null;
+    $hostname = isset($payload['hostname'])
+        ? substr((string)$payload['hostname'], 0, 80)
+        : 'birdpic';
+
+    $previous = [];
+    if (is_readable($path)) {
+        $decoded = json_decode((string)file_get_contents($path), true);
+        if (is_array($decoded)) $previous = $decoded;
+    }
+
+    $now = time();
+
+    $state = [
+        'hostname'       => $hostname,
+        'last_seen'      => date('c', $now),
+        'last_seen_ts'   => $now,
+        'last_result'    => $result,
+        'last_reason'    => $reason,
+        'last_error'     => $result === 'error' ? $error : null,
+        'last_update_at' => $updated
+            ? date('c', $now)
+            : ($previous['last_update_at'] ?? null),
+        'last_update_ts' => $updated
+            ? $now
+            : ($previous['last_update_ts'] ?? null),
+    ];
+
+    $tmp = $path . '.tmp';
+    if (@file_put_contents(
+        $tmp,
+        json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+        LOCK_EX
+    ) === false) {
+        throw new RuntimeException('could not write heartbeat');
+    }
+
+    if (!@rename($tmp, $path)) {
+        @unlink($tmp);
+        throw new RuntimeException('could not install heartbeat');
+    }
+
+    return $state;
+}
+
+
+function read_birdpic_status(string $path): array {
+    if (!is_readable($path)) {
+        return [
+            'state' => 'unknown',
+            'age_s' => null,
+            'last_seen' => null,
+            'last_result' => null,
+            'last_update_at' => null,
+            'last_error' => null,
+        ];
+    }
+
+    $data = json_decode((string)file_get_contents($path), true);
+    if (!is_array($data)) {
+        return [
+            'state' => 'unknown',
+            'age_s' => null,
+            'last_seen' => null,
+            'last_result' => null,
+            'last_update_at' => null,
+            'last_error' => 'invalid heartbeat file',
+        ];
+    }
+
+    $lastSeenTs = isset($data['last_seen_ts']) ? (int)$data['last_seen_ts'] : 0;
+    $age = $lastSeenTs > 0 ? max(0, time() - $lastSeenTs) : null;
+
+    if ($age === null) {
+        $state = 'unknown';
+    } elseif ($age <= 600) {
+        $state = 'online';
+    } elseif ($age <= 1200) {
+        $state = 'stale';
+    } else {
+        $state = 'offline';
+    }
+
+    return [
+        'state'          => $state,
+        'age_s'          => $age,
+        'hostname'       => $data['hostname'] ?? null,
+        'last_seen'      => $data['last_seen'] ?? null,
+        'last_result'    => $data['last_result'] ?? null,
+        'last_reason'    => $data['last_reason'] ?? null,
+        'last_update_at' => $data['last_update_at'] ?? null,
+        'last_error'     => $data['last_error'] ?? null,
+    ];
+}
+
+
 function read_frame_status(
     string $framePath,
     string $signaturePath,
@@ -346,6 +451,42 @@ function logs_for(string $control, string $unit, int $lines): array {
 
 switch ($action) {
 
+    case 'frame-heartbeat': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            header('Allow: POST');
+            echo json_encode(['error' => 'POST required']);
+            break;
+        }
+
+        $contentType = strtolower((string)($_SERVER['CONTENT_TYPE'] ?? ''));
+        if (strpos($contentType, 'application/json') !== 0) {
+            http_response_code(415);
+            echo json_encode(['error' => 'expected application/json']);
+            break;
+        }
+
+        $payload = json_decode((string)file_get_contents('php://input'), true);
+        if (!is_array($payload)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid JSON']);
+            break;
+        }
+
+        try {
+            $state = write_birdpic_heartbeat($FRAME_HEARTBEAT, $payload);
+            echo json_encode(['ok' => true, 'heartbeat' => $state]);
+        } catch (InvalidArgumentException $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+        break;
+    }
+
+
     case 'system': {
         echo json_encode([
             'uptime'      => read_uptime(),
@@ -429,6 +570,7 @@ switch ($action) {
                 'kernel'      => trim(shellout('uname -r')),
             ],
             'services'    => $svc,
+            'birdpic'     => read_birdpic_status($FRAME_HEARTBEAT),
             'frame'       => read_frame_status(
                 $FRAME_PATH,
                 $FRAME_SIGNATURE,

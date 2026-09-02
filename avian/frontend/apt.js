@@ -7248,6 +7248,7 @@
   function adminSystemMarkup(j) {
     var sys = j.system || {}, svc = j.services || {}, recLogs = j.recent_logs || {};
     var frame = j.frame || {};
+    var birdpic = j.birdpic || {};
     var stream = sys.stream_data || {}, db = sys.birds_db || {};
     var streamAlert = !stream.exists || stream.newest_age_s == null || stream.newest_age_s > 600;
     var dbAlert = db.exists && db.modified_s > 3600;
@@ -7326,6 +7327,28 @@
         ? 'última execució ' + formatSystemdDate(renderer.last_finish)
         : 'sense execucions registrades',
       renderer.ok ? '' : 'alert', 'pipeline');
+
+    var birdpicStateCa = {
+      online: 'en línia',
+      stale: 'sense resposta recent',
+      offline: 'fora de línia',
+      unknown: 'desconegut'
+    };
+    var birdpicClass =
+      birdpic.state === 'offline' ? 'alert' :
+      birdpic.state === 'stale' || birdpic.state === 'unknown' ? 'warn' : '';
+
+    html += adminCard("pantalla birdpic",
+      birdpicStateCa[birdpic.state] || birdpic.state || 'desconegut',
+      birdpic.age_s != null ? 'vist fa ' + adminFmtAge(birdpic.age_s) : 'sense heartbeat',
+      birdpicClass, 'pipeline');
+
+    html += adminCard("última actualització e-paper",
+      birdpic.last_update_at ? formatSystemdDate(birdpic.last_update_at) : 'encara no registrada',
+      birdpic.last_result === 'error'
+        ? (birdpic.last_error || 'última execució amb error')
+        : (birdpic.last_reason || ''),
+      birdpic.last_result === 'error' ? 'alert' : '', 'clock');
 
     html += '</div>';
 
