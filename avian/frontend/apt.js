@@ -7247,6 +7247,7 @@
 
   function adminSystemMarkup(j) {
     var sys = j.system || {}, svc = j.services || {}, recLogs = j.recent_logs || {};
+    var frame = j.frame || {};
     var stream = sys.stream_data || {}, db = sys.birds_db || {};
     var streamAlert = !stream.exists || stream.newest_age_s == null || stream.newest_age_s > 600;
     var dbAlert = db.exists && db.modified_s > 3600;
@@ -7286,6 +7287,46 @@
       mic || (cards.length ? "cap micròfon connectat" : "cap dispositiu d'àudio"),
       mic ? '' : (cards[0] || ''),
       mic ? '' : 'warn', 'mic');
+    html += '</div>';
+
+    var frameFile = frame.file || {};
+    var renderer = frame.renderer || {};
+    var frameConfig = frame.config || {};
+    var signature = frame.signature || {};
+
+    var frameAge = frameFile.age_s;
+    var frameState = '';
+    if (!frameFile.exists || frameAge == null || !renderer.ok) {
+      frameState = 'alert';
+    } else if (!signature.exists) {
+      frameState = 'warn';
+    }
+
+    html += '<h2 class="admin-section-head">marc e-paper</h2>';
+    html += '<div class="admin-grid">';
+
+    html += adminCard("últim frame",
+      frameFile.exists && frameAge != null ? 'fa ' + adminFmtAge(frameAge) : 'absent',
+      frameFile.mtime || '',
+      frameState, 'clock');
+
+    html += adminCard("proper render",
+      renderer.next_run ? formatSystemdDate(renderer.next_run) : '-',
+      'cada 25 minuts',
+      renderer.next_run ? '' : 'warn', 'clock');
+
+    html += adminCard("finestra de deteccions",
+      frameConfig.recent_hours != null ? frameConfig.recent_hours + ' h' : '-',
+      'deteccions recents',
+      '', 'clock');
+
+    html += adminCard("renderer",
+      renderer.ok ? 'correcte' : 'error',
+      renderer.last_finish
+        ? 'última execució ' + formatSystemdDate(renderer.last_finish)
+        : 'sense execucions registrades',
+      renderer.ok ? '' : 'alert', 'pipeline');
+
     html += '</div>';
 
     html += '<h2 class="admin-section-head">serveis</h2>';

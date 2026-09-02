@@ -42,8 +42,11 @@ $BIRDNETPI_DIR = dirname(__DIR__, 2);
 $BIRDSONGS_DIR = dirname(__DIR__, 3) . '/BirdSongs';
 $DB_PATH       = "$BIRDNETPI_DIR/scripts/birds.db";
 $CONF_PATH     = "$BIRDNETPI_DIR/birdnet.conf";
-$STREAM_DIR    = "$BIRDSONGS_DIR/StreamData";
-$ADMIN_CONTROL = getenv('AV_ADMIN_CONTROL') ?: '/usr/local/sbin/avian-admin-control';
+$STREAM_DIR      = "$BIRDSONGS_DIR/StreamData";
+$FRAME_PATH      = "$BIRDSONGS_DIR/Extracted/frame/frame.png";
+$FRAME_SIGNATURE = "$BIRDSONGS_DIR/Extracted/frame/.render-signature";
+$FRAME_DEFAULTS  = '/etc/default/avian-frame-render';
+$ADMIN_CONTROL   = getenv('AV_ADMIN_CONTROL') ?: '/usr/local/sbin/avian-admin-control';
 
 function shellout(string $cmd): string {
     // Always merge stderr so a broken command shows what failed.
@@ -209,6 +212,83 @@ function read_conf_summary(string $p): array {
     return ['readable' => true, 'values' => $vals];
 }
 
+function read_frame_status(
+    string $framePath,
+    string $signaturePath,
+    string $defaultsPath
+): array {
+    $frameExists = is_file($framePath);
+    $frameMtime = $frameExists ? @filemtime($framePath) : false;
+
+    $recentHours = 1;
+    if (is_readable($defaultsPath)) {
+        foreach (file($defaultsPath, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+            if (preg_match('/^\s*AVIAN_FRAME_RECENT_HOURS\s*=\s*(\d+)\s*$/', $line, $m)) {
+                $recentHours = max(1, (int)$m[1]);
+                break;
+            }
+        }
+    }
+
+    $props = [];
+    $raw = shellout(
+        'systemctl show avian-frame-render.service ' .
+        '-p Result ' .
+        '-p ExecMainStatus ' .
+        '-p ExecMainStartTimestamp ' .
+        '-p ExecMainExitTimestamp'
+    );
+
+    foreach (explode("\n", $raw) as $line) {
+        if (strpos($line, '=') === false) continue;
+        [$key, $value] = explode('=', $line, 2);
+        $props[$key] = $value;
+    }
+
+    $timerLine = trim(shellout(
+        'systemctl list-timers avian-frame-render.timer --no-legend --no-pager'
+    ));
+
+    $nextRun = null;
+    if ($timerLine !== '' &&
+        preg_match('/^(\S+\s+\S+\s+\S+\s+\S+)/', $timerLine, $m)) {
+        $nextRun = $m[1];
+    }
+
+    $result = $props['Result'] ?? '';
+    $exitStatus = isset($props['ExecMainStatus'])
+        ? (int)$props['ExecMainStatus']
+        : null;
+
+    return [
+        'file' => [
+            'exists'     => $frameExists,
+            'age_s'      => $frameMtime !== false
+                ? max(0, time() - (int)$frameMtime)
+                : null,
+            'mtime'      => $frameMtime !== false
+                ? date('c', (int)$frameMtime)
+                : null,
+            'size_bytes' => $frameExists ? (int)@filesize($framePath) : null,
+        ],
+        'renderer' => [
+            'ok'          => $frameExists && $result === 'success' && $exitStatus === 0,
+            'result'      => $result ?: null,
+            'exit_status' => $exitStatus,
+            'last_start'  => ($props['ExecMainStartTimestamp'] ?? '') ?: null,
+            'last_finish' => ($props['ExecMainExitTimestamp'] ?? '') ?: null,
+            'next_run'    => $nextRun,
+        ],
+        'config' => [
+            'recent_hours' => $recentHours,
+        ],
+        'signature' => [
+            'exists' => is_file($signaturePath),
+        ],
+    ];
+}
+
+
 // Whitelisted units we'll surface in the system page + allow restart on.
 // Includes both 8.2 and 8.4 php-fpm so older Debian + Trixie both report
 // the right unit name; missing units come back as "inactive (not-found)".
@@ -279,6 +359,11 @@ switch ($action) {
             'conf'        => read_conf_summary($CONF_PATH),
             'hostname'    => trim(shellout('hostname')),
             'kernel'      => trim(shellout('uname -r')),
+            'frame'       => read_frame_status(
+                $FRAME_PATH,
+                $FRAME_SIGNATURE,
+                $FRAME_DEFAULTS
+            ),
             'as_of'       => date('c'),
         ]);
         break;
@@ -344,6 +429,11 @@ switch ($action) {
                 'kernel'      => trim(shellout('uname -r')),
             ],
             'services'    => $svc,
+            'frame'       => read_frame_status(
+                $FRAME_PATH,
+                $FRAME_SIGNATURE,
+                $FRAME_DEFAULTS
+            ),
             'recent_logs' => $recent_logs,
             'as_of'       => date('c'),
         ]);
