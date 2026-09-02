@@ -1,7 +1,10 @@
 [Unit]
 Description=Generate Avian Visitors frame
+After=network-online.target caddy.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/ferran/AvianVisitors/server
-ExecStart=/home/ferran/AvianVisitors/server/.venv/bin/python /home/ferran/AvianVisitors/server/render-frame.py
+User=ferran
+WorkingDirectory=/home/ferran/AvianVisitors/frame
+ExecStart=/home/ferran/AvianVisitors/frame/.venv/bin/python /home/ferran/AvianVisitors/frame/server/render-frame.py
