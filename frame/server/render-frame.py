@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 
+import hashlib
+import json
 import os
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from urllib.request import urlopen
 
 from PIL import Image
-from playwright.sync_api import sync_playwright
 
 URL = "http://127.0.0.1/"
 
 OUTPUT = Path("/home/ferran/BirdSongs/Extracted/frame/frame.png")
 RAW = OUTPUT.parent / ".frame.raw.png"
 TMP = OUTPUT.parent / ".frame.tmp.png"
+SIGNATURE_FILE = OUTPUT.parent / ".render-signature"
 
 # Imatge que volem mostrar quan no hi ha ocells.
 EMPTY_IMAGE = Path("/home/ferran/BirdNET-Pi/avian/frontend/nest.webp")
@@ -146,9 +149,58 @@ def render_empty_state() -> Image.Image:
     return canvas
 
 
-def filter_recent_to_last_hour(route):
+def get_recent_signature():
     """
-    Força l'API recent a utilitzar només l'última hora,
+    Consulta l'API abans d'obrir Chromium i calcula una signatura estable.
+
+    S'ignoren camps volàtils com anchor i as_of, que canvien a cada consulta
+    encara que el contingut visible del frame sigui exactament el mateix.
+    """
+    api_url = (
+        "http://127.0.0.1/avian/api/birdnet-api.php"
+        f"?action=recent&hours={RECENT_HOURS}"
+    )
+
+    with urlopen(api_url, timeout=15) as response:
+        payload = json.load(response)
+
+    signature_data = {
+        "hours": RECENT_HOURS,
+        "station_date": payload.get("station_date"),
+        "species": payload.get("species", []),
+    }
+
+    canonical = json.dumps(
+        signature_data,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def frame_is_unchanged(signature):
+    if not OUTPUT.exists():
+        return False
+
+    try:
+        previous = SIGNATURE_FILE.read_text().strip()
+    except FileNotFoundError:
+        return False
+
+    return previous == signature
+
+
+def save_signature(signature):
+    tmp_signature = SIGNATURE_FILE.with_suffix(".tmp")
+    tmp_signature.write_text(signature + "\n")
+    tmp_signature.replace(SIGNATURE_FILE)
+
+
+def filter_recent_window(route):
+    """
+    Força l'API recent a utilitzar la finestra configurada,
     sense modificar el comportament normal del frontend.
     """
     url = route.request.url
@@ -177,6 +229,23 @@ def save_canvas(canvas: Image.Image):
     TMP.replace(OUTPUT)
 
 
+try:
+    current_signature = get_recent_signature()
+except Exception as exc:
+    # Si la comprovació ràpida falla, no deixem de generar el frame:
+    # Playwright continua sent el fallback funcional.
+    print(f"Signature check failed; rendering anyway: {exc}")
+    current_signature = None
+
+if current_signature is not None and frame_is_unchanged(current_signature):
+    print("Frame unchanged; render skipped")
+    print(f"Recent hours: {RECENT_HOURS}")
+    raise SystemExit(0)
+
+# Playwright només es carrega quan realment cal regenerar el PNG.
+from playwright.sync_api import sync_playwright
+
+
 with sync_playwright() as p:
     browser = p.chromium.launch(
         headless=True,
@@ -190,7 +259,7 @@ with sync_playwright() as p:
         device_scale_factor=1,
     )
 
-    page.route("**/*", filter_recent_to_last_hour)
+    page.route("**/*", filter_recent_window)
     page.set_default_timeout(120_000)
 
     page.goto(
@@ -219,6 +288,9 @@ with sync_playwright() as p:
 
         canvas = render_empty_state()
         save_canvas(canvas)
+
+        if current_signature is not None:
+            save_signature(current_signature)
 
         RAW.unlink(missing_ok=True)
 
@@ -288,6 +360,9 @@ canvas = force_pure_white_background(
 )
 
 save_canvas(canvas)
+
+if current_signature is not None:
+    save_signature(current_signature)
 
 RAW.unlink(missing_ok=True)
 
