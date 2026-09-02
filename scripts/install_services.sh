@@ -335,8 +335,12 @@ configure_caddy_php() {
 }
 
 install_phpsysinfo() {
-  sudo -u ${USER} git clone https://github.com/phpsysinfo/phpsysinfo.git \
-    ${HOME}/phpsysinfo
+  if [ -d "${HOME}/phpsysinfo/.git" ]; then
+    echo "Reusing existing phpsysinfo checkout"
+  else
+    sudo -u "${USER}" git clone https://github.com/phpsysinfo/phpsysinfo.git \
+      "${HOME}/phpsysinfo"
+  fi
 }
 
 config_icecast() {
@@ -389,10 +393,11 @@ chown_things() {
 }
 
 increase_caddy_timeout() {
-  mkdir /etc/systemd/system/caddy.service.d
+  mkdir -p /etc/systemd/system/caddy.service.d
   cat << EOF > /etc/systemd/system/caddy.service.d/override.conf
 [Service]
 TimeoutSec=300s
+SupplementaryGroups=${USER}
 EOF
   systemctl daemon-reload
 }

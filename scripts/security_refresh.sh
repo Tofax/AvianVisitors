@@ -49,7 +49,7 @@ repo_dir=$birdnet_home/BirdNET-Pi
 # Caddy and the station user may lock this inode, but only root can replace it.
 # It serializes asynchronous illustration workers with checkout updates.
 generation_lock=/run/lock/avian-generation.lock
-birdnet_gid=$(id -g "$birdnet_user")
+birdnet_gid=$(getent group caddy | cut -d: -f3)
 if [ ! -e "$generation_lock" ] && [ ! -L "$generation_lock" ]; then
   install -o root -g "$birdnet_gid" -m 0660 /dev/null "$generation_lock"
 fi
