@@ -196,14 +196,14 @@ DONE
 
 Installed. The frame fetches its image from
   $IMAGE_URL
-and refreshes every 15 min, only when the birds change.
+and refreshes every 5 min, only when the birds change.
 DONE
     ;;
   birdweather)
     cat <<DONE
 
 Installed in BirdWeather mode for ZIP $ZIP. The frame renders the top birds near
-you on the Pi and refreshes every 15 min, only when the local top birds change.
+you on the Pi and refreshes every 5 min, only when the local top birds change.
 DONE
     # The bundled illustrations center on the western U.S. If birds near this ZIP
     # aren't in the cloned set the frame quietly skips them, which has tripped

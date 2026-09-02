@@ -8,7 +8,7 @@ Description=Update the e-ink bird frame on a schedule
 # and later unloaded, restarting the timer can otherwise leave no next deadline.
 OnActiveSec=2min
 OnBootSec=2min
-OnUnitActiveSec=15min
+OnUnitActiveSec=5min
 Persistent=true
 
 [Install]
