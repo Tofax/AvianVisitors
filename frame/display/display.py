@@ -480,6 +480,51 @@ def frame_url(url, bird_names):
     return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
 
 
+def heartbeat_url(cfg):
+    base = str(cfg.get("base_url") or "").rstrip("/")
+    if not base:
+        return None
+    return base + "/avian/api/birdnet-status.php?action=frame-heartbeat"
+
+
+def send_heartbeat(cfg, result="ok", updated=False, reason=None, error=None):
+    url = heartbeat_url(cfg)
+    if not url:
+        return
+
+    import json
+    import socket
+    import urllib.request
+
+    payload = {
+        "hostname": socket.gethostname(),
+        "result": result,
+        "updated": bool(updated),
+    }
+
+    if reason:
+        payload["reason"] = str(reason)
+    if error:
+        payload["error"] = str(error)
+
+    data = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            response.read()
+    except Exception as exc:
+        # El heartbeat és telemetria: mai ha de bloquejar l'actualització
+        # física de la pantalla.
+        print(f"heartbeat failed: {exc}", file=sys.stderr)
+
+
 # --- run --------------------------------------------------------------------
 def obtain_image(cfg, species=None):
     if cfg.get("species_source") == "birdweather":
@@ -530,9 +575,11 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
     if not force and not preview:
         if in_quiet_hours(cfg, datetime.now().hour):
             print("quiet hours; skip")
+            send_heartbeat(cfg, result="ok", updated=False, reason="quiet_hours")
             return
         if not changed and not heal_due:
             print("no change; skip")
+            send_heartbeat(cfg, result="ok", updated=False, reason="no_change")
             return
         print("refresh:", "changed" if changed else "heal")
 
@@ -550,6 +597,13 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
             img = fit_panel(src)
     except Exception as e:
         print(f"could not get image: {e}", file=sys.stderr)  # keep last panel image
+        send_heartbeat(
+            cfg,
+            result="error",
+            updated=False,
+            reason="image_error",
+            error=e,
+        )
         return
 
     # A pre-rendered PhotoPainter frame already has the exact logical
@@ -577,9 +631,17 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
         )
     except Exception as e:
         print(f"panel push failed: {e}", file=sys.stderr)
+        send_heartbeat(
+            cfg,
+            result="error",
+            updated=False,
+            reason="panel_error",
+            error=e,
+        )
         return
     save_state(cfg["state"], sig if sig is not None else state.get("signature"), now)
     print("panel updated")
+    send_heartbeat(cfg, result="ok", updated=True, reason="panel_updated")
 
 
 def load_config(path):

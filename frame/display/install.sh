@@ -165,7 +165,7 @@ fi
 sudo ln -sfn "$FRAME/birdframe-names" /usr/local/bin/birdframe-names
 
 echo "5/5  Installing systemd service + timer..."
-# Every mode runs display.py against the config on the standard 15-minute timer;
+# Every mode runs display.py against the config on the standard 5-minute timer;
 # only the config differs. display.py renders inline for local + birdweather and
 # pushes to the panel only when the birds change.
 sed \
@@ -186,7 +186,7 @@ case "$MODE" in
     cat <<DONE
 
 Installed. The frame mirrors birdnet.local on your network and refreshes every
-15 min, only when the birds change. Until the mic has heard its first bird it
+5 min, only when the birds change. Until the mic has heard its first bird it
 shows a plain title card. If the panel hangs upside down, set rotate = 270 in
 ~/.birdframe/config.toml.
 DONE
