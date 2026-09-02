@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
@@ -18,8 +19,15 @@ EMPTY_IMAGE = Path("/home/ferran/BirdNET-Pi/avian/frontend/nest.webp")
 VIEW_W = 800
 VIEW_H = 480
 
-# Només ocells de l'última hora
-RECENT_HOURS = 1
+# Finestra de deteccions recents, configurable via systemd.
+# Per defecte: 1 hora.
+try:
+    RECENT_HOURS = int(os.environ.get("AVIAN_FRAME_RECENT_HOURS", "1"))
+except ValueError:
+    raise SystemExit("AVIAN_FRAME_RECENT_HOURS ha de ser un enter positiu")
+
+if RECENT_HOURS < 1:
+    raise SystemExit("AVIAN_FRAME_RECENT_HOURS ha de ser >= 1")
 
 # Text que apareix quan no hi ha ocells
 EMPTY_TEXT = "no s'han detectat ocells en aquest període"

@@ -6,5 +6,6 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=__AVIAN_USER__
+EnvironmentFile=-/etc/default/avian-frame-render
 WorkingDirectory=__AVIAN_HOME__/BirdNET-Pi/frame/server
 ExecStart=__AVIAN_HOME__/BirdNET-Pi/frame/server/.venv/bin/python __AVIAN_HOME__/BirdNET-Pi/frame/server/render-frame.py

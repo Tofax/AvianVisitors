@@ -407,6 +407,12 @@ install_frame_render() {
 
   echo "Installing AvianVisitors frame renderer"
 
+  if [ ! -f /etc/default/avian-frame-render ]; then
+    cat > /etc/default/avian-frame-render <<'EOF'
+AVIAN_FRAME_RECENT_HOURS=1
+EOF
+  fi
+
   if [ ! -x "${frame_dir}/.venv/bin/python" ]; then
     python3 -m venv "${frame_dir}/.venv"
   fi
