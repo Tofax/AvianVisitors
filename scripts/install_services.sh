@@ -402,6 +402,35 @@ EOF
   systemctl daemon-reload
 }
 
+install_frame_render() {
+  local frame_dir="${HOME}/BirdNET-Pi/frame"
+  local service_src="${frame_dir}/systemd/avian-frame-render.service"
+  local timer_src="${frame_dir}/systemd/avian-frame-render.timer"
+
+  echo "Installing AvianVisitors frame renderer"
+
+  if [ ! -x "${frame_dir}/.venv/bin/python" ]; then
+    python3 -m venv "${frame_dir}/.venv"
+  fi
+
+  "${frame_dir}/.venv/bin/pip" install --upgrade pip
+  "${frame_dir}/.venv/bin/pip" install pillow playwright
+
+  "${frame_dir}/.venv/bin/playwright" install-deps chromium
+  "${frame_dir}/.venv/bin/playwright" install chromium
+
+  sed \
+    -e "s|__AVIAN_USER__|${USER}|g" \
+    -e "s|__AVIAN_HOME__|${HOME}|g" \
+    "$service_src" \
+    > /etc/systemd/system/avian-frame-render.service
+
+  cp "$timer_src" /etc/systemd/system/avian-frame-render.timer
+
+  systemctl daemon-reload
+  systemctl enable --now avian-frame-render.timer
+}
+
 install_services() {
   set_hostname
   update_etc_hosts
@@ -427,6 +456,7 @@ install_services() {
   install_cleanup_cron
   install_weekly_cron
   install_automatic_update_cron
+  install_frame_render
   increase_caddy_timeout
 
   create_necessary_dirs

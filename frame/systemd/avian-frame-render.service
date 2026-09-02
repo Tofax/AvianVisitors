@@ -5,6 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=ferran
-WorkingDirectory=/home/ferran/AvianVisitors/frame
-ExecStart=/home/ferran/AvianVisitors/frame/.venv/bin/python /home/ferran/AvianVisitors/frame/server/render-frame.py
+User=__AVIAN_USER__
+WorkingDirectory=__AVIAN_HOME__/BirdNET-Pi/frame
+ExecStart=__AVIAN_HOME__/BirdNET-Pi/frame/.venv/bin/python __AVIAN_HOME__/BirdNET-Pi/frame/server/render-frame.py
