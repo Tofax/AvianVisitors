@@ -6,7 +6,7 @@ PASS=0
 WARN=0
 FAIL=0
 
-FRAME_DIR="${HOME}/AvianVisitors/frame"
+FRAME_DIR="${HOME}/AvianVisitors/frame/display"
 CONFIG="${HOME}/.birdframe/config.toml"
 FRAME_URL="http://birdnet.local/frame/frame.png"
 WAVESHARE_LIB="${HOME}/RPi_Zero_PhotoPainter/7in3_e-Paper_E/python/lib"

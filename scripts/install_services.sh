@@ -401,7 +401,7 @@ EOF
 }
 
 install_frame_render() {
-  local frame_dir="${HOME}/BirdNET-Pi/frame"
+  local frame_dir="${HOME}/BirdNET-Pi/frame/server"
   local service_src="${frame_dir}/systemd/avian-frame-render.service"
   local timer_src="${frame_dir}/systemd/avian-frame-render.timer"
 

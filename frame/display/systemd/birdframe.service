@@ -1,0 +1,14 @@
+[Unit]
+Description=AvianVisitors e-ink frame update
+Documentation=https://github.com/Tofax/AvianVisitors
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__AVIAN_USER__
+WorkingDirectory=__AVIAN_HOME__/AvianVisitors/frame/display
+ExecStart=__AVIAN_HOME__/AvianVisitors/frame/display/.venv/bin/python __AVIAN_HOME__/AvianVisitors/frame/display/display.py --config __AVIAN_HOME__/.birdframe/config.toml
+Environment=PYTHONUNBUFFERED=1
+Nice=10
+TimeoutStartSec=300

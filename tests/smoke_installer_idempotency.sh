@@ -11,7 +11,7 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 birdnet_installer="$repo/scripts/install_birdnet.sh"
 services_installer="$repo/scripts/install_services.sh"
-frame_installer="$repo/frame/install.sh"
+frame_installer="$repo/frame/display/install.sh"
 
 [ -f "$birdnet_installer" ] || fail "BirdNET installer is missing"
 [ -f "$services_installer" ] || fail "services installer is missing"

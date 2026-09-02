@@ -95,7 +95,7 @@ if [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
 fi
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -r requirements-frame.txt
+.venv/bin/pip install -q -r requirements.txt
 if [ "$NEEDS_BROWSER" = 1 ]; then
   echo "     Installing Playwright + Chromium so the Pi can render the collage (a few minutes)..."
   .venv/bin/pip install -q playwright
@@ -168,8 +168,11 @@ echo "5/5  Installing systemd service + timer..."
 # Every mode runs display.py against the config on the standard 15-minute timer;
 # only the config differs. display.py renders inline for local + birdweather and
 # pushes to the panel only when the birds change.
-sed "s|/home/monalisa/AvianVisitors/frame|$FRAME|g; s|/home/monalisa|$HOME|g; s|User=monalisa|User=$USER|" \
-  systemd/birdframe.service | sudo tee /etc/systemd/system/birdframe.service >/dev/null
+sed \
+  -e "s|__AVIAN_USER__|$USER|g" \
+  -e "s|__AVIAN_HOME__|$HOME|g" \
+  systemd/birdframe.service \
+  | sudo tee /etc/systemd/system/birdframe.service >/dev/null
 # BirdWeather's remote-ZIP eBird fallback reads its key from the unit environment.
 if [ "$MODE" = birdweather ] && [ -n "$EBIRD_KEY" ]; then
   echo "Environment=EBIRD_API_KEY=$EBIRD_KEY" | sudo tee -a /etc/systemd/system/birdframe.service >/dev/null

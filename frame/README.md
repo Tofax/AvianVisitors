@@ -49,7 +49,7 @@ Then install in Pi and power up.
 ssh <your-username>@birdpic.local
 sudo apt update && sudo apt install -y git
 git clone https://github.com/Twarner491/AvianVisitors
-cd AvianVisitors/frame
+cd AvianVisitors/frame/display
 ```
 
 Pick how the frame gets its birds:
