@@ -394,7 +394,7 @@ def push_panel(
         if lib not in sys.path:
             sys.path.insert(0, lib)
 
-        from waveshare_epd import epd7in3e
+        from waveshare_epd import epd7in3e, epdconfig
 
         dev = epd7in3e.EPD()
         dev.init()
@@ -421,6 +421,26 @@ def push_panel(
 
         dev.display(dev.getbuffer(buf))
         dev.sleep()
+
+        # Waveshare's Raspberry Pi backend closes SPI and powers the panel
+        # down in sleep(), but leaves gpiozero resources open. Explicitly
+        # close them so their background threads terminate cleanly.
+        for name in (
+            "GPIO_BUSY_PIN",
+            "GPIO_RST_PIN",
+            "GPIO_DC_PIN",
+            "GPIO_PWR_PIN",
+        ):
+            obj = getattr(epdconfig, name, None)
+            if obj is not None:
+                try:
+                    obj.close()
+                except Exception as exc:
+                    print(
+                        f"warning: could not close Waveshare {name}: {exc}",
+                        file=sys.stderr,
+                    )
+
         return
 
     # Original Pimoroni Inky backend
