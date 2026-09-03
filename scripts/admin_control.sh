@@ -18,6 +18,7 @@ readonly AUTH_LOCK=$AUTH_DIR/admin-auth.lock
 readonly AUTH_STATE=$AUTH_DIR/admin-auth.state
 readonly AUTH_MARKER=$AUTH_DIR/admin-auth.initialized
 readonly AUTH_RATE=$AUTH_DIR/admin-auth.rate
+readonly EDUCATOR_STATE=$AUTH_DIR/educators.state
 readonly AUTH_EPOCH_MAX=2147483647
 
 json_escape() {
@@ -296,6 +297,38 @@ read_auth_state() {
   AUTH_EPOCH=$epoch
   AUTH_VERIFIER=$verifier
   return 0
+}
+
+read_educator_state() {
+  local caddy_gid before opened size raw version enabled epoch extra
+  EDUCATOR_ENABLED=0
+  EDUCATOR_EPOCH=invalid
+  caddy_gid=$(getent group caddy | awk -F: 'NR == 1 { print $3 }')
+  [ -n "$caddy_gid" ] || return 3
+  [ -f "$EDUCATOR_STATE" ] && [ ! -L "$EDUCATOR_STATE" ] \
+    && [ "$(stat -c '%u:%g:%a:%h' -- "$EDUCATOR_STATE")" = "0:$caddy_gid:640:1" ] \
+    || return 3
+  before=$(stat -c '%d:%i' -- "$EDUCATOR_STATE") || return 3
+  exec 5<"$EDUCATOR_STATE"
+  opened=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' -- /proc/self/fd/5) || return 3
+  size=${opened##*:}
+  [ "$opened" = "$before:0:$caddy_gid:640:1:$size" ] \
+    && [ "$size" -ge 7 ] && [ "$size" -le 64 ] \
+    || return 3
+  raw=$(cat <&5)
+  exec 5<&-
+  [ "$size" -eq $(( ${#raw} + 1 )) ] || return 3
+  IFS=$'\t' read -r version enabled epoch extra <<<"$raw"
+  [ -z "${extra:-}" ] \
+    && [ "$raw" = "$version"$'\t'"$enabled"$'\t'"$epoch" ] \
+    && [ "$version" = v1 ] \
+    && { [ "$enabled" = 0 ] || [ "$enabled" = 1 ]; } \
+    && [[ "$epoch" =~ ^(0|[1-9][0-9]{0,9})$ ]] \
+    && [ "$epoch" -le "$AUTH_EPOCH_MAX" ] \
+    && [ "$(stat -c '%d:%i' -- "$EDUCATOR_STATE")" = "$before" ] \
+    || return 3
+  EDUCATOR_ENABLED=$enabled
+  EDUCATOR_EPOCH=$epoch
 }
 
 prepare_auth_state() {
@@ -692,8 +725,12 @@ case "$action" in
       || fail "admin credential initialization is incomplete; live audio remains disabled"
     read_auth_state \
       || fail "admin credential state is unsafe or malformed; live audio remains disabled"
-    [ "$AUTH_REQUIRED" = 0 ] \
-      || fail "live audio is disabled while LAN password protection is enabled"
+    if [ "$AUTH_REQUIRED" = 1 ]; then
+      read_educator_state \
+        || fail "Educators profile state is unsafe or missing; live audio remains disabled"
+      [ "$EDUCATOR_ENABLED" = 1 ] \
+        || fail "live audio is disabled while LAN password protection is enabled"
+    fi
     printf '{"ok":true,"allowed":true}\n'
     ;;
   restart)
@@ -705,8 +742,12 @@ case "$action" in
         || fail "admin credential initialization is incomplete; Icecast restart remains blocked"
       read_auth_state \
         || fail "admin credential state is unsafe or malformed; Icecast restart remains blocked"
-      [ "$AUTH_REQUIRED" = 0 ] \
-        || fail "Icecast restart is unavailable while LAN password protection is enabled; turn off Require password on local network first"
+      if [ "$AUTH_REQUIRED" = 1 ]; then
+        read_educator_state \
+          || fail "Educators profile state is unsafe or missing; Icecast restart remains blocked"
+        [ "$EDUCATOR_ENABLED" = 1 ] \
+          || fail "Icecast restart is unavailable while LAN password protection is enabled"
+      fi
     fi
     if /bin/systemctl restart "$2" \
       && { [ "$2" != icecast2 ] || /bin/systemctl is-active --quiet icecast2; }; then

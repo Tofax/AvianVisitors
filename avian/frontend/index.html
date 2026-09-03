@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
 <title>your birds</title>
 <meta name="description" content="A live bird collage from your window.">
 <link rel="icon" type="image/png" href="./favicon.png?v=3">
@@ -13,7 +14,7 @@
 function systemTheme(){try{return window.matchMedia&&window.matchMedia(q).matches?'dark':'light';}catch(e){return'light';}}
 function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
 var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemTheme());})();</script>
-  <link rel="stylesheet" href="./styles.css?v=r188">
+  <link rel="stylesheet" href="./styles.css?v=r196">
   <link rel="stylesheet" href="./stamps.css?v=r355">
   <link rel="stylesheet" href="./stamp-batch-root.css?v=r254">
   <link rel="stylesheet" href="./stamp-batch-a.css?v=r257">
@@ -30,6 +31,12 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     <path d="M10 3 L4 8 L10 13"/>
   </svg>
   collage
+</a>
+<a class="return-to-atlas educator-return" id="returnToEducators" href="#admin=educators" aria-label="back to educators" hidden>
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M10 3 L4 8 L10 13"/>
+  </svg>
+  educators
 </a>
 <header class="top">
   <div class="window-pick" id="winPick" role="tablist">
@@ -216,6 +223,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     </section>
 
   </div>
+  <div class="educator-data-loading-state" id="educatorDataLoading" role="status" aria-live="polite" hidden>loading birds...</div>
 </main>
 
 <div id="postcard-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modalCommon">
@@ -320,9 +328,9 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 </nav>
 
 
-<!-- Native Settings, System, Logs, and Tools views render here. The live JS
+<!-- Native Settings, System, Logs, Tools, and Educators views render here. The live JS
      clears this workspace whenever the admin session locks or changes. -->
-<section class="admin-screen" id="adminScreen" aria-hidden="true">
+<section class="admin-screen" id="adminScreen" aria-hidden="true" inert>
   <div class="admin-frame">
     <header class="admin-title"><h1 id="adminTitle"></h1></header>
     <div class="admin-body" id="adminBody"></div>
@@ -388,6 +396,6 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r235"></script>
-<script src="./apt.js?v=r214"></script>
+<script src="./apt.js?v=r233"></script>
 </body>
 </html>
