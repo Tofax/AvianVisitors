@@ -8,8 +8,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 umask 077
 
-readonly OFFICIAL_ORIGIN='https://github.com/Twarner491/AvianVisitors'
-readonly RELEASE_BRANCH='avian-visitors'
+readonly OFFICIAL_ORIGIN='https://github.com/Tofax/AvianVisitors'
+readonly RELEASE_BRANCH='integrate-v1.1.0'
 readonly CONFIG_FILE='/etc/birdnet/birdnet.conf'
 readonly FIXED_HELPER='/usr/local/sbin/avian-service-refresh'
 readonly SECURITY_HELPER='/usr/local/sbin/avian-security-refresh'
