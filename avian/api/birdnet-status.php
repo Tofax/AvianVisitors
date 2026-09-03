@@ -46,6 +46,7 @@ $STREAM_DIR      = "$BIRDSONGS_DIR/StreamData";
 $FRAME_PATH      = "$BIRDSONGS_DIR/Extracted/frame/frame.png";
 $FRAME_SIGNATURE = "$BIRDSONGS_DIR/Extracted/frame/.render-signature";
 $FRAME_HEARTBEAT = "$BIRDSONGS_DIR/Extracted/frame/.birdpic-heartbeat.json";
+$FRAME_HEARTBEAT_TOKEN = '/etc/birdnet/frame-heartbeat-token';
 $FRAME_DEFAULTS  = '/etc/default/avian-frame-render';
 $ADMIN_CONTROL   = getenv('AV_ADMIN_CONTROL') ?: '/usr/local/sbin/avian-admin-control';
 
@@ -212,6 +213,34 @@ function read_conf_summary(string $p): array {
     }
     return ['readable' => true, 'values' => $vals];
 }
+
+function require_birdpic_heartbeat_token(string $path): void {
+    if (!is_readable($path)) {
+        http_response_code(503);
+        echo json_encode(['error' => 'heartbeat token is not configured']);
+        exit;
+    }
+
+    $expected = trim((string)file_get_contents($path));
+    $header = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+
+    if (!preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
+        http_response_code(401);
+        header('WWW-Authenticate: Bearer');
+        echo json_encode(['error' => 'missing bearer token']);
+        exit;
+    }
+
+    $provided = trim($m[1]);
+
+    if ($expected === '' || !hash_equals($expected, $provided)) {
+        http_response_code(401);
+        header('WWW-Authenticate: Bearer');
+        echo json_encode(['error' => 'invalid bearer token']);
+        exit;
+    }
+}
+
 
 function write_birdpic_heartbeat(string $path, array $payload): array {
     $result = (string)($payload['result'] ?? '');
@@ -452,6 +481,8 @@ function logs_for(string $control, string $unit, int $lines): array {
 switch ($action) {
 
     case 'frame-heartbeat': {
+        require_birdpic_heartbeat_token($FRAME_HEARTBEAT_TOKEN);
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
             header('Allow: POST');
