@@ -745,6 +745,21 @@ assert.match(functionSource('renderAdminSettings'), /wireLabelsPreference\(admin
 
 assert.match(apt, /themeRow\(\)[\s\S]{0,100}labelsRow\(\)[\s\S]{0,100}atlasAlwaysAllRow\(\)[\s\S]{0,100}atlasClassicRow\(\)[\s\S]{0,120}settingsText\('SITE_NAME', 'Station name'/,
   'Station name finishes the appearance group beneath Classic Atlas cards');
+assert.match(apt, /settingsSlider\('OVERLAP',[\s\S]{0,180}settingsToggle\('RESET_AT_MIDNIGHT', 'Reset at midnight'/,
+  'Reset at midnight uses the standard Settings switch beside detection controls');
+assert.match(functionSource('saveSettings'), /resetAtMidnightChanged[\s\S]*!Object\.prototype\.hasOwnProperty\.call\(pending, 'RESET_AT_MIDNIGHT'\)[\s\S]*refreshAll\(\)/,
+  'a saved midnight preference refreshes data unless a newer toggle value is pending');
+assert.match(functionSource('renderAtlas'), /DATA\.recent && DATA\.recent\.window_start[\s\S]*Date\.parse/,
+  'Atlas lifer badges use the server-owned window start');
+const windowLabelContext = {};
+vm.createContext(windowLabelContext);
+vm.runInContext(functionSource('windowLabel'), windowLabelContext);
+assert.equal(windowLabelContext.windowLabel(24, { midnight_clamped: true }), 'since midnight',
+  'a clamped window is labeled from station midnight');
+assert.equal(windowLabelContext.windowLabel(24, { midnight_clamped: false }), 'past 24h',
+  'an unclamped 24 hour window keeps its rolling label');
+assert.equal(windowLabelContext.windowLabel(168, null), 'past 7d',
+  'the seven day label stays explicitly rolling');
 assert.match(css, /\.admin-settings \.menu-row\s*\{\s*border-radius:\s*0/,
   'Settings row separators have square ends instead of card-like rounded caps');
 assert.match(css, /\.admin-settings section > \.menu-row \+ \.menu-row\s*\{[\s\S]*border-top:\s*1px solid var\(--hairline\);\s*box-shadow:\s*none/,
@@ -1061,6 +1076,6 @@ gateSelectors.forEach(function (selector) {
 });
 
 assert.match(html, /styles\.css\?v=r196/, 'the polished styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r233/, 'the polished behavior has a fresh cache key');
+assert.match(html, /apt\.js\?v=r234/, 'the polished behavior has a fresh cache key');
 
 console.log('admin UI polish smoke: ok');

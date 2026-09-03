@@ -611,6 +611,6 @@ assert.match(css, /#atlasGrid\[data-layout="classic"\][\s\S]*?repeat\(auto-fill,
 assert.match(css, /#atlasGrid\[data-layout="classic"\][\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/,
   'Classic mode restores the historical two-up mobile grid');
 assert.match(html, /styles\.css\?v=r196/, 'Classic Atlas styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r233/, 'Classic Atlas behavior has a fresh cache key');
+assert.match(html, /apt\.js\?v=r234/, 'Classic Atlas behavior has a fresh cache key');
 
 console.log('classic Atlas smoke: ok');
