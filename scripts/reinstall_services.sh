@@ -9,7 +9,7 @@ export PATH
 umask 077
 
 readonly OFFICIAL_ORIGIN='https://github.com/Tofax/AvianVisitors'
-readonly RELEASE_BRANCH='integrate-v1.1.0'
+readonly RELEASE_BRANCH='catalan'
 readonly CONFIG_FILE='/etc/birdnet/birdnet.conf'
 readonly FIXED_HELPER='/usr/local/sbin/avian-service-refresh'
 readonly SECURITY_HELPER='/usr/local/sbin/avian-security-refresh'
