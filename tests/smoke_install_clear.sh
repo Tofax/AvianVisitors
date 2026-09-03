@@ -85,6 +85,7 @@ processed=$recordings/Processed
 mkdir -p "$test_bin" "$repo/scripts" "$repo/avian/frontend" \
   "$repo/avian/assets/references" \
   "$repo/homepage/images" "$repo/model" "$repo/templates" "$repo/.git" /etc/birdnet
+chmod 0777 "$test_root"
 
 id bird >/dev/null 2>&1 || useradd -m bird
 id caddy >/dev/null 2>&1 \
@@ -100,6 +101,7 @@ cp /source/scripts/update_birdnet.sh "$repo/scripts/update_birdnet.sh"
 cp /source/scripts/reinstall_services.sh "$repo/scripts/reinstall_services.sh"
 cp /source/scripts/security_refresh.sh "$repo/scripts/security_refresh.sh"
 cp /source/scripts/update_caddyfile.sh "$repo/scripts/update_caddyfile.sh"
+cp /source/scripts/educators_control.sh "$repo/scripts/educators_control.sh"
 cp -R /source/avian/frontend/. "$repo/avian/frontend/"
 cp /source/avian/assets/favicon.png "$repo/avian/assets/favicon.png"
 cp /source/avian/assets/references/sparrow-blossom-single-v2.png \
@@ -119,6 +121,9 @@ set -e
 if [ "${1:-}" = -u ]; then
   target_user=$2
   shift 2
+  if [ "$target_user" = "$(id -un)" ]; then
+    exec "$@"
+  fi
   exec runuser -u "$target_user" -- env PATH="$PATH" "$@"
 fi
 exec "$@"
@@ -143,6 +148,14 @@ EOF
 cat >"$repo/scripts/createdb.sh" <<'EOF'
 #!/bin/sh
 touch /home/bird/.createdb.called
+if [ -e /proc/self/fd/10 ] \
+  && [ "$(stat -Lc '%d:%i' /proc/self/fd/10 2>/dev/null || true)" = \
+    "$(stat -c '%d:%i' /var/lib/avian-visitors/educators.lock)" ]; then
+  touch /tmp/avian-release-flow/clear-lock-inherited
+fi
+if flock -s -n /var/lib/avian-visitors/educators.lock -c true 2>/dev/null; then
+  touch /tmp/avian-release-flow/clear-lock-open
+fi
 EOF
 chmod 0755 "$test_bin"/* "$repo/scripts"/*.sh
 export PATH="$test_bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -269,10 +282,72 @@ assert_stock_runtime_links
   || fail "webroot helper ownership"
 [ "$(stat -c '%U:%G:%a' /usr/local/sbin/avian-caddy-refresh)" = root:root:755 ] \
   || fail "Caddy helper ownership"
+[ "$(stat -c '%U:%G:%a' /usr/local/sbin/avian-educators)" = root:root:755 ] \
+  || fail "Educators helper ownership"
+[ "$(stat -c '%U:%G:%a:%h' /var/lib/avian-visitors/educators.lock)" = \
+  root:caddy:660:1 ] \
+  || fail "default install did not provision the Educators coordination lock"
+[ ! -e /var/lib/avian-visitors/educators.state ] \
+  && [ ! -e /var/lib/avian-visitors/educators ] \
+  || fail "default install initialized optional Educators data"
 [ ! -e "$bird_home/bird-archive" ] || fail "clean install opted into Drive archive"
+
+# This smoke owns the clear workflow, not the Educators SQLite implementation.
+# Replace the verified installed helper with a fixed-action recorder so the
+# clear path can prove metadata reset ordering without a second fake database.
+cat >/usr/local/sbin/avian-educators <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" = 1 ] && [ "$1" = clear-all ] || exit 64
+mkdir -p /var/lib/avian-visitors
+if [ ! -e /var/lib/avian-visitors/educators.lock ]; then
+  install -o root -g caddy -m 0660 /dev/null /var/lib/avian-visitors/educators.lock
+fi
+exec 10<>/var/lib/avian-visitors/educators.lock
+flock -x 10
+maintenance_token=/var/lib/avian-visitors/.educators-maintenance.TST123
+printf 'v1\n' >"$maintenance_token"
+chown root:caddy "$maintenance_token"
+chmod 0400 "$maintenance_token"
+trap 'rm -f -- "$maintenance_token"' EXIT
+common_env=(
+  PATH=/tmp/avian-release-flow/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  AVIAN_EDUCATOR_MAINTENANCE_FD=12
+  AVIAN_BIRDNET_USER=bird
+  AVIAN_BIRDNET_HOME=/home/bird
+  AVIAN_RECS_DIR=/home/bird/BirdSongs
+  AVIAN_EXTRACTED=/home/bird/BirdSongs/Extracted
+  AVIAN_PROCESSED=/home/bird/BirdSongs/Processed
+  AVIAN_IDFILE=/home/bird/IdentifiedSoFar.txt
+)
+run_phase() {
+  local phase=$1 status=0
+  exec 12<"$maintenance_token"
+  runuser -u bird -- env -i "${common_env[@]}" \
+    AVIAN_EDUCATOR_MAINTENANCE_PHASE="$phase" \
+    /bin/bash -c 'exec 9>&- 10>&- 11>&-; exec /bin/bash "$1"' \
+    avian-clear /home/bird/BirdNET-Pi/scripts/clear_all_data.sh || status=$?
+  exec 12<&-
+  return "$status"
+}
+run_phase core
+printf 'educators\n' >>/tmp/avian-release-flow/service-order.log
+touch /tmp/avian-release-flow/educators-reset.called
+run_phase finish
+for service in \
+  chart_viewer.service spectrogram_viewer.service icecast2.service \
+  birdnet_recording.service birdnet_analysis.service birdnet_log.service \
+  birdnet_stats.service; do
+  systemctl restart "$service"
+done
+EOF
+chown root:root /usr/local/sbin/avian-educators
+chmod 0755 /usr/local/sbin/avian-educators
 
 # Populate data and an independent archive sentinel, then clear only BirdNET
 # detections and recordings.
+: >"$test_root/service-order.log"
+chown bird:bird "$test_root/service-order.log"
 mkdir -p "$recordings/Extracted/By_Date/2026-08-15/American_Crow" "$bird_home/bird-archive"
 printf 'recording\n' >"$recordings/Extracted/By_Date/2026-08-15/American_Crow/call.mp3"
 printf 'keep\n' >"$bird_home/bird-archive/archive.conf"
@@ -280,7 +355,10 @@ printf 'identified\n' >"$bird_home/IdentifiedSoFar.txt"
 printf 'old database export\n' >"$repo/BirdDB.txt"
 chown -R bird:bird "$recordings" "$bird_home/bird-archive" "$bird_home/IdentifiedSoFar.txt" "$repo/BirdDB.txt"
 
-bash "$repo/scripts/clear_all_data.sh" >/tmp/avian-release-flow/clear.log 2>&1
+if ! bash "$repo/scripts/clear_all_data.sh" >"$test_root/clear.log" 2>&1; then
+  cat "$test_root/clear.log" >&2
+  fail "clear-all-data failed"
+fi
 
 [ ! -e "$recordings/Extracted/By_Date/2026-08-15/American_Crow/call.mp3" ] \
   || fail "clear-all-data retained a recording"
@@ -295,7 +373,12 @@ head -n 1 "$repo/BirdDB.txt" | grep -q '^Date;Time;Sci_Name;' \
   || fail "clear-all-data did not rebuild BirdDB.txt"
 [ -e "$bird_home/.createdb.called" ] || fail "clear-all-data did not recreate the database"
 [ -e "$test_root/caddy.called" ] || fail "clear-all-data did not refresh Caddy"
-[ "$(tr '\n' ' ' <"$test_root/service-order.log")" = "caddy " ] \
+[ -e "$test_root/educators-reset.called" ] || fail "clear-all-data did not reset Educators metadata"
+[ ! -e "$test_root/clear-lock-open" ] \
+  || fail "clear-all-data released the Educators lock during database replacement"
+[ ! -e "$test_root/clear-lock-inherited" ] \
+  || fail "clear-all-data inherited the parent Educators lock descriptor"
+[ "$(tr '\n' ' ' <"$test_root/service-order.log")" = "educators caddy " ] \
   || fail "unexpected privileged restart path"
 grep -q '^stop birdnet_recording.service$' "$test_root/systemctl.log" \
   || fail "recording service was not stopped"

@@ -44,6 +44,8 @@ mkdir -p /etc/birdnet /etc/caddy /var/lib/avian-visitors \
   "$site/avian/api" "$site/scripts/filemanager" "$site/scripts-old" \
   "$site/phpsysinfo"
 chmod 0755 "$test_root" "$site"
+printf 'US/Pacific\n' >/etc/timezone
+ln -sfn /usr/share/zoneinfo/US/Pacific /etc/localtime
 install -o root -g root -m 0600 /dev/null \
   /var/lib/avian-visitors/admin-auth.lock
 install -o root -g root -m 0755 /source/scripts/admin_control.sh \
@@ -87,7 +89,7 @@ printf '<?php echo "info"; ?>\n' >"$site/phpsysinfo/index.php"
 printf '<?php echo "js"; ?>\n' >"$site/phpsysinfo/js.php"
 printf '<?php echo "info backup"; ?>\n' >"$site/phpsysinfo/js.php.bak"
 
-api_names=(archive birdnet-api birdnet-status birdweather config cutout export generate maintenance menu recording spectrogram wiki)
+api_names=(archive birdnet-api birdnet-status birdweather config cutout educator-audio-check educator-audio educators export generate maintenance menu recording spectrogram wiki)
 for name in "${api_names[@]}"; do
   printf '<?php echo "api"; ?>\n' >"$site/avian/api/$name.php"
 done
@@ -98,10 +100,13 @@ cat >"$site/avian/api/config.php" <<'PHP'
 require __DIR__ . '/admin-auth.php';
 echo (avian_is_direct_local_request($_SERVER) ? 'direct' : 'forwarded') . '|'
     . ($_SERVER['AVIAN_DIRECT_LOCAL'] ?? 'missing') . '|'
-    . ($_SERVER['AVIAN_FORCE_AUTH'] ?? 'missing');
+    . ($_SERVER['AVIAN_FORCE_AUTH'] ?? 'missing') . '|'
+    . ($_SERVER['AVIAN_EXTRACTED_ROOT'] ?? 'missing') . '|'
+    . ($_SERVER['AVIAN_STATION_TIMEZONE'] ?? 'missing');
 PHP
 printf '<?php echo "unknown"; ?>\n' >"$site/avian/api/unknown.php"
-printf '<?php echo "removed educator"; ?>\n' >"$site/avian/api/educators.php"
+cp /source/avian/api/educator-state.php "$site/avian/api/educator-state.php"
+printf '<?php echo "cli only"; ?>\n' >"$site/avian/api/educator-store.php"
 
 cat >/usr/bin/systemctl <<'EOF'
 #!/bin/sh
@@ -268,9 +273,38 @@ fi
 grep -Fq "Invalid BirdNET-Pi webroot" \
   /tmp/avian-generated-invalid-webroot.out \
   || fail "unsafe webroot returned the wrong validation error"
+cat >/etc/birdnet/birdnet.conf <<EOF
+BIRDNET_USER=bird
+EXTRACTED=$site/../site
+EOF
+if bash /source/scripts/update_caddyfile.sh \
+    >/tmp/avian-generated-traversal-webroot.out 2>&1; then
+  fail "traversal webroot was accepted"
+fi
+grep -Fq "Invalid BirdNET-Pi webroot" \
+  /tmp/avian-generated-traversal-webroot.out \
+  || fail "traversal webroot returned the wrong validation error"
+printf '../UTC\n' >/etc/timezone
+ln -sfn /usr/share/zoneinfo/Etc/UTC /etc/localtime
+write_config 0 ''
+if bash /source/scripts/update_caddyfile.sh \
+    >/tmp/avian-generated-invalid-timezone.out 2>&1; then
+  fail "invalid station timezone was accepted"
+fi
+grep -Fq "Station timezone is invalid" \
+  /tmp/avian-generated-invalid-timezone.out \
+  || fail "invalid timezone returned the wrong validation error"
+printf 'US/Pacific\n' >/etc/timezone
+ln -sfn /usr/share/zoneinfo/US/Pacific /etc/localtime
 write_config 0 ''
 generate
 start_caddy
+shell_headers=$(curl -sS -D - -o /dev/null \
+  'http://127.0.0.1/?edu=c_0123456789abcdef0123456789abcdef')
+printf '%s\n' "$shell_headers" | tr -d '\r' | grep -Fqi 'Cache-Control: no-store' \
+  || fail "saved-view shell response was cacheable"
+printf '%s\n' "$shell_headers" | tr -d '\r' | grep -Fqi 'Referrer-Policy: no-referrer' \
+  || fail "saved-view shell response could leak its capability in a referrer"
 [ "$(code http://127.0.0.1/Processed/good.mp3)" = 200 ] \
   || fail "trusted mode did not serve a recording"
 [ "$(code http://127.0.0.1/Processed/x/)" = 404 ] \
@@ -293,11 +327,10 @@ for name in "${api_names[@]}"; do
 done
 [ "$(code http://127.0.0.1/avian/api/unknown.php)" = 404 ] \
   || fail "trusted mode sent an unknown API to PHP-FPM"
-[ "$(code http://127.0.0.1/avian/api/educators.php)" = 404 ] \
-  || fail "trusted mode exposed the removed Educators endpoint"
-[ "$(code -H 'Forwarded: for=198.51.100.2' \
-  http://127.0.0.1/avian/api/educators.php)" = 404 ] \
-  || fail "forwarded traffic exposed the removed Educators endpoint"
+[ "$(code http://127.0.0.1/avian/api/educator-state.php)" = 404 ] \
+  || fail "trusted mode exposed the include-only Educators state"
+[ "$(code http://127.0.0.1/avian/api/educator-store.php)" = 404 ] \
+  || fail "trusted mode exposed the CLI-only Educators store"
 [ "$(code http://127.0.0.1/log)" = 502 ] \
   || fail "trusted mode blocked the local log proxy"
 [ "$(code http://127.0.0.1/terminal)" = 404 ] \
@@ -314,13 +347,14 @@ done
   || fail "trusted mode exposed live audio for a public Host"
 [ "$(code -H 'X-Forwarded-Prefix: /station' http://127.0.0.1/stream)" = 404 ] \
   || fail "trusted mode exposed live audio through a forwarding prefix"
-[ "$(body http://127.0.0.1/avian/api/config.php)" = 'direct|1|0' ] \
-  || fail "trusted mode did not mark an exact direct API request"
+direct_marker=$(body http://127.0.0.1/avian/api/config.php)
+[ "$direct_marker" = "direct|1|0|$site|US/Pacific" ] \
+  || fail "trusted mode direct API marker was: $direct_marker"
 [ "$(body -H 'X-Forwarded-Prefix: /station' \
-  http://127.0.0.1/avian/api/config.php)" = 'forwarded|0|1' ] \
+  http://127.0.0.1/avian/api/config.php)" = "forwarded|0|1|$site|US/Pacific" ] \
   || fail "forwarding prefix received the direct API marker"
 [ "$(body -H 'Host: public.example' \
-  http://127.0.0.1/avian/api/config.php)" = 'forwarded|0|1' ] \
+  http://127.0.0.1/avian/api/config.php)" = "forwarded|0|1|$site|US/Pacific" ] \
   || fail "public Host received the direct API marker"
 assert_notification_image_route
 assert_unknowns_closed
@@ -442,21 +476,20 @@ for name in "${api_names[@]}"; do
 done
 [ "$(code http://127.0.0.1/avian/api/unknown.php)" = 404 ] \
   || fail "unknown API reached PHP-FPM"
-[ "$(code http://127.0.0.1/avian/api/educators.php)" = 404 ] \
-  || fail "required mode exposed the removed Educators endpoint"
-[ "$(code -H 'Forwarded: for=198.51.100.2' \
-  http://127.0.0.1/avian/api/educators.php)" = 404 ] \
-  || fail "required forwarded traffic exposed the removed Educators endpoint"
+[ "$(code http://127.0.0.1/avian/api/educator-state.php)" = 404 ] \
+  || fail "required mode exposed the include-only Educators state"
+[ "$(code http://127.0.0.1/avian/api/educator-store.php)" = 404 ] \
+  || fail "required mode exposed the CLI-only Educators store"
 [ "$(code http://127.0.0.1/avian/api/admin-state.php)" = 404 ] \
   || fail "include-only admin state reached PHP-FPM"
 [ "$(code http://127.0.0.1/stream)" = 404 ] \
   || fail "required mode exposed live audio"
 [ "$(code -H 'Host: public.example' http://127.0.0.1/stream)" = 404 ] \
   || fail "required mode changed behavior for a public Host"
-[ "$(body http://127.0.0.1/avian/api/config.php)" = 'direct|1|1' ] \
+[ "$(body http://127.0.0.1/avian/api/config.php)" = "direct|1|1|$site|US/Pacific" ] \
   || fail "required mode did not preserve its direct force-auth marker"
 [ "$(body -H 'X-Forwarded-Prefix: /station' \
-  http://127.0.0.1/avian/api/config.php)" = 'forwarded|0|1' ] \
+  http://127.0.0.1/avian/api/config.php)" = "forwarded|0|1|$site|US/Pacific" ] \
   || fail "required mode forwarding prefix received the direct marker"
 assert_notification_image_route
 

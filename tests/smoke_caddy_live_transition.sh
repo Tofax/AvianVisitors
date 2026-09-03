@@ -53,6 +53,8 @@ id icecast2 >/dev/null 2>&1 \
 id bird >/dev/null 2>&1 || useradd --create-home --shell /bin/bash bird
 mkdir -p "$site" /home/bird/BirdNET-Pi/.git /etc/birdnet /etc/caddy \
   /etc/default /etc/icecast2 "$auth_dir"
+printf 'Etc/UTC\n' >/etc/timezone
+ln -sfn /usr/share/zoneinfo/Etc/UTC /etc/localtime
 cat >/etc/birdnet/birdnet.conf <<EOF
 BIRDNET_USER=bird
 EXTRACTED=$site
@@ -281,6 +283,13 @@ write_test_auth_state() {
     >"$auth_dir/admin-auth.state"
   chown root:caddy "$auth_dir/admin-auth.state"
   chmod 0640 "$auth_dir/admin-auth.state"
+}
+
+write_educator_state() {
+  local enabled=$1 epoch=$2
+  printf 'v1\t%s\t%s\n' "$enabled" "$epoch" >"$auth_dir/educators.state"
+  chown root:caddy "$auth_dir/educators.state"
+  chmod 0640 "$auth_dir/educators.state"
 }
 
 write_transition() {
@@ -748,5 +757,43 @@ listener_pid=''
   || fail "inactive Icecast cgroup process survived the cutoff"
 [ "$(cut -f2 "$auth_dir/admin-auth.state")" = 1 ] \
   || fail "inactive-unit policy transition was not committed"
+
+# Educators mode keeps the Icecast source loopback-only while Caddy continues
+# to return 404 from the historical /stream route. A credential transition
+# recycles that backend so every existing authenticated proxy reaches EOF.
+rm -f /tmp/avian-icecast-report-inactive
+write_educator_state 1 1
+/usr/local/sbin/avian-caddy-refresh >/tmp/avian-educator-enable-refresh.out \
+  || fail "Educators protected refresh failed"
+systemctl start icecast2 || fail "Educators profile could not start loopback Icecast"
+stream_responds 8000 || fail "Educators profile did not keep loopback Icecast available"
+"$admin" icecast-start-allowed >/tmp/avian-educator-condition.out \
+  || fail "systemd guard rejected enabled Educators mode"
+[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1/stream)" = 404 ] \
+  || fail "Educators profile reopened the historical Caddy stream"
+old_backend_pid=$(cat /tmp/avian-stream-backend.pid)
+AVIAN_CLOSE_STREAMS=1 /usr/local/sbin/avian-caddy-refresh \
+  >/tmp/avian-educator-recycle.out \
+  || fail "Educators protected stream recycle failed"
+new_backend_pid=$(cat /tmp/avian-stream-backend.pid)
+[ "$old_backend_pid" != "$new_backend_pid" ] \
+  || fail "Educators credential transition did not recycle Icecast"
+kill -0 "$new_backend_pid" 2>/dev/null \
+  || fail "Educators credential transition did not restore Icecast"
+[ ! -e "$auth_dir/icecast-start-blocked" ] \
+  || fail "Educators recycle retained the transition block"
+[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1/stream)" = 404 ] \
+  || fail "Educators recycle changed /stream behavior"
+
+# Publishing disabled state is the revocation point. The next canonical Caddy
+# refresh closes the backend and leaves systemd blocked without erasing data.
+write_educator_state 0 2
+/usr/local/sbin/avian-caddy-refresh >/tmp/avian-educator-disable-refresh.out \
+  || fail "Educators disable refresh failed"
+expect_backend_stopped "Educators disable"
+expect_transition blocked yes "Educators disable"
+if "$admin" icecast-start-allowed >/tmp/avian-educator-disabled-condition.out 2>&1; then
+  fail "systemd guard allowed disabled Educators mode under LAN protection"
+fi
 
 echo "Caddy live transition smoke: ok"

@@ -29,8 +29,18 @@ class LanAdminAuthStaticTests(unittest.TestCase):
             self.assertIn("avian_require_admin();", source, name)
 
     def test_public_data_apis_are_not_blanket_locked(self):
-        for name in ("birdnet-api.php", "recording.php", "spectrogram.php", "wiki.php"):
-            self.assertNotIn("avian_require_admin();", self.read(f"avian/api/{name}"), name)
+        self.assertNotIn("avian_require_admin();", self.read("avian/api/wiki.php"), "wiki.php")
+        for name in ("birdnet-api.php", "recording.php", "spectrogram.php"):
+            source = self.read(f"avian/api/{name}")
+            self.assertIn("educator_saved_scope_requested($_GET)", source, name)
+            self.assertIn("educator_public_scope_error", source, name)
+            self.assertNotIn("avian_require_admin();", source, name)
+        birdnet = self.read("avian/api/birdnet-api.php")
+        self.assertIn("!$educatorSavedRequest", birdnet)
+        self.assertIn("Referrer-Policy: no-referrer", birdnet)
+        scope = self.read("avian/api/educator-scope.php")
+        self.assertIn("_saved_capability", scope)
+        self.assertIn("saved view unavailable", scope)
 
     def test_root_owned_state_is_the_only_runtime_authority(self):
         state = self.read("avian/api/admin-state.php")
@@ -88,6 +98,9 @@ class LanAdminAuthStaticTests(unittest.TestCase):
             "ExecCondition=+/usr/local/sbin/avian-admin-control icecast-start-allowed",
             caddy,
         )
+        self.assertIn("IPAddressDeny=any", caddy)
+        self.assertIn("IPAddressAllow=127.0.0.0/8", caddy)
+        self.assertIn("IPAddressAllow=::1/128", caddy)
         self.assertIn("icecast-start-blocked", caddy)
         self.assertIn("icecast-restore-on-unlock", caddy)
         self.assertIn("blocked:unknown", caddy)
@@ -185,6 +198,34 @@ class LanAdminAuthStaticTests(unittest.TestCase):
                 'mkdir -p "$test_bin"',
                 "/usr/local/sbin/avian-archive-control",
                 "install and clear smoke",
+            ),
+            (
+                "tests/smoke_educators_control.sh",
+                "AVIAN_EDUCATORS_CONTROL_TEST",
+                "test_root=$(mktemp -d)",
+                "/usr/local/sbin/avian-educators",
+                "Educators control smoke",
+            ),
+            (
+                "tests/smoke_educator_backup_restore.sh",
+                "AVIAN_EDUCATOR_RESTORE_TEST",
+                "test_root=$(mktemp -d)",
+                "/usr/local/sbin/avian-educators",
+                "Educators restore smoke",
+            ),
+            (
+                "tests/smoke_educators_pristine_lifecycle.sh",
+                "AVIAN_EDUCATORS_PRISTINE_TEST",
+                "test_root=$(mktemp -d)",
+                "/usr/local/sbin/avian-educators",
+                "pristine Educators lifecycle smoke",
+            ),
+            (
+                "tests/smoke_educator_audio.sh",
+                "AVIAN_EDUCATOR_AUDIO_TEST",
+                "test_root=$(mktemp -d)",
+                "educator-audio.php",
+                "Educators audio smoke",
             ),
         )
         in_container = pathlib.Path("/.dockerenv").is_file()
@@ -392,6 +433,7 @@ class LanAdminAuthStaticTests(unittest.TestCase):
     def test_auth_shell_files_parse(self):
         paths = [
             "scripts/admin_control.sh",
+            "scripts/educators_control.sh",
             "scripts/install_services.sh",
             "scripts/security_refresh.sh",
             "scripts/update_caddyfile.sh",
@@ -400,6 +442,10 @@ class LanAdminAuthStaticTests(unittest.TestCase):
             "tests/smoke_caddy_live_transition.sh",
             "tests/smoke_caddy_overlay.sh",
             "tests/smoke_install_clear.sh",
+            "tests/smoke_educators_control.sh",
+            "tests/smoke_educator_backup_restore.sh",
+            "tests/smoke_educators_pristine_lifecycle.sh",
+            "tests/smoke_educator_audio.sh",
             "tests/smoke_reinstall_services.sh",
             "tests/smoke_security_diagnostic_cleanup.sh",
         ]
