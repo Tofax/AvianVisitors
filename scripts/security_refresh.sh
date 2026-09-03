@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Install the narrow Caddy privilege policy and lock the checkout so the web
 # process cannot replace code later executed by a privileged helper.
 
