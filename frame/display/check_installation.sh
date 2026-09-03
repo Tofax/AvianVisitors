@@ -132,8 +132,10 @@ last_log="$(
 
 if printf '%s\n' "${last_log}" | grep -q "panel updated"; then
   pass "A successful panel update is present in the journal"
+elif printf '%s\n' "${last_log}" | grep -q "no change; skip"; then
+  pass "Recent birdframe run completed with no image change"
 else
-  warn "No successful 'panel updated' entry found"
+  warn "No successful panel update or unchanged-frame run found"
 fi
 
 if printf '%s\n' "${last_log}" | tail -30 | grep -q "panel push failed"; then
