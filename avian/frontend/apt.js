@@ -2912,7 +2912,7 @@
       var titleN = +s.n || 0;
       var titlePeriod = educatorScopeId()
         ? 'in ' + educatorScopeLabel(effectiveEducatorScope)
-        : windowLabel(currentHours);
+        : windowLabel(currentHours, DATA.recent);
       btn.title = (s.com || s.sci) + ' - ' + fmtN(titleN) + ' ' +
         (titleN === 1 ? 'call' : 'calls') + ' ' + titlePeriod;
       btn.style.left = r.x + 'px';
@@ -3134,7 +3134,7 @@
         var noun = (n === 1) ? 'call' : 'calls';
         var period = educatorScopeId()
           ? 'in ' + educatorScopeLabel(effectiveEducatorScope)
-          : windowLabel(currentHours);
+          : windowLabel(currentHours, DATA.recent);
         tip.innerHTML = '<span class="ct-name">' + escHtml(s.com || s.sci) + '</span>'
           + '<span class="ct-w"> - </span>'
           + '<span class="ct-n">' + fmtN(n) + '</span>'
@@ -3221,15 +3221,16 @@
   // Human label for the current time-window picker selection - replaces
   // a bare "window" with the span it actually covers. Thresholds match
   // the winPick buttons (1H / 12H / 24H / 7D / ALL).
-  function windowLabel(h) {
+  function windowLabel(h, windowData) {
+    if (windowData && windowData.midnight_clamped) return 'since midnight';
     if (h <= 1) return 'this hour';
     if (h <= 12) return 'past 12h';
-    if (h <= 24) return 'today';
-    if (h <= 168) return 'this week';
+    if (h <= 24) return 'past 24h';
+    if (h <= 168) return 'past 7d';
     return 'all time';
   }
   function statsWindowLabel(h) {
-    if (!hourlyDate) return windowLabel(h);
+    if (!hourlyDate) return windowLabel(h, DATA.statsRecent || DATA.recent);
     if (h <= 1) return 'selected hour';
     if (h <= 12) return 'final 12h';
     if (h <= 24) return 'selected day';
@@ -5364,7 +5365,13 @@
     // to the life list this 1h / 12h / 24h / 7d. Never shown for the ALL
     // window (every species would qualify against an open-ended span).
     var now = Date.now();
-    var windowStartMs = now - atlasHours * 3600000;
+    var serverWindowStart = DATA.recent && DATA.recent.window_start;
+    var parsedWindowStart = serverWindowStart
+      ? Date.parse(serverWindowStart.replace(' ', 'T'))
+      : NaN;
+    var windowStartMs = isNaN(parsedWindowStart)
+      ? now - atlasHours * 3600000
+      : parsedWindowStart;
     var renderedScopeId = educatorScopeId();
     var renderedScopeGeneration = educatorScopeGeneration;
     var renderedScopeRevision = effectiveEducatorScope && Number.isFinite(+effectiveEducatorScope.revision)
@@ -5391,7 +5398,7 @@
       var allLabel = educatorScopeId() ? educatorScopeLabel(effectiveEducatorScope) : 'all time';
       var statRows = isAllWindow
         ? '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">' + escHtml(allLabel) + '</span></div>'
-        : '<div><span class="n">' + fmtNK(win) + '</span><span class="lbl-inline">' + windowLabel(atlasHours) + '</span></div>'
+        : '<div><span class="n">' + fmtNK(win) + '</span><span class="lbl-inline">' + windowLabel(atlasHours, DATA.recent) + '</span></div>'
         + '<div><span class="n">' + fmtNK(total) + '</span><span class="lbl-inline">all time</span></div>';
       // Heard but never drawn: issue the bird's real family stamp with the
       // egg nest occupying its artwork plate. Waiting on tablesReady keeps
@@ -8334,6 +8341,7 @@
     autoSaveT = null;
     var submitted = pending;
     pending = {};
+    var resetAtMidnightChanged = Object.prototype.hasOwnProperty.call(submitted, 'RESET_AT_MIDNIGHT');
     var body = JSON.stringify(submitted);
     var saved = false;
     settingsSaveBusy = true;
@@ -8350,6 +8358,10 @@
           if (Object.prototype.hasOwnProperty.call(submitted, 'SITE_NAME')
             && !Object.prototype.hasOwnProperty.call(pending, 'SITE_NAME')) {
             applySiteName(submitted.SITE_NAME);
+          }
+          if (resetAtMidnightChanged
+            && !Object.prototype.hasOwnProperty.call(pending, 'RESET_AT_MIDNIGHT')) {
+            refreshAll();
           }
           setSaveState('saved ✓', 'ok');
           setTimeout(function () { setSaveState(''); }, 1800);
@@ -12447,6 +12459,7 @@
           + settingsSlider('SF_THRESH', 'Range filter', 'min likelihood a species is here this week', v.SF_THRESH, 0.001, 0.5, 0.001, 3, 0.03)
           + settingsSlider('SENSITIVITY', 'Sensitivity', 'sigmoid slope on the classifier output', v.SENSITIVITY, 0.5, 1.5, 0.05, 2, 1.25)
           + settingsSlider('OVERLAP', 'Chunk overlap', 'seconds re-analyzed per pass', v.OVERLAP, 0, 2.5, 0.1, 1, 0.0)
+          + settingsToggle('RESET_AT_MIDNIGHT', 'Reset at midnight', 'keep time windows inside the current day', !!v.RESET_AT_MIDNIGHT)
           + '</section><section>'
           + stationRow(v)
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)

@@ -188,6 +188,7 @@ valid_config_value() {
     SENSITIVITY) valid_number "$value" 0.5 1.5 ;;
     SF_THRESH) valid_number "$value" 0.0005 0.99 ;;
     OVERLAP) valid_number "$value" 0 2.5 ;;
+    RESET_AT_MIDNIGHT) [ "$value" = 0 ] || [ "$value" = 1 ] ;;
     LATITUDE) valid_number "$value" -90 90 ;;
     LONGITUDE) valid_number "$value" -180 180 ;;
     MAX_FILES_SPECIES)

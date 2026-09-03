@@ -46,6 +46,10 @@ Listening periods use the station's existing BirdNET detections and recordings. 
 
 *The familiar Tools page keeps classroom downloads with the rest of the station's data tools.*
 
+## Time windows can follow the day
+
+Settings now includes an optional **Reset at midnight** switch. When it is on, longer rolling views begin at the station's local midnight instead of including birds from yesterday.
+
 ## Enable Educators mode
 
 For a new station, add `--educators` to the installer:

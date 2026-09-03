@@ -65,7 +65,68 @@ function publicSiteName(string $path): string {
     return $value !== '' ? $value : 'BirdNET-Pi';
 }
 
+function publicConfigFlag(string $path, string $key): bool {
+    if (!is_readable($path) || is_dir($path)) return false;
+    $lines = @file($path, FILE_IGNORE_NEW_LINES);
+    if (!is_array($lines)) return false;
+    $value = null;
+    $pattern = '/^\s*(?:export\s+)?'.preg_quote($key, '/').'\s*=\s*(.*)$/';
+    foreach ($lines as $line) {
+        if (preg_match($pattern, $line, $match) === 1) {
+            $value = strtolower(trim($match[1], " \t\n\r\0\x0B\"'"));
+        }
+    }
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+function recentWindow(
+    SQLite3 $db,
+    int $hours,
+    array $dateContext,
+    bool $resetAtMidnight,
+    bool $scoped
+): array {
+    $through = "DATETIME(Date||' '||Time) <= DATETIME(:anchor)";
+    $enabled = $resetAtMidnight && !$scoped;
+    if ($hours >= 1000000) {
+        return [
+            'where' => $through,
+            'bind' => [':anchor' => $dateContext['anchor']],
+            'reset_at_midnight' => $enabled,
+            'midnight_clamped' => false,
+            'window_start' => null,
+        ];
+    }
+    $statement = $db->prepare(
+        "SELECT DATETIME(:anchor,'-".$hours." hours') AS rolling, "
+            . "DATETIME(:anchor,'start of day') AS midnight"
+    );
+    if (!$statement) throw new RuntimeException('could not prepare time window');
+    $statement->bindValue(':anchor', $dateContext['anchor'], SQLITE3_TEXT);
+    $result = $statement->execute();
+    $times = $result ? ($result->fetchArray(SQLITE3_ASSOC) ?: []) : [];
+    $rolling = (string)($times['rolling'] ?? '');
+    $midnight = (string)($times['midnight'] ?? '');
+    $clamped = $enabled
+        && !empty($dateContext['is_today'])
+        && $rolling !== ''
+        && $midnight !== ''
+        && $rolling <= $midnight;
+    $start = $clamped ? $midnight : $rolling;
+    $lowerOperator = $clamped ? '>=' : '>';
+    return [
+        'where' => $through." AND DATETIME(Date||' '||Time) "
+            .$lowerOperator." DATETIME(:window_start)",
+        'bind' => [':anchor' => $dateContext['anchor'], ':window_start' => $start],
+        'reset_at_midnight' => $enabled,
+        'midnight_clamped' => $clamped,
+        'window_start' => $start,
+    ];
+}
+
 if (defined('AVIAN_BIRDNET_API_LIBRARY_ONLY')) return;
+
+$RESET_AT_MIDNIGHT = publicConfigFlag($CONF_PATH, 'RESET_AT_MIDNIGHT');
 
 $educatorDirectRequest = avian_is_direct_local_request($_SERVER);
 $educatorSavedRequest = educator_saved_scope_requested($_GET);
@@ -105,7 +166,9 @@ try {
 $educatorProfileForCache = educator_profile_state();
 $educatorCacheDisabled = !empty($educatorProfileForCache['valid'])
     && !empty($educatorProfileForCache['enabled']);
-header('Cache-Control: ' . ($educatorCacheDisabled ? 'no-store' : 'public, max-age=30'));
+header('Cache-Control: ' . (($educatorCacheDisabled || $RESET_AT_MIDNIGHT)
+    ? 'no-store'
+    : 'public, max-age=30'));
 
 if (!file_exists($DB_PATH)) {
     http_response_code(503);
@@ -292,8 +355,15 @@ switch ($action) {
         // separate code path.
         $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 24)));
         $ctx = dateContext($db, $educatorScope);
-        $where = windowClause($hours);
-        $bind = [':anchor' => $ctx['anchor']];
+        $window = recentWindow(
+            $db,
+            $hours,
+            $ctx,
+            $RESET_AT_MIDNIGHT,
+            $educatorScope !== null
+        );
+        $where = $window['where'];
+        $bind = $window['bind'];
         // species-collapsed view: one row per species seen in the window,
         // with the file of its highest-confidence detection inside the window.
         $rs = rows($db,
@@ -312,7 +382,7 @@ switch ($action) {
             . "WHERE Sci_Name = :sn "
             . "AND $where "
             . "ORDER BY Confidence DESC LIMIT 1",
-              [':sn' => $r['sci'], ':anchor' => $ctx['anchor']]
+              array_merge([':sn' => $r['sci']], $bind)
             );
             $r['top_file'] = $best['file'] ?? null;
             $r['detection_id'] = isset($best['detection_id']) ? (int)$best['detection_id'] : null;
@@ -321,6 +391,9 @@ switch ($action) {
         birdnetRespond($db, $educatorScope, [
             'hours' => $hours, 'date' => $ctx['date'], 'station_date' => $ctx['today'],
             'is_today' => $ctx['is_today'], 'anchor' => $ctx['anchor'],
+            'reset_at_midnight' => $window['reset_at_midnight'],
+            'midnight_clamped' => $window['midnight_clamped'],
+            'window_start' => $window['window_start'],
             'species' => $rs, 'site_name' => publicSiteName($CONF_PATH), 'as_of' => date('c')
         ]);
         break;
