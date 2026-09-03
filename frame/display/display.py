@@ -9,6 +9,7 @@ centres and mats them, and pushes the result to the Inky Impression 13.3".
 look can be checked on any machine without the panel.
 """
 from __future__ import annotations
+from pathlib import Path
 
 import argparse
 import fcntl
@@ -509,10 +510,27 @@ def send_heartbeat(cfg, result="ok", updated=False, reason=None, error=None):
 
     data = json.dumps(payload).encode("utf-8")
 
+    token_path = os.path.expanduser(
+        cfg.get("heartbeat_token", "~/.birdframe/heartbeat.token")
+    )
+
+    try:
+        token = Path(token_path).read_text().strip()
+    except Exception as exc:
+        print(f"heartbeat token unavailable: {exc}", file=sys.stderr)
+        return
+
+    if not token:
+        print("heartbeat token is empty", file=sys.stderr)
+        return
+
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token,
+        },
         method="POST",
     )
 
