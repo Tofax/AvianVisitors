@@ -145,6 +145,22 @@ else
 fi
 
 # ------------------------------------------------------------
+# SPI chip select
+# ------------------------------------------------------------
+
+CONFIG_TXT=/boot/firmware/config.txt
+[ -f "$CONFIG_TXT" ] || CONFIG_TXT=/boot/config.txt
+
+if grep -q '^dtoverlay=spi0-0cs' "$CONFIG_TXT" 2>/dev/null; then
+  fail "SPI0 chip select is disabled by spi0-0cs"
+elif grep -q '^dtoverlay=spi0-1cs' "$CONFIG_TXT" 2>/dev/null; then
+  pass "SPI0 CE0 chip select is enabled"
+else
+  warn "SPI0 CE0 overlay is not explicitly configured"
+fi
+
+
+# ------------------------------------------------------------
 # Python environment
 # ------------------------------------------------------------
 

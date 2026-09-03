@@ -81,10 +81,17 @@ if [ "$MODE" = image ]; then NEEDS_BROWSER=0; fi
 CONFIG_TXT=/boot/firmware/config.txt
 [ -f "$CONFIG_TXT" ] || CONFIG_TXT=/boot/config.txt
 
-echo "1/5  Enabling SPI + I2C (Inky needs both; SPI with no chip-select)..."
+echo "1/5  Enabling SPI + I2C..."
 sudo raspi-config nonint do_spi 0
 sudo raspi-config nonint do_i2c 0
-grep -q "^dtoverlay=spi0-0cs" "$CONFIG_TXT" || echo "dtoverlay=spi0-0cs" | sudo tee -a "$CONFIG_TXT" >/dev/null
+
+# Waveshare uses SPI0 CE0. Disable any old no-chip-select overlay and
+# ensure SPI0 owns one chip-select line.
+sudo sed -i 's/^dtoverlay=spi0-0cs/#dtoverlay=spi0-0cs/' "$CONFIG_TXT"
+
+if ! grep -q '^dtoverlay=spi0-1cs' "$CONFIG_TXT"; then
+  echo "dtoverlay=spi0-1cs" | sudo tee -a "$CONFIG_TXT" >/dev/null
+fi
 
 echo "2/5  Installing system packages (build tools to compile spidev, libatlas3-base for numpy)..."
 sudo apt-get update -qq
