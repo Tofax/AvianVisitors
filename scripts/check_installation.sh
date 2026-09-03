@@ -78,6 +78,33 @@ else
 fi
 
 # ------------------------------------------------------------
+# Shared BirdNET configuration
+# ------------------------------------------------------------
+
+birdnet_conf="${HOME}/BirdNET-Pi/birdnet.conf"
+system_conf="/etc/birdnet/birdnet.conf"
+
+if [ -L "${system_conf}" ]; then
+  resolved_conf="$(readlink -f "${system_conf}" 2>/dev/null || true)"
+  expected_conf="$(readlink -f "${birdnet_conf}" 2>/dev/null || true)"
+
+  if [ -n "${resolved_conf}" ] && [ "${resolved_conf}" = "${expected_conf}" ]; then
+    pass "/etc/birdnet/birdnet.conf points to the active config"
+  else
+    fail "/etc/birdnet/birdnet.conf points to the wrong config"
+  fi
+else
+  fail "/etc/birdnet/birdnet.conf is not a symlink"
+fi
+
+if grep -qE '^[[:space:]]*CADDY_PWD[[:space:]]*=[[:space:]]*.+$' "${system_conf}" 2>/dev/null; then
+  pass "Remote admin password is configured"
+else
+  warn "Remote admin password is not configured"
+fi
+
+
+# ------------------------------------------------------------
 # Caddy access to /home
 # ------------------------------------------------------------
 

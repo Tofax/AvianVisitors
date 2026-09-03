@@ -435,7 +435,40 @@ EOF
   systemctl enable --now avian-frame-render.timer
 }
 
+ensure_birdnet_config_link() {
+  local target="${my_dir}/birdnet.conf"
+  local link="/etc/birdnet/birdnet.conf"
+
+  [ -f "$target" ] || {
+    echo "BirdNET-Pi config does not exist: $target" >&2
+    return 1
+  }
+
+  mkdir -p /etc/birdnet
+
+  if [ -L "$link" ]; then
+    if [ "$(readlink -f "$link")" = "$(readlink -f "$target")" ]; then
+      echo "BirdNET-Pi config link already correct"
+      return 0
+    fi
+
+    echo "Repairing BirdNET-Pi config symlink"
+    ln -sfn "$target" "$link"
+    return 0
+  fi
+
+  if [ -e "$link" ]; then
+    echo "Refusing to replace existing regular config: $link" >&2
+    return 1
+  fi
+
+  echo "Creating BirdNET-Pi config symlink"
+  ln -s "$target" "$link"
+}
+
+
 install_services() {
+  ensure_birdnet_config_link
   set_hostname
   update_etc_hosts
   set_login
