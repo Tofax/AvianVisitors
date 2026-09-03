@@ -40,7 +40,7 @@ AvianVisitors/
 
 ## Setup
 
-The guided path is under **Tools → Your data → Drive archive**. It installs the
+The guided path is under **Settings → Nightly Drive backup**. It installs the
 worker without enabling it, checks the two dependencies, and manages the timer
 and safe cleanup mode. Google authorization remains a one-time `rclone config`
 step because the OAuth token should stay between rclone and Google. The page

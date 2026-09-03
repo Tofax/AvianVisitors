@@ -11,7 +11,8 @@
 // hits return instantly; cold misses fall through to the dynamic path.
 //
 // Bundled and cached images are public. A cold Wikipedia/rembg job is allowed
-// only from the station's direct LAN address and only for a detected species.
+// only from the station's direct LAN address, while the LAN admin gate is off,
+// and only for a detected species.
 
 declare(strict_types=1);
 
@@ -78,6 +79,13 @@ if (is_file($cachePath) && filesize($cachePath) > 1024) {
 // 4. Fresh Wikipedia fetch + rembg. Skipped if rembg-cli isn't on
 //    PATH - the resolver returns a 404 in that case rather than
 //    burning a Wikipedia request we can't use.
+require_once __DIR__ . '/admin-auth.php';
+if (avian_lan_admin_auth_required()) {
+    http_response_code(404);
+    echo 'no cached illustration for ' . htmlspecialchars($sci);
+    exit;
+}
+
 $rembg = '/usr/local/bin/rembg-cli';
 if (!is_executable($rembg)) {
     http_response_code(404);
@@ -85,7 +93,6 @@ if (!is_executable($rembg)) {
     exit;
 }
 
-require_once __DIR__ . '/admin-auth.php';
 if (!avian_is_direct_local_request($_SERVER)) {
     http_response_code(404);
     echo 'no cached illustration for ' . htmlspecialchars($sci);

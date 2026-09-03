@@ -10,8 +10,8 @@
 //           so the changes take effect immediately.
 //
 // Direct requests on the station's private address are available without a
-// password. Forwarded and public-host requests verify BirdNET-Pi's configured
-// admin password here.
+// password unless the owner enables the LAN admin gate. Forwarded and
+// public-host requests always verify BirdNET-Pi's configured admin password.
 //
 // Restart requires passwordless sudo for the caddy user that runs
 // php-fpm, dropped in place by install_services.sh at
@@ -26,7 +26,7 @@ avian_require_admin();
 
 // Path layout: /home/{USER}/BirdNET-Pi/avian/api/config.php
 $BIRDNETPI_DIR = dirname(__DIR__, 2);
-$CONF_PATH     = "$BIRDNETPI_DIR/birdnet.conf";
+$CONF_PATH     = '/etc/birdnet/birdnet.conf';
 $ADMIN_CONTROL = getenv('AV_ADMIN_CONTROL') ?: '/usr/local/sbin/avian-admin-control';
 
 // Whitelist: { config_key => { type, min?, max?, restart? } }
@@ -43,6 +43,12 @@ $ALLOWED = [
     'LATITUDE'           => ['type' => 'float', 'min' => -90,  'max' => 90, 'restart' => true],
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
+    // BirdWeather writes use the dedicated facade, which verifies a new token
+    // remotely before this root-owned writer is allowed to persist it.
+    'BIRDWEATHER_ID'     => ['type' => 'secret', 'maxlen' => 160, 'managed_by' => 'birdweather'],
+    'BIRDWEATHER_ENABLED' => ['type' => 'int', 'min' => 0, 'max' => 1, 'managed_by' => 'birdweather'],
+    'BIRDWEATHER_UPLOAD_AUDIO' => ['type' => 'int', 'min' => 0, 'max' => 1, 'managed_by' => 'birdweather'],
+    'PRIVACY_THRESHOLD'  => ['type' => 'int', 'min' => 0, 'max' => 3, 'managed_by' => 'birdweather'],
     // Secrets: writable like any setting, but NEVER echoed back on GET -
     // the response carries only a set/unset flag. Consumed by the
     // illustration pipeline (generate.php passes them by env).
@@ -115,6 +121,41 @@ function run_admin_control(string $control, array $arguments, ?string $input = n
     return $decoded;
 }
 
+function admin_control_needs_ssh_recovery(string $error): bool {
+    return stripos($error, 'credential state') !== false
+        || stripos($error, 'initialization is incomplete') !== false
+        || stripos($error, 'set the admin password from SSH') !== false
+        || stripos($error, 'cannot initialize the admin credential') !== false;
+}
+
+function admin_control_audio_remediation(
+    string $error,
+    bool $passwordAction,
+    array $adminState
+): ?string {
+    if (!str_contains($error, 'live audio') && !str_contains($error, 'Icecast')) {
+        return null;
+    }
+    $protected = empty($adminState['valid']) || !empty($adminState['required']);
+    if (!$protected && str_contains($error, 'restored and verified')) {
+        return null;
+    }
+    if (!$protected) {
+        return 'Over SSH, inspect Icecast with sudo systemctl status icecast2, start it with sudo systemctl start icecast2 if appropriate, then verify /stream works from the local network.';
+    }
+    if ($passwordAction) {
+        return 'Retry the same password. If the warning remains, over SSH run sudo systemctl stop icecast2, confirm it is inactive, then verify /stream returns 404.';
+    }
+    return 'Over SSH, reboot the station, then verify /stream returns 404.';
+}
+
+function admin_state_revision(array $state): string {
+    return (!empty($state['valid']) ? 'valid' : 'invalid') . ':'
+        . (!empty($state['required']) ? '1' : '0') . ':'
+        . (string)($state['epoch'] ?? 'invalid') . ':'
+        . (string)($state['verifier'] ?? '-');
+}
+
 // Tight allowlist for string fields. The root-owned writer repeats the same
 // validation before it touches birdnet.conf.
 function safe_string_value(string $v): bool {
@@ -124,6 +165,9 @@ function safe_string_value(string $v): bool {
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
+    $adminState = avian_admin_state();
+    $configuredLanAuth = avian_configured_lan_admin_auth_required();
+    $effectiveLanAuth = avian_lan_admin_auth_required();
     $conf = read_conf($CONF_PATH);
     $out = [];
     $secrets = [];
@@ -144,6 +188,14 @@ if ($method === 'GET') {
         'secrets'  => $secrets,
         'meta'     => $ALLOWED,
         'preserve' => (int)($conf['MAX_FILES_SPECIES'] ?? 0) >= 10000,
+        'security' => [
+            'lan_admin_auth' => $configuredLanAuth,
+            'policy_reconciliation_needed' => avian_is_direct_local_request($_SERVER)
+                && $effectiveLanAuth !== $configuredLanAuth,
+            'password_configured' => !empty($adminState['valid'])
+                && !empty($adminState['configured']),
+            'recovery' => empty($adminState['valid']),
+        ],
     ]);
     exit;
 }
@@ -157,13 +209,24 @@ if ($method === 'POST') {
         echo json_encode(['error' => 'bad json']);
         exit;
     }
+    if ((array_key_exists('lan_admin_auth', $body)
+            || array_key_exists('admin_password', $body))
+        && count($body) !== 1) {
+        http_response_code(400);
+        echo json_encode(['error' => 'access credentials must be changed by themselves']);
+        exit;
+    }
     $updates = [];
     $errors = [];
     foreach ($body as $k => $v) {
-        // 'preserve' is a UI-side convenience flag handled below - skip it here.
-        if ($k === 'preserve') continue;
+        // These UI-side convenience flags are handled below.
+        if ($k === 'preserve' || $k === 'lan_admin_auth' || $k === 'admin_password') continue;
         if (!isset($ALLOWED[$k])) { $errors[$k] = 'unknown'; continue; }
         $spec = $ALLOWED[$k];
+        if (($spec['managed_by'] ?? '') === 'birdweather') {
+            $errors[$k] = 'use BirdWeather settings';
+            continue;
+        }
         if ($spec['type'] === 'float') {
             if (!is_int($v) && !is_float($v)) { $errors[$k] = 'not a number'; continue; }
             $v = (float)$v;
@@ -210,6 +273,104 @@ if ($method === 'POST') {
         $updates['MAX_FILES_SPECIES'] = $body['preserve'] ? 99999 : 0;
     }
 
+    $policyChanged = false;
+    $passwordChanged = false;
+    if (array_key_exists('admin_password', $body)) {
+        $newPassword = $body['admin_password'];
+        if (!is_string($newPassword)
+            || preg_match('/^[A-Za-z0-9]{12,64}$/D', $newPassword) !== 1) {
+            http_response_code(400);
+            echo json_encode([
+                'error' => 'password must use 12 to 64 letters or numbers',
+            ]);
+            exit;
+        }
+        $adminState = avian_admin_state();
+        if (empty($adminState['valid']) || empty($adminState['configured'])) {
+            http_response_code(409);
+            echo json_encode([
+                'error' => 'initialize the admin password from SSH first',
+                'recovery' => true,
+            ]);
+            exit;
+        }
+        $beforeRevision = admin_state_revision($adminState);
+        $currentPassword = avian_require_explicit_admin_credential($adminState, true);
+        $passwordUpdate = run_admin_control(
+            $ADMIN_CONTROL,
+            ['password-change-stdin'],
+            $currentPassword . "\0" . $newPassword . "\0"
+        );
+        $currentPassword = '';
+        $newPassword = '';
+        if (empty($passwordUpdate['ok'])) {
+            $error = (string)($passwordUpdate['error'] ?? 'password change failed');
+            $finalAdminState = avian_admin_state();
+            $reauth = admin_state_revision($finalAdminState) !== $beforeRevision;
+            http_response_code(500);
+            echo json_encode([
+                'error' => $error,
+                'recovery' => admin_control_needs_ssh_recovery($error),
+                'reauth' => $reauth,
+                'remediation' => admin_control_audio_remediation(
+                    $error,
+                    true,
+                    $finalAdminState
+                )
+                    ?? ($reauth
+                        ? 'Unlock with your current password. If that fails, reset it from SSH.'
+                        : null),
+            ]);
+            exit;
+        }
+        $passwordChanged = !empty($passwordUpdate['changed']);
+    }
+    if (array_key_exists('lan_admin_auth', $body)) {
+        if (!is_bool($body['lan_admin_auth'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'validation', 'fields' => ['lan_admin_auth' => 'not a boolean']]);
+            exit;
+        }
+        $requestedPolicy = $body['lan_admin_auth'];
+        $adminState = avian_admin_state();
+        if (empty($adminState['valid']) || empty($adminState['configured'])) {
+            http_response_code(409);
+            echo json_encode([
+                'error' => 'set the admin password from SSH first',
+                'recovery' => true,
+            ]);
+            exit;
+        }
+        $beforeRevision = admin_state_revision($adminState);
+
+        // Re-enter the configured credential for transitions and same-value
+        // reconciliation. A local bypass or unattended session is not proof.
+        $password = avian_require_explicit_admin_credential($adminState, true);
+        $policyUpdate = run_admin_control(
+            $ADMIN_CONTROL,
+            ['lan-auth-set-stdin', $requestedPolicy ? '1' : '0'],
+            $password . "\0"
+        );
+        $password = '';
+        if (empty($policyUpdate['ok'])) {
+            $error = (string)($policyUpdate['error'] ?? 'access setting failed');
+            $finalAdminState = avian_admin_state();
+            http_response_code(500);
+            echo json_encode([
+                'error' => $error,
+                'recovery' => admin_control_needs_ssh_recovery($error),
+                'reauth' => admin_state_revision($finalAdminState) !== $beforeRevision,
+                'remediation' => admin_control_audio_remediation(
+                    $error,
+                    false,
+                    $finalAdminState
+                ),
+            ]);
+            exit;
+        }
+        $policyChanged = admin_state_revision(avian_admin_state()) !== $beforeRevision;
+    }
+
     if ($updates) {
         $payload = '';
         foreach ($updates as $key => $value) {
@@ -225,6 +386,17 @@ if ($method === 'POST') {
             echo json_encode(['error' => $result['error'] ?? 'config write failed']);
             exit;
         }
+    }
+
+    if (($policyChanged || $passwordChanged)
+        && !avian_rotate_admin_session_after_policy_change()) {
+        http_response_code(503);
+        echo json_encode([
+            'ok' => false,
+            'error' => 'security setting saved; sign in again',
+            'reauth' => true,
+        ]);
+        exit;
     }
 
     // Restart services if any setting requires it.
@@ -253,7 +425,14 @@ if ($method === 'POST') {
     foreach ($updates as $k => $v) {
         $shown[$k] = (($ALLOWED[$k]['type'] ?? '') === 'secret') ? '(saved)' : $v;
     }
-    echo json_encode(['ok' => true, 'updates' => $shown, 'restarted' => $restarted]);
+    echo json_encode([
+        'ok' => true,
+        'updates' => $shown,
+        'restarted' => $restarted,
+        'security' => [
+            'lan_admin_auth' => avian_configured_lan_admin_auth_required(),
+        ],
+    ]);
     exit;
 }
 

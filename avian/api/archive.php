@@ -1,5 +1,5 @@
 <?php
-// Narrow JSON facade for the optional Drive archive shown under Tools.
+// Narrow JSON facade for the optional Drive backup shown in Settings.
 // The root-owned helper accepts only fixed actions and never returns OAuth
 // tokens or rclone configuration contents.
 

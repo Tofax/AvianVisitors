@@ -9,7 +9,17 @@ fail() {
   exit 1
 }
 
+[ "${EUID:-$(id -u)}" -eq 0 ] || fail "run this smoke in a disposable container as root"
 command -v flock >/dev/null 2>&1 || fail "flock is required for this smoke test"
+
+id caddy >/dev/null 2>&1 \
+  || useradd --system --no-create-home --shell /usr/sbin/nologin caddy
+mkdir -p /var/lib/avian-visitors
+chown root:root /var/lib/avian-visitors
+chmod 0755 /var/lib/avian-visitors
+printf 'v1\t0\t0\t-\n' >/var/lib/avian-visitors/admin-auth.state
+chown root:caddy /var/lib/avian-visitors/admin-auth.state
+chmod 0640 /var/lib/avian-visitors/admin-auth.state
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/avian-generate-test.XXXXXX")
 fixture="$work/station"
@@ -42,6 +52,7 @@ mkdir -p \
   "$fixture/scripts" \
   "$fixture/birdnet/bin"
 cp avian/api/admin-auth.php "$fixture/avian/api/admin-auth.php"
+cp avian/api/admin-state.php "$fixture/avian/api/admin-state.php"
 cp avian/api/generate.php "$fixture/avian/api/generate.php"
 
 printf 'GEMINI_API_KEY="%s"\n' "$test_key" >"$fixture/birdnet.conf"
