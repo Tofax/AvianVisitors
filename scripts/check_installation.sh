@@ -180,16 +180,31 @@ if [ -f "${FRAME_PNG}" ]; then
   now="$(date +%s)"
   modified="$(stat -c %Y "${FRAME_PNG}")"
   age_minutes=$(( (now - modified) / 60 ))
-
-  if [ "${age_minutes}" -le 60 ]; then
-    pass "frame.png age is ${age_minutes} minute(s)"
-  elif [ "${age_minutes}" -le 120 ]; then
-    warn "frame.png is ${age_minutes} minutes old"
-  else
-    fail "frame.png is ${age_minutes} minutes old"
-  fi
+  pass "frame.png age is ${age_minutes} minute(s) (unchanged frames are expected)"
 else
   fail "frame.png does not exist: ${FRAME_PNG}"
+fi
+
+renderer_result="$(
+  systemctl show avian-frame-render.service     -p Result     --value 2>/dev/null || true
+)"
+
+renderer_status="$(
+  systemctl show avian-frame-render.service     -p ExecMainStatus     --value 2>/dev/null || true
+)"
+
+renderer_finished="$(
+  systemctl show avian-frame-render.service     -p ExecMainExitTimestamp     --value 2>/dev/null || true
+)"
+
+if [ "${renderer_result}" = "success" ] && [ "${renderer_status}" = "0" ]; then
+  if [ -n "${renderer_finished}" ]; then
+    pass "Last frame render succeeded: ${renderer_finished}"
+  else
+    pass "Last frame render succeeded"
+  fi
+else
+  fail "Last frame render failed (Result=${renderer_result:-unknown}, status=${renderer_status:-unknown})"
 fi
 
 # ------------------------------------------------------------
