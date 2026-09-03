@@ -186,6 +186,9 @@ EXTRACTED=$HOME/BirdSongs/Extracted
 
 OVERLAP=0.0
 
+## Keep dashboard time windows inside the current day when enabled.
+RESET_AT_MIDNIGHT=0
+
 ## CONFIDENCE is the minimum confidence level from 0.0-1.0 BirdNET's analysis
 ## should reach before creating an entry in the BirdNET.selection.txt file.
 ## Don't set this to 1.0 or you won't have any results.

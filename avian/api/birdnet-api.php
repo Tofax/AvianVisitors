@@ -19,7 +19,12 @@
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: public, max-age=30');
+header('Referrer-Policy: no-referrer');
+header('X-Content-Type-Options: nosniff');
+header('Cross-Origin-Resource-Policy: same-origin');
+
+require_once __DIR__ . '/educator-scope.php';
+require_once __DIR__ . '/admin-auth.php';
 
 // PHP resolves __DIR__ through symlinks to the realpath. This script
 // lives at $HOME/BirdNET-Pi/avian/api/birdnet-api.php (served via the
@@ -28,7 +33,7 @@ header('Cache-Control: public, max-age=30');
 // home directory in. getenv('HOME') would resolve to /var/lib/caddy
 // under PHP-FPM (BirdNET-Pi runs it as the caddy user), so it can't
 // be relied on.
-$DB_PATH = dirname(__DIR__, 2) . '/scripts/birds.db';
+$DB_PATH = educator_birds_db_path();
 $CONF_PATH = dirname(__DIR__, 2) . '/birdnet.conf';
 
 // SITE_NAME is already public on BirdNET-Pi's legacy homepage. Read only that
@@ -60,21 +65,193 @@ function publicSiteName(string $path): string {
     return $value !== '' ? $value : 'BirdNET-Pi';
 }
 
+function publicConfigFlag(string $path, string $key): bool {
+    if (!is_readable($path) || is_dir($path)) return false;
+    $lines = @file($path, FILE_IGNORE_NEW_LINES);
+    if (!is_array($lines)) return false;
+    $value = null;
+    $pattern = '/^\s*(?:export\s+)?'.preg_quote($key, '/').'\s*=\s*(.*)$/';
+    foreach ($lines as $line) {
+        if (preg_match($pattern, $line, $match) === 1) {
+            $value = strtolower(trim($match[1], " \t\n\r\0\x0B\"'"));
+        }
+    }
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+function recentWindow(
+    SQLite3 $db,
+    int $hours,
+    array $dateContext,
+    bool $resetAtMidnight,
+    bool $scoped
+): array {
+    $through = "DATETIME(Date||' '||Time) <= DATETIME(:anchor)";
+    $enabled = $resetAtMidnight && !$scoped;
+    if ($hours >= 1000000) {
+        return [
+            'where' => $through,
+            'bind' => [':anchor' => $dateContext['anchor']],
+            'reset_at_midnight' => $enabled,
+            'midnight_clamped' => false,
+            'window_start' => null,
+        ];
+    }
+    $statement = $db->prepare(
+        "SELECT DATETIME(:anchor,'-".$hours." hours') AS rolling, "
+            . "DATETIME(:anchor,'start of day') AS midnight"
+    );
+    if (!$statement) throw new RuntimeException('could not prepare time window');
+    $statement->bindValue(':anchor', $dateContext['anchor'], SQLITE3_TEXT);
+    $result = $statement->execute();
+    $times = $result ? ($result->fetchArray(SQLITE3_ASSOC) ?: []) : [];
+    $rolling = (string)($times['rolling'] ?? '');
+    $midnight = (string)($times['midnight'] ?? '');
+    $clamped = $enabled
+        && !empty($dateContext['is_today'])
+        && $rolling !== ''
+        && $midnight !== ''
+        && $rolling <= $midnight;
+    $start = $clamped ? $midnight : $rolling;
+    $lowerOperator = $clamped ? '>=' : '>';
+    return [
+        'where' => $through." AND DATETIME(Date||' '||Time) "
+            .$lowerOperator." DATETIME(:window_start)",
+        'bind' => [':anchor' => $dateContext['anchor'], ':window_start' => $start],
+        'reset_at_midnight' => $enabled,
+        'midnight_clamped' => $clamped,
+        'window_start' => $start,
+    ];
+}
+
 if (defined('AVIAN_BIRDNET_API_LIBRARY_ONLY')) return;
+
+$RESET_AT_MIDNIGHT = publicConfigFlag($CONF_PATH, 'RESET_AT_MIDNIGHT');
+
+$educatorDirectRequest = avian_is_direct_local_request($_SERVER);
+$educatorSavedRequest = educator_saved_scope_requested($_GET);
+$educatorPublicCapability = $educatorSavedRequest;
+$educatorIncludePrivateScope = $educatorDirectRequest && !$educatorSavedRequest;
+$action = $_GET['action'] ?? 'stats';
+$educatorScopeProbe = is_string($action) && $action === 'scope-probe';
+
+$db = null;
+try {
+    if ($educatorScopeProbe) {
+        $allowed = ['action' => true, 'edu' => true];
+        foreach (array_keys($_GET) as $key) {
+            if (!is_string($key) || !isset($allowed[$key])) {
+                throw new EducatorScopeError('educator scope probe is invalid', 400);
+            }
+        }
+        $rawActionCount = educator_scope_raw_parameter_count('action');
+        if (count($_GET) !== 2
+            || !is_string($_GET['edu'] ?? null)
+            || preg_match('/\A[cf]_[a-f0-9]{32}\z/D', $_GET['edu']) !== 1
+            || ($rawActionCount !== null && $rawActionCount !== 1)) {
+            throw new EducatorScopeError('educator scope probe is invalid', 400);
+        }
+    }
+    $educatorScope = educator_resolve_scope($_GET);
+} catch (EducatorScopeError $error) {
+    [$scopeStatus, $scopeMessage] = educator_public_scope_error(
+        $error,
+        $educatorPublicCapability
+    );
+    http_response_code($scopeStatus);
+    header('Cache-Control: no-store');
+    echo json_encode(['error' => $scopeMessage, 'educator_scope' => null]);
+    exit;
+}
+$educatorProfileForCache = educator_profile_state();
+$educatorCacheDisabled = !empty($educatorProfileForCache['valid'])
+    && !empty($educatorProfileForCache['enabled']);
+header('Cache-Control: ' . (($educatorCacheDisabled || $RESET_AT_MIDNIGHT)
+    ? 'no-store'
+    : 'public, max-age=30'));
 
 if (!file_exists($DB_PATH)) {
     http_response_code(503);
-    echo json_encode(['error' => 'birds.db not found']);
+    echo json_encode([
+        'error' => $educatorPublicCapability ? 'saved view unavailable' : 'birds.db not found',
+        'educator_scope' => $educatorPublicCapability
+            ? null
+            : educator_scope_public($educatorScope, $educatorIncludePrivateScope),
+    ]);
+    educator_scope_release($educatorScope);
     exit;
 }
 
 try {
     $db = new SQLite3($DB_PATH, SQLITE3_OPEN_READONLY);
     $db->busyTimeout(2000);
+    $db->exec('BEGIN');
+    $educatorProbePayload = $educatorScopeProbe
+        ? educator_scope_probe($db, $educatorScope)
+        : null;
+    if (!$educatorScopeProbe) educator_scope_detection_table($db, $educatorScope);
 } catch (Throwable $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'db open failed']);
+    if ($db instanceof SQLite3) {
+        try { $db->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+        try { $db->close(); } catch (Throwable $ignored) {}
+    }
+    if ($e instanceof EducatorScopeError) {
+        [$status, $message] = educator_public_scope_error($e, $educatorPublicCapability);
+    } else {
+        $status = $educatorPublicCapability ? 503 : 500;
+        $message = $educatorPublicCapability ? 'saved view unavailable' : 'db open failed';
+    }
+    http_response_code($status);
+    echo json_encode([
+        'error' => $message,
+        'educator_scope' => $educatorPublicCapability
+            ? null
+            : educator_scope_public($educatorScope, $educatorIncludePrivateScope),
+    ]);
+    educator_scope_release($educatorScope);
     exit;
+}
+
+function birdnetRespond(SQLite3 $db, ?array &$scope, array $payload): void {
+    try {
+        educator_scope_recheck_generation($db, $scope);
+        $payload['educator_scope'] = educator_scope_public(
+            $scope,
+            avian_is_direct_local_request($_SERVER)
+                && !educator_saved_scope_requested($_GET)
+        );
+        $encoded = json_encode($payload, JSON_THROW_ON_ERROR);
+        educator_store_test_hook('birdnet-before-commit');
+        $db->exec('COMMIT');
+        $db->close();
+        echo $encoded;
+    } catch (EducatorScopeError $error) {
+        try { $db->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+        try { $db->close(); } catch (Throwable $ignored) {}
+        $publicCapability = educator_saved_scope_requested($_GET);
+        [$status, $message] = educator_public_scope_error($error, $publicCapability);
+        http_response_code($status);
+        try {
+            echo json_encode([
+                'error' => $message,
+                'educator_scope' => $publicCapability ? null : educator_scope_public(
+                    $scope,
+                    avian_is_direct_local_request($_SERVER)
+                        && !educator_saved_scope_requested($_GET)
+                ),
+            ], JSON_THROW_ON_ERROR);
+        } catch (Throwable $encodingError) {
+            http_response_code(503);
+            echo '{"error":"scoped response could not be encoded","educator_scope":null}';
+        }
+    } catch (Throwable $error) {
+        try { $db->exec('ROLLBACK'); } catch (Throwable $ignored) {}
+        try { $db->close(); } catch (Throwable $ignored) {}
+        http_response_code(503);
+        echo '{"error":"scoped response could not be encoded","educator_scope":null}';
+    } finally {
+        educator_scope_release($scope);
+    }
 }
 
 function rows(SQLite3 $db, string $sql, array $bind = []): array {
@@ -99,19 +276,24 @@ function validIsoDate(string $date): bool {
 // Today ends at the current second; a historical date ends at 23:59:59.
 // Returning the same shape from every date-aware action keeps the frontend's
 // timeline, lists, ledger, and rhythm on one coherent cutoff.
-function dateContext(SQLite3 $db): array {
+function dateContext(SQLite3 $db, ?array &$educatorScope): array {
     $today = one($db, "SELECT DATE('now','localtime') AS d")['d'] ?? date('Y-m-d');
     $asked = $_GET['date'] ?? null;
     if ($asked !== null && (!is_string($asked) || !validIsoDate($asked) || $asked > $today)) {
         http_response_code(400);
-        echo json_encode(['error' => 'bad date']);
+        birdnetRespond($db, $educatorScope, ['error' => 'bad date']);
         exit;
     }
-    $date = $asked ?? $today;
+    $scopedLatest = null;
+    if ($asked === null && $educatorScope !== null) {
+        $latest = one($db, "SELECT MAX(Date||' '||Time) AS t FROM detections");
+        $scopedLatest = is_string($latest['t'] ?? null) ? $latest['t'] : null;
+    }
+    $date = $asked ?? ($scopedLatest !== null ? substr($scopedLatest, 0, 10) : $today);
     $isToday = $date === $today;
-    $anchor = $isToday
+    $anchor = $scopedLatest ?? ($isToday
         ? (one($db, "SELECT DATETIME('now','localtime') AS t")['t'] ?? ($today.' 23:59:59'))
-        : $date.' 23:59:59';
+        : $date.' 23:59:59');
     return ['date' => $date, 'today' => $today, 'is_today' => $isToday, 'anchor' => $anchor];
 }
 
@@ -121,14 +303,18 @@ function windowClause(int $hours): string {
     return $through." AND DATETIME(Date||' '||Time) > DATETIME(:anchor,'-".$hours." hours')";
 }
 
-$action = $_GET['action'] ?? 'stats';
+if ($educatorScopeProbe) {
+    birdnetRespond($db, $educatorScope, $educatorProbePayload);
+    exit;
+}
 
 switch ($action) {
 
     case 'stats': {
-        $ctx = dateContext($db);
+        $ctx = dateContext($db, $educatorScope);
         $bind = [':anchor' => $ctx['anchor']];
         $total       = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind)['n'] ?? 0);
+        educator_store_test_hook('birdnet-stats-after-total');
         $species     = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind)['n'] ?? 0);
         $day         = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE Date = :d", [':d' => $ctx['date']])['n'] ?? 0);
         $daySpec     = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE Date = :d", [':d' => $ctx['date']])['n'] ?? 0);
@@ -136,7 +322,7 @@ switch ($action) {
         $week        = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE ".windowClause(168), $bind)['n'] ?? 0);
         $weekSpec    = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE ".windowClause(168), $bind)['n'] ?? 0);
         $first       = one($db, "SELECT MIN(Date) AS d FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind);
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'totals'    => ['detections' => $total, 'species' => $species],
             'today'     => ['detections' => $day, 'species' => $daySpec],
             'last_hour' => ['detections' => $lastHour],
@@ -159,7 +345,7 @@ switch ($action) {
         . "       MAX(Date||' '||Time) AS last_seen, COUNT(*) AS n, MAX(Confidence) AS best_conf "
         . "FROM detections GROUP BY Sci_Name ORDER BY first_seen ASC"
         );
-        echo json_encode(['species' => $rs, 'as_of' => date('c')]);
+        birdnetRespond($db, $educatorScope, ['species' => $rs, 'as_of' => date('c')]);
         break;
     }
 
@@ -168,9 +354,16 @@ switch ($action) {
         // "ALL" button can turn off the time filter without needing a
         // separate code path.
         $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 24)));
-        $ctx = dateContext($db);
-        $where = windowClause($hours);
-        $bind = [':anchor' => $ctx['anchor']];
+        $ctx = dateContext($db, $educatorScope);
+        $window = recentWindow(
+            $db,
+            $hours,
+            $ctx,
+            $RESET_AT_MIDNIGHT,
+            $educatorScope !== null
+        );
+        $where = $window['where'];
+        $bind = $window['bind'];
         // species-collapsed view: one row per species seen in the window,
         // with the file of its highest-confidence detection inside the window.
         $rs = rows($db,
@@ -184,19 +377,23 @@ switch ($action) {
         // for each row, attach the file of the top-confidence detection in the window
         foreach ($rs as &$r) {
             $best = one($db,
-              "SELECT File_Name AS file, Date AS d, Time AS t, Confidence AS conf "
+              "SELECT detection_id, File_Name AS file, Date AS d, Time AS t, Confidence AS conf "
             . "FROM detections "
             . "WHERE Sci_Name = :sn "
             . "AND $where "
             . "ORDER BY Confidence DESC LIMIT 1",
-              [':sn' => $r['sci'], ':anchor' => $ctx['anchor']]
+              array_merge([':sn' => $r['sci']], $bind)
             );
             $r['top_file'] = $best['file'] ?? null;
+            $r['detection_id'] = isset($best['detection_id']) ? (int)$best['detection_id'] : null;
             $r['top_at']   = isset($best['d']) ? ($best['d'].' '.$best['t']) : null;
         }
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'hours' => $hours, 'date' => $ctx['date'], 'station_date' => $ctx['today'],
             'is_today' => $ctx['is_today'], 'anchor' => $ctx['anchor'],
+            'reset_at_midnight' => $window['reset_at_midnight'],
+            'midnight_clamped' => $window['midnight_clamped'],
+            'window_start' => $window['window_start'],
             'species' => $rs, 'site_name' => publicSiteName($CONF_PATH), 'as_of' => date('c')
         ]);
         break;
@@ -204,11 +401,11 @@ switch ($action) {
 
     case 'species': {
         $sci = $_GET['sci'] ?? '';
-        if ($sci === '') { http_response_code(400); echo json_encode(['error' => 'sci= required']); break; }
+        if ($sci === '') { http_response_code(400); birdnetRespond($db, $educatorScope, ['error' => 'sci= required']); break; }
         $limit = max(1, min(1000, (int)($_GET['limit'] ?? 500)));
         $offset = max(0, (int)($_GET['offset'] ?? 0));
         $detections = rows($db,
-          "SELECT Date AS d, Time AS t, File_Name AS file, Confidence AS conf "
+          "SELECT detection_id, Date AS d, Time AS t, File_Name AS file, Confidence AS conf "
         . "FROM detections WHERE Sci_Name = :sn ORDER BY Date DESC, Time DESC "
         . "LIMIT ".$limit." OFFSET ".$offset,
           [':sn' => $sci]
@@ -219,7 +416,7 @@ switch ($action) {
         . "FROM detections WHERE Sci_Name = :sn",
           [':sn' => $sci]
         );
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'sci' => $sci,
             'summary' => $summary,
             'detections' => $detections,
@@ -235,19 +432,24 @@ switch ($action) {
         // The frontend backfills missing dates with zero - sparse data days
         // are otherwise dropped by the GROUP BY.
         $days = max(1, min(90, (int)($_GET['days'] ?? 30)));
+        $seriesAnchor = $educatorScope !== null
+            ? (one($db, 'SELECT MAX(Date) AS d FROM detections')['d'] ?? date('Y-m-d'))
+            : (one($db, "SELECT DATE('now','localtime') AS d")['d'] ?? date('Y-m-d'));
         $daily = rows($db,
           "SELECT Date AS date, COUNT(*) AS detections, COUNT(DISTINCT Sci_Name) AS species "
         . "FROM detections "
-        . "WHERE Date >= DATE('now','localtime','-".($days - 1)." day') "
+        . "WHERE Date >= DATE(:series_anchor,'-".($days - 1)." day') AND Date<=:series_anchor "
         . "GROUP BY Date ORDER BY Date"
+          , [':series_anchor' => $seriesAnchor]
         );
         $by_hour = rows($db,
           "SELECT CAST(strftime('%H', Time) AS INT) AS hour, COUNT(*) AS detections "
         . "FROM detections "
-        . "WHERE Date >= DATE('now','localtime','-30 day') "
+        . "WHERE Date >= DATE(:series_anchor,'-30 day') AND Date<=:series_anchor "
         . "GROUP BY hour ORDER BY hour"
+          , [':series_anchor' => $seriesAnchor]
         );
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'days'    => $days,
             'daily'   => $daily,
             'by_hour' => $by_hour,
@@ -261,7 +463,7 @@ switch ($action) {
         // species, sorted by first_seen DESC. Powers the "First Detections"
         // section on the stats view.
         $limit = max(1, min(50, (int)($_GET['limit'] ?? 10)));
-        $ctx = dateContext($db);
+        $ctx = dateContext($db, $educatorScope);
         $rs = rows($db,
           "SELECT Sci_Name AS sci, Com_Name AS com, MIN(Date||' '||Time) AS first_seen, "
         . "       COUNT(*) AS total "
@@ -269,7 +471,7 @@ switch ($action) {
         . "GROUP BY Sci_Name ORDER BY first_seen DESC LIMIT :lim",
           [':anchor' => $ctx['anchor'], ':lim' => $limit]
         );
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'date' => $ctx['date'], 'station_date' => $ctx['today'],
             'is_today' => $ctx['is_today'], 'species' => $rs, 'as_of' => date('c')
         ]);
@@ -287,7 +489,7 @@ switch ($action) {
         . "WHERE Date <= :today GROUP BY Date ORDER BY Date",
           [':today' => $today]
         );
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'station_date' => $today,
             'first_date' => $rs[0]['date'] ?? null,
             'last_date' => $rs ? $rs[count($rs) - 1]['date'] : null,
@@ -305,7 +507,7 @@ switch ($action) {
         // the global date pager can then walk the station history day by day.
         $days = max(1, min(30, (int)($_GET['days'] ?? 7)));
         $hours = max(1, min(1000000, (int)($_GET['hours'] ?? 24)));
-        $ctx = dateContext($db);
+        $ctx = dateContext($db, $educatorScope);
         // Slot 0..1439 = hour*60 + minute.
         $slot = "(CAST(strftime('%H', Time) AS INT) * 60 "
               . "+ CAST(strftime('%M', Time) AS INT))";
@@ -347,7 +549,7 @@ switch ($action) {
         $rangeStart = $hours <= 1 ? max(0, $nowSlot - 59)
                     : ($hours <= 12 ? max(0, $nowSlot - 719) : 0);
         $rangeEnd = $hours <= 12 ? $nowSlot : 1439;
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'days'     => $days,
             'hours'    => $hours,
             'mode'     => $mode,
@@ -376,7 +578,7 @@ switch ($action) {
         // PHP's date() follows date.timezone, which on a stock Pi is UTC:
         // taking today from there puts a US station a day ahead every
         // evening and the ledger reads empty.
-        $ctx = dateContext($db);
+        $ctx = dateContext($db, $educatorScope);
         $today = $ctx['today'];
         $date = $ctx['date'];
         $limit = max(1, min(30, (int)($_GET['limit'] ?? 15)));
@@ -405,7 +607,7 @@ switch ($action) {
         usort($species, function ($a, $b) {
             return $b['total'] <=> $a['total'] ?: strcmp($a['sci'], $b['sci']);
         });
-        echo json_encode([
+        birdnetRespond($db, $educatorScope, [
             'date'    => $date,
             'station_date' => $today,
             'is_today' => $date === $today,
@@ -420,5 +622,5 @@ switch ($action) {
 
     default:
         http_response_code(404);
-        echo json_encode(['error' => 'unknown action']);
+        birdnetRespond($db, $educatorScope, ['error' => 'unknown action']);
 }

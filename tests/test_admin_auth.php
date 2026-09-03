@@ -354,6 +354,89 @@ session_id($grantSession);
 check(avian_consume_admin_download_grant($https, 'detections', (string)$grant), 'download grant is consumed once');
 session_id($grantSession);
 check(!avian_consume_admin_download_grant($https, 'detections', (string)$grant), 'download grant cannot be replayed');
+$educatorStatePath = $tmp . '/educators.state';
+$educatorStateLine = "v1\t1\t3\n";
+file_put_contents($educatorStatePath, $educatorStateLine);
+chmod($educatorStatePath, 0640);
+putenv('AV_EDUCATOR_STATE_FILE=' . $educatorStatePath);
+putenv('AV_EDUCATOR_STATE_TEST_METADATA=1');
+$boundScope = 'c_' . str_repeat('a', 32);
+$directGrantServer = array_merge($local, ['HTTPS' => 'on', 'SERVER_PORT' => '443']);
+session_id($grantSession);
+$boundGrant = avian_create_admin_download_grant($directGrantServer, 'recordings', $boundScope);
+session_id($grantSession);
+$boundDetails = avian_consume_admin_download_grant_details($directGrantServer, 'recordings', (string)$boundGrant);
+check(is_array($boundDetails) && $boundDetails['educator_scope'] === $boundScope,
+    'download grant details preserve the private educator binding server-side');
+session_id($grantSession);
+check(avian_consume_admin_download_grant_details($directGrantServer, 'recordings', (string)$boundGrant) === null,
+    'download grant details cannot be replayed');
+session_id($grantSession);
+check(avian_create_admin_download_grant($https, 'recordings', $boundScope) === null,
+    'public-host requests cannot create a private educator download grant');
+session_id($grantSession);
+$epochBoundGrant = avian_create_admin_download_grant($directGrantServer, 'detections', $boundScope);
+file_put_contents($educatorStatePath, "v1\t1\t4\n");
+session_id($grantSession);
+check(avian_consume_admin_download_grant_details(
+    $directGrantServer,
+    'detections',
+    (string)$epochBoundGrant
+) === null, 'Educators profile epoch changes revoke scoped download grants');
+file_put_contents($educatorStatePath, $educatorStateLine);
+$audioServer = array_merge($local, ['HTTPS' => 'on', 'SERVER_PORT' => '443']);
+putenv('AV_REQUIRE_AUTH=1');
+$_COOKIE = [];
+session_id('');
+check(avian_create_admin_session($audioServer, $parsed), 'audio grant session is created');
+$audioSession = session_id();
+$_COOKIE = [AVIAN_ADMIN_SESSION_NAME => $audioSession];
+session_id($audioSession);
+$audioGrant = avian_create_educator_audio_grant($audioServer);
+check(is_string($audioGrant) && strlen($audioGrant) === 48, 'educator audio grant is a 48-character token');
+session_id($audioSession);
+check(avian_consume_educator_audio_grant($audioServer, (string)$audioGrant) === $audioSession,
+    'educator audio grant returns its validated session cookie once');
+session_id($audioSession);
+check(avian_consume_educator_audio_grant($audioServer, (string)$audioGrant) === null,
+    'educator audio grant cannot be replayed');
+
+session_id($audioSession);
+$expiredAudioGrant = avian_create_educator_audio_grant($audioServer);
+session_id($audioSession);
+check(avian_admin_session_valid($audioServer, $parsed, false, true), 'audio grant session opens for expiry fixture');
+$_SESSION[AVIAN_ADMIN_SESSION_EDUCATOR_AUDIO_GRANTS_KEY][hash('sha256', (string)$expiredAudioGrant)]['expires'] = time() - 1;
+session_write_close();
+session_id($audioSession);
+check(avian_consume_educator_audio_grant($audioServer, (string)$expiredAudioGrant) === null,
+    'expired educator audio grant is rejected');
+
+session_id($audioSession);
+$idleAudioGrant = avian_create_educator_audio_grant($audioServer);
+session_id($audioSession);
+check(avian_admin_session_valid($audioServer, $parsed, false, true), 'audio grant session opens for idle fixture');
+$_SESSION[AVIAN_ADMIN_SESSION_SEEN_KEY] = time() - AVIAN_ADMIN_SESSION_IDLE_SECONDS - 1;
+session_write_close();
+session_id($audioSession);
+check(avian_consume_educator_audio_grant($audioServer, (string)$idleAudioGrant) === null,
+    'educator audio grant enforces the admin idle boundary');
+
+$_COOKIE = [];
+session_id('');
+check(avian_create_admin_session($audioServer, $parsed), 'second audio session is created');
+$otherAudioSession = session_id();
+$_COOKIE = [AVIAN_ADMIN_SESSION_NAME => $otherAudioSession];
+session_id($otherAudioSession);
+check(avian_consume_educator_audio_grant($audioServer, (string)$idleAudioGrant) === null,
+    'educator audio grants cannot cross sessions');
+session_id($otherAudioSession);
+check(avian_create_educator_audio_grant($https) === null,
+    'forwarded educator audio grant creation is rejected');
+putenv('AV_REQUIRE_AUTH=0');
+session_id($otherAudioSession);
+check(avian_create_educator_audio_grant($audioServer) === null,
+    'educator audio grant creation requires LAN password protection');
+putenv('AV_REQUIRE_AUTH=1');
 
 session_id($grantSession);
 $boundaryGrant = avian_create_admin_download_grant($https, 'recordings');
@@ -367,6 +450,7 @@ check(avian_consume_admin_download_grant($https, 'recordings', (string)$boundary
 foreach (glob($sessionDir . '/*') ?: [] as $file) unlink($file);
 rmdir($sessionDir);
 unlink($statePath);
+unlink($educatorStatePath);
 unlink($ratePath);
 rmdir($tmp);
 putenv('AV_ADMIN_STATE_FILE');
@@ -376,6 +460,8 @@ putenv('AV_AUTH_RATE_TEST_METADATA');
 putenv('AV_AUTH_RATE_TEST_NO_DELAY');
 putenv('AV_AUTH_RATE_TEST_WRITE_FAIL');
 putenv('AV_REQUIRE_AUTH');
+putenv('AV_EDUCATOR_STATE_FILE');
+putenv('AV_EDUCATOR_STATE_TEST_METADATA');
 
 if ($failures > 0) {
     fwrite(STDERR, "$failures of $checks checks failed\n");

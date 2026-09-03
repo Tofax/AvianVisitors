@@ -13,6 +13,7 @@ site_overlay=/etc/caddy/avian-site-overlay.caddy
 auth_dir=/var/lib/avian-visitors
 auth_lock=$auth_dir/admin-auth.lock
 auth_state=$auth_dir/admin-auth.state
+educator_state=$auth_dir/educators.state
 [ -r "$conf" ] || { echo "BirdNET-Pi config was not found" >&2; exit 1; }
 
 lock_auth_state() {
@@ -132,8 +133,92 @@ EXTRACTED=$(conf_value EXTRACTED)
 [[ "$EXTRACTED" =~ ^/[A-Za-z0-9._/-]+$ ]] \
   && [ "$EXTRACTED" != / ] && [[ "$EXTRACTED" != *'..'* ]] \
   || { echo "Invalid BirdNET-Pi webroot" >&2; exit 1; }
+AVIAN_EXTRACTED_ROOT=$(readlink -f -- "$EXTRACTED") \
+  || { echo "BirdNET-Pi webroot was not found" >&2; exit 1; }
+[[ "$AVIAN_EXTRACTED_ROOT" =~ ^/[A-Za-z0-9._/-]+$ ]] \
+  && [ "$AVIAN_EXTRACTED_ROOT" != / ] \
+  && [[ "$AVIAN_EXTRACTED_ROOT" != *'..'* ]] \
+  && [ -d "$AVIAN_EXTRACTED_ROOT" ] \
+  && [ ! -L "$AVIAN_EXTRACTED_ROOT" ] \
+  || { echo "BirdNET-Pi webroot is unsafe" >&2; exit 1; }
+
+timezone_file=/etc/timezone
+[ -f "$timezone_file" ] && [ ! -L "$timezone_file" ] \
+  || { echo "Station timezone was not found" >&2; exit 1; }
+timezone_size=$(stat -c '%s' -- "$timezone_file") \
+  || { echo "Station timezone could not be inspected" >&2; exit 1; }
+[ "$timezone_size" -ge 2 ] && [ "$timezone_size" -le 129 ] \
+  || { echo "Station timezone is invalid" >&2; exit 1; }
+AVIAN_STATION_TIMEZONE=$(cat -- "$timezone_file") \
+  || { echo "Station timezone could not be read" >&2; exit 1; }
+[ "$timezone_size" -eq $(( ${#AVIAN_STATION_TIMEZONE} + 1 )) ] \
+  && [[ "$AVIAN_STATION_TIMEZONE" =~ ^[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$ ]] \
+  && [ "${#AVIAN_STATION_TIMEZONE}" -le 128 ] \
+  && [[ "/$AVIAN_STATION_TIMEZONE/" != *'/../'* ]] \
+  && [[ "/$AVIAN_STATION_TIMEZONE/" != *'/./'* ]] \
+  || { echo "Station timezone is invalid" >&2; exit 1; }
+timezone_path=$(readlink -f -- "/usr/share/zoneinfo/$AVIAN_STATION_TIMEZONE") \
+  || { echo "Station timezone is unavailable" >&2; exit 1; }
+case "$timezone_path" in /usr/share/zoneinfo/*) ;; *) echo "Station timezone is unsafe" >&2; exit 1 ;; esac
+[ -f "$timezone_path" ] && [ -f /etc/localtime ] \
+  && cmp -s -- "$timezone_path" /etc/localtime \
+  || { echo "Station timezone does not match the system clock" >&2; exit 1; }
+/usr/bin/php -r '
+  try { new DateTimeZone($argv[1]); }
+  catch (Throwable $error) { exit(1); }
+' "$AVIAN_STATION_TIMEZONE" \
+  || { echo "Station timezone is not supported by PHP" >&2; exit 1; }
 caddy_gid=$(getent group caddy | awk -F: 'NR == 1 { print $3 }')
 [ -n "$caddy_gid" ] || { echo "Caddy group was not found" >&2; exit 1; }
+
+# The optional profile is root-managed and fail-closed. A missing or malformed
+# record never keeps Icecast running under LAN password protection.
+AVIAN_EDUCATORS_ENABLED=0
+AVIAN_EDUCATOR_EPOCH=0
+educator_status=0
+if [ ! -e "$educator_state" ] && [ ! -L "$educator_state" ]; then
+  educator_status=2
+elif [ ! -f "$educator_state" ] || [ -L "$educator_state" ] \
+  || [ "$(stat -c '%u:%g:%a:%h' -- "$educator_state")" != "0:$caddy_gid:640:1" ]; then
+  educator_status=3
+else
+  educator_before=$(stat -c '%d:%i' -- "$educator_state") || educator_status=3
+  if [ "$educator_status" = 0 ]; then
+    exec 6<"$educator_state"
+    educator_opened=$(stat -Lc '%d:%i:%u:%g:%a:%h:%s' -- /proc/self/fd/6) \
+      || educator_status=3
+    educator_size=${educator_opened##*:}
+    if [ "$educator_status" != 0 ] \
+      || [ "$educator_opened" != "$educator_before:0:$caddy_gid:640:1:$educator_size" ] \
+      || [ "$educator_size" -lt 7 ] || [ "$educator_size" -gt 64 ]; then
+      educator_status=3
+    else
+      educator_raw=$(cat <&6)
+      if [ "$educator_size" -ne $(( ${#educator_raw} + 1 )) ]; then
+        educator_status=3
+      else
+        IFS=$'\t' read -r educator_version educator_enabled educator_epoch educator_extra \
+          <<<"$educator_raw"
+        if [ -n "${educator_extra:-}" ] \
+          || [ "$educator_raw" != "$educator_version"$'\t'"$educator_enabled"$'\t'"$educator_epoch" ] \
+          || [ "$educator_version" != v1 ] \
+          || { [ "$educator_enabled" != 0 ] && [ "$educator_enabled" != 1 ]; } \
+          || ! [[ "$educator_epoch" =~ ^(0|[1-9][0-9]{0,9})$ ]] \
+          || [ "$educator_epoch" -gt 2147483647 ] \
+          || [ "$(stat -c '%d:%i' -- "$educator_state")" != "$educator_before" ]; then
+          educator_status=3
+        else
+          AVIAN_EDUCATORS_ENABLED=$educator_enabled
+          AVIAN_EDUCATOR_EPOCH=$educator_epoch
+        fi
+      fi
+    fi
+    exec 6<&-
+  fi
+fi
+if [ "$educator_status" != 0 ]; then
+  echo "Educators profile state is missing or invalid; treating it as disabled" >&2
+fi
 
 policy_invalid=0
 AVIAN_REQUIRE_LAN_AUTH=1
@@ -226,6 +311,9 @@ install_icecast_start_guard() {
       '# Managed by AvianVisitors. Live audio follows the authoritative LAN policy.' \
       '[Service]' \
       'ExecCondition=+/usr/local/sbin/avian-admin-control icecast-start-allowed' \
+      'IPAddressDeny=any' \
+      'IPAddressAllow=127.0.0.0/8' \
+      'IPAddressAllow=::1/128' \
       >"$temp" \
     || ! chown root:root "$temp" \
     || ! chmod 0644 "$temp" \
@@ -473,12 +561,23 @@ stop_icecast_backend() {
 }
 
 icecast_protection_check=0
+icecast_recycle_check=0
 if [ "$AVIAN_REQUIRE_LAN_AUTH" = 1 ] \
+  && [ "$AVIAN_EDUCATORS_ENABLED" = 1 ] \
+  && [ "${AVIAN_CLOSE_STREAMS:-0}" = 1 ]; then
+  icecast_recycle_check=1
+fi
+if [ "$AVIAN_REQUIRE_LAN_AUTH" = 1 ] \
+  && { [ "$AVIAN_EDUCATORS_ENABLED" = 0 ] || [ "$icecast_recycle_check" = 1 ]; } \
   && { [ "${AVIAN_CLOSE_STREAMS:-0}" = 1 ] || [ "$state_input" = "$auth_state" ]; }; then
   icecast_protection_check=1
 fi
 icecast_restore_check=0
-if [ "$AVIAN_REQUIRE_LAN_AUTH" = 0 ] && [ "$state_input" = "$auth_state" ]; then
+if [ "$state_input" = "$auth_state" ] \
+  && { [ "$AVIAN_REQUIRE_LAN_AUTH" = 0 ] \
+    || { [ "$AVIAN_REQUIRE_LAN_AUTH" = 1 ] \
+      && [ "$AVIAN_EDUCATORS_ENABLED" = 1 ] \
+      && [ "$icecast_recycle_check" = 0 ]; }; }; then
   icecast_restore_check=1
 fi
 
@@ -626,10 +725,11 @@ trap 'rm -f "$temp" "${rollback-}"' EXIT
 cat >"$temp" <<EOF
 # Managed by AvianVisitors. The prior file is Caddyfile.previous.
 http:// {
-${site_overlay_import}  root * $EXTRACTED
+${site_overlay_import}  root * $AVIAN_EXTRACTED_ROOT
 
   @shell path / /index.html
-  header @shell Cache-Control "no-cache"
+  header @shell Cache-Control "no-store"
+  header @shell Referrer-Policy "no-referrer"
 
   # BirdNET-Pi's older PHP tools and reverse-proxied consoles do not share
   # AvianVisitors' session gate. Protect the whole legacy surface with the
@@ -695,7 +795,7 @@ $legacy_handles
   # existing checkout during an update, including their source text.
   @unknownAvianApi {
     path /avian/api/*
-    not path /avian/api/archive.php /avian/api/birdnet-api.php /avian/api/birdnet-status.php /avian/api/birdweather.php /avian/api/config.php /avian/api/cutout.php /avian/api/export.php /avian/api/generate.php /avian/api/maintenance.php /avian/api/menu.php /avian/api/recording.php /avian/api/spectrogram.php /avian/api/wiki.php
+    not path /avian/api/archive.php /avian/api/birdnet-api.php /avian/api/birdnet-status.php /avian/api/birdweather.php /avian/api/config.php /avian/api/cutout.php /avian/api/educator-audio-check.php /avian/api/educator-audio.php /avian/api/educators.php /avian/api/export.php /avian/api/generate.php /avian/api/maintenance.php /avian/api/menu.php /avian/api/recording.php /avian/api/spectrogram.php /avian/api/wiki.php
   }
   handle @unknownAvianApi {
     respond 404
@@ -791,6 +891,9 @@ $stream_guard
       try_files {path} {path}/index.html {path}/index.php =404
       env AVIAN_DIRECT_LOCAL 1
       env AVIAN_FORCE_AUTH $AVIAN_REQUIRE_LAN_AUTH
+      env AVIAN_EXTRACTED_ROOT $AVIAN_EXTRACTED_ROOT
+      env AVIAN_STATION_TIMEZONE $AVIAN_STATION_TIMEZONE
+      flush_interval -1
     }
   }
   handle /avian/api/* {
@@ -798,6 +901,8 @@ $stream_guard
       try_files {path} {path}/index.html {path}/index.php =404
       env AVIAN_DIRECT_LOCAL 0
       env AVIAN_FORCE_AUTH 1
+      env AVIAN_EXTRACTED_ROOT $AVIAN_EXTRACTED_ROOT
+      env AVIAN_STATION_TIMEZONE $AVIAN_STATION_TIMEZONE
     }
   }
 
@@ -896,6 +1001,12 @@ if [ "$icecast_protection_check" = 1 ]; then
   if ! stop_icecast_backend; then
     echo "Icecast could not be stopped; an older live audio connection may remain" >&2
     exit 20
+  fi
+  if [ "$icecast_recycle_check" = 1 ]; then
+    if ! prepare_icecast_restore || ! finish_icecast_restore; then
+      echo "Icecast could not be restored after protected audio sessions were revoked" >&2
+      exit 21
+    fi
   fi
 elif [ "$icecast_restore_check" = 1 ]; then
   if ! finish_icecast_restore; then

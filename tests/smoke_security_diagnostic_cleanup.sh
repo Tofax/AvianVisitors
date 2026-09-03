@@ -72,7 +72,8 @@ for helper in \
   avian-update-control \
   avian-service-refresh \
   avian-caddy-refresh \
-  avian-link-webroot; do
+  avian-link-webroot \
+  avian-educators; do
   install -o root -g root -m 0755 /tmp/avian-diagnostic-noop "/usr/local/sbin/$helper"
 done
 

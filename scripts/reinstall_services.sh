@@ -23,10 +23,11 @@ case "$#" in
     case "$1" in
       --legacy-migration) ;;
       --audio-policy) refresh_mode=audio-policy ;;
-      *) echo 'Usage: avian-service-refresh [--legacy-migration|--audio-policy]' >&2; exit 64 ;;
+      --helper-bootstrap) refresh_mode='helper-bootstrap' ;;
+      *) echo 'Usage: avian-service-refresh [--legacy-migration|--audio-policy|--helper-bootstrap]' >&2; exit 64 ;;
     esac
     ;;
-  *) echo 'Usage: avian-service-refresh [--legacy-migration|--audio-policy]' >&2; exit 64 ;;
+  *) echo 'Usage: avian-service-refresh [--legacy-migration|--audio-policy|--helper-bootstrap]' >&2; exit 64 ;;
 esac
 
 die() {
@@ -237,6 +238,7 @@ helper_sources=(
   scripts/admin_control.sh
   scripts/link_webroot.sh
   scripts/update_caddyfile.sh
+  scripts/educators_control.sh
 )
 helper_targets=(
   /usr/local/sbin/avian-update-control
@@ -247,6 +249,7 @@ helper_targets=(
   /usr/local/sbin/avian-admin-control
   /usr/local/sbin/avian-link-webroot
   /usr/local/sbin/avian-caddy-refresh
+  /usr/local/sbin/avian-educators
 )
 
 for helper_source in "${helper_sources[@]}"; do
@@ -280,6 +283,15 @@ for index in "${!helper_sources[@]}"; do
     "$stage_dir/$(basename "${helper_sources[$index]}")" \
     "${helper_targets[$index]}"
 done
+
+# A pre-Educators refresher installs this release's security helper before it
+# knows about the newly added helper target. The security helper may re-enter
+# this verified installer under the inherited update lock for this one narrow
+# completion pass.
+if [ "$refresh_mode" = helper-bootstrap ]; then
+  echo 'AvianVisitors privileged helpers refreshed.'
+  exit 0
+fi
 
 # The security helper owns the sudoers policy and targeted checkout modes. It
 # validates the replacement policy before retiring the inherited broad rule.

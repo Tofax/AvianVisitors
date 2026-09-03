@@ -122,6 +122,9 @@ mkdir -p \
   /etc/sudoers.d
 cp /source/avian/api/admin-state.php "$repo/avian/api/admin-state.php"
 cp /source/avian/api/admin-auth.php "$repo/avian/api/admin-auth.php"
+cp /source/avian/api/educator-state.php "$repo/avian/api/educator-state.php"
+cp /source/avian/api/educator-store.php "$repo/avian/api/educator-store.php"
+cp /source/avian/api/educator-scope.php "$repo/avian/api/educator-scope.php"
 cp /source/avian/api/menu.php "$repo/avian/api/menu.php"
 cp /source/avian/api/config.php "$repo/avian/api/config.php"
 cp /source/avian/api/birdnet-status.php "$repo/avian/api/birdnet-status.php"
@@ -140,6 +143,7 @@ LONGITUDE=1.0000
 COLOR_SCHEME=light
 SILENCE_UPDATE_INDICATOR=1
 CONFIDENCE=0.5
+RESET_AT_MIDNIGHT=0
 MAX_FILES_SPECIES=0
 RTSP_STREAM="rtsp://camera-user:camera-password@192.0.2.10/live"
 export CADDY_PWD="$legacy_password" # manually configured legacy password
@@ -157,7 +161,8 @@ for helper in \
   avian-maintenance-control \
   avian-update-control \
   avian-service-refresh \
-  avian-link-webroot; do
+  avian-link-webroot \
+  avian-educators; do
   install -o root -g root -m 0755 /tmp/avian-noop-control "/usr/local/sbin/$helper"
 done
 cat >/usr/local/sbin/avian-caddy-refresh <<'EOF'
@@ -412,6 +417,34 @@ curl -fsS -c /tmp/avian-cookie -u "birdnet:$legacy_password" \
   http://127.0.0.1:8896/avian/api/menu.php >/tmp/avian-menu-body \
   || fail "UTF-8 legacy password did not unlock the native UI"
 
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -b /tmp/avian-cookie -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' --data '{"RESET_AT_MIDNIGHT":true}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 200 ] || fail "midnight reset setting was not accepted"
+grep -Fxq 'RESET_AT_MIDNIGHT=1' "$conf" \
+  || fail "midnight reset setting did not reach the root config writer"
+curl -fsS -b /tmp/avian-cookie http://127.0.0.1:8896/avian/api/config.php \
+  >/tmp/avian-api-body
+grep -Fq '"RESET_AT_MIDNIGHT":true' /tmp/avian-api-body \
+  || fail "midnight reset setting did not round trip as a boolean"
+
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -b /tmp/avian-cookie -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' --data '{"RESET_AT_MIDNIGHT":1}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 400 ] || fail "non-boolean midnight reset setting was accepted"
+grep -Fxq 'RESET_AT_MIDNIGHT=1' "$conf" \
+  || fail "invalid midnight reset setting changed the config"
+
+code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
+  -b /tmp/avian-cookie -X POST -H 'Content-Type: application/json' \
+  -H 'X-Avian-Action: 1' --data '{"RESET_AT_MIDNIGHT":false}' \
+  http://127.0.0.1:8896/avian/api/config.php)
+[ "$code" = 200 ] || fail "midnight reset setting could not be disabled"
+grep -Fxq 'RESET_AT_MIDNIGHT=0' "$conf" \
+  || fail "disabled midnight reset setting did not reach the root config writer"
+
 # A confirmed-idle response can be delayed in transit until after another tab
 # creates a fresh session. It must not carry an expiry for the shared cookie.
 curl -fsS -b /tmp/avian-cookie http://127.0.0.1:8896/avian/make-idle.php \
@@ -560,9 +593,9 @@ code=$(curl -sS -o /tmp/avian-api-body -w '%{http_code}' \
   http://127.0.0.1:8896/avian/api/config.php)
 [ "$code" = 200 ] || fail "API setup did not establish required mode"
 
-expect_failure "protected Icecast restart" "LAN password protection is enabled" \
+expect_failure "protected Icecast restart" "Educators profile state is unsafe or missing" \
   "$admin" restart icecast2
-expect_failure "protected Icecast start condition" "password protection is enabled" \
+expect_failure "protected Icecast start condition" "Educators profile state is unsafe or missing" \
   "$admin" icecast-start-allowed
 state_snapshot=$(cat /var/lib/avian-visitors/admin-auth.state)
 printf 'malformed\n' >/var/lib/avian-visitors/admin-auth.state

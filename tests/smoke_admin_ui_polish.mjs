@@ -18,14 +18,27 @@ function functionSource(name) {
   let depth = 0;
   let quote = '';
   let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
   for (let index = body; index < apt.length; index += 1) {
     const char = apt[index];
+    const next = apt[index + 1];
+    if (lineComment) {
+      if (char === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (char === '*' && next === '/') { blockComment = false; index += 1; }
+      continue;
+    }
     if (quote) {
       if (escaped) escaped = false;
       else if (char === '\\') escaped = true;
       else if (char === quote) quote = '';
       continue;
     }
+    if (char === '/' && next === '/') { lineComment = true; index += 1; continue; }
+    if (char === '/' && next === '*') { blockComment = true; index += 1; continue; }
     if (char === '"' || char === "'" || char === '`') {
       quote = char;
       continue;
@@ -732,6 +745,31 @@ assert.match(functionSource('renderAdminSettings'), /wireLabelsPreference\(admin
 
 assert.match(apt, /themeRow\(\)[\s\S]{0,100}labelsRow\(\)[\s\S]{0,100}atlasAlwaysAllRow\(\)[\s\S]{0,100}atlasClassicRow\(\)[\s\S]{0,120}settingsText\('SITE_NAME', 'Station name'/,
   'Station name finishes the appearance group beneath Classic Atlas cards');
+assert.match(apt, /settingsSlider\('OVERLAP',[\s\S]{0,180}settingsToggle\('RESET_AT_MIDNIGHT', 'Reset at midnight'/,
+  'Reset at midnight uses the standard Settings switch beside detection controls');
+assert.match(functionSource('saveSettings'), /resetAtMidnightChanged[\s\S]*!Object\.prototype\.hasOwnProperty\.call\(pending, 'RESET_AT_MIDNIGHT'\)[\s\S]*refreshAll\(\)/,
+  'a saved midnight preference refreshes data unless a newer toggle value is pending');
+assert.match(functionSource('renderAtlas'), /DATA\.recent && DATA\.recent\.window_start[\s\S]*Date\.parse/,
+  'Atlas lifer badges use the server-owned window start');
+const windowLabelContext = {};
+vm.createContext(windowLabelContext);
+vm.runInContext(functionSource('windowLabel'), windowLabelContext);
+assert.equal(windowLabelContext.windowLabel(24, { midnight_clamped: true }), 'since midnight',
+  'a clamped window is labeled from station midnight');
+assert.equal(windowLabelContext.windowLabel(24, { midnight_clamped: false }), 'past 24h',
+  'an unclamped 24 hour window keeps its rolling label');
+assert.equal(windowLabelContext.windowLabel(168, null), 'past 7d',
+  'the seven day label stays explicitly rolling');
+assert.match(css, /\.admin-settings \.menu-row\s*\{\s*border-radius:\s*0/,
+  'Settings row separators have square ends instead of card-like rounded caps');
+assert.match(css, /\.admin-settings section > \.menu-row \+ \.menu-row\s*\{[\s\S]*border-top:\s*1px solid var\(--hairline\);\s*box-shadow:\s*none/,
+  'appearance, API, recording, and disk rows share one edge-to-edge theme hairline');
+assert.match(css, /\.settings-retention > \.birdweather-control,[\s\S]*\.settings-retention > \.archive-settings-control\s*\{[\s\S]*border-top:\s*1px solid var\(--hairline\);\s*box-shadow:\s*none/,
+  'LAN, BirdWeather, and Nightly Drive boundaries use the same straight theme hairline');
+assert.match(css, /\.admin-settings \.settings-retention > \.archive-settings-control \+ \.menu-row\s*\{[\s\S]*border-top:\s*1px solid var\(--hairline\);\s*box-shadow:\s*none/,
+  'Preserve all recordings begins with the same square-ended retention divider');
+assert.doesNotMatch(css, /\.settings-retention > \.birdweather-control,[\s\S]{0,260}box-shadow:\s*inset[^}]*rgba\(26,22,18/,
+  'retention separators do not leak light-only shadow colors into dark mode');
 assert.match(functionSource('archiveDetail'), /class="archive-button quiet archive-run-button"/,
   'Nightly Drive Run now uses the same light secondary treatment as nearby controls');
 const archiveMarkupContext = {
@@ -938,17 +976,27 @@ assert.equal(disk.buttons[0].getAttribute('aria-current'), 'true',
 let adminVisible = true;
 let frame = null;
 let packCount = 0;
+let frameRequests = 0;
+let settleCallback = null;
 const atlasContext = {
   document: {
     body: { classList: { contains() { return adminVisible; } } },
     getElementById() { return {}; },
   },
-  requestAnimationFrame(callback) { frame = callback; return 1; },
+  requestAnimationFrame(callback) { frame = callback; frameRequests += 1; return frameRequests; },
   cancelAnimationFrame() { frame = null; },
+  setTimeout(callback) { settleCallback = callback; return 1; },
+  clearTimeout() { settleCallback = null; },
   packAtlasGrids() { packCount += 1; },
 };
 vm.createContext(atlasContext);
-vm.runInContext(`var atlasVisibilityPackFrame = 0; ${functionSource('queueVisibleAtlasPack')}`, atlasContext);
+vm.runInContext([
+  'var atlasVisibilityPackFrame = 0;',
+  'var atlasVisibilityPackSettleTimer = 0;',
+  'var atlasResizeSettling = false;',
+  functionSource('queueVisibleAtlasPack'),
+  functionSource('handleAtlasResize'),
+].join('\n'), atlasContext);
 atlasContext.queueVisibleAtlasPack();
 frame();
 assert.equal(packCount, 0, 'Atlas does not measure while the admin overlay hides it');
@@ -956,6 +1004,23 @@ adminVisible = false;
 atlasContext.queueVisibleAtlasPack();
 frame();
 assert.equal(packCount, 1, 'Atlas repacks as soon as the admin overlay releases it');
+const coalescedFrameStart = frameRequests;
+const coalescedPackStart = packCount;
+atlasContext.handleAtlasResize();
+atlasContext.queueVisibleAtlasPack();
+atlasContext.queueVisibleAtlasPack();
+assert.equal(frameRequests - coalescedFrameStart, 1,
+  'resize and admin-close requests share one immediate Atlas frame');
+frame();
+assert.equal(packCount - coalescedPackStart, 1,
+  'the shared immediate frame measures Atlas once');
+assert.equal(typeof settleCallback, 'function', 'resize retains one trailing settled measurement');
+settleCallback();
+frame();
+assert.equal(packCount - coalescedPackStart, 2,
+  'resize plus admin close produce one immediate and one settled pack, never a duplicate third pack');
+assert.doesNotMatch(functionSource('handleAtlasResize'), /packAtlasGrids|requestAnimationFrame/,
+  'the resize path delegates to the shared admin-aware scheduler');
 
 function closeAdminPackCount(wasAdminOn, section) {
   let count = 0;
@@ -987,15 +1052,17 @@ assert.equal(closeAdminPackCount(false, null), 0,
 
 const adminHashContext = {
   location: { hash: '#admin=settings' },
-  ADMIN_TITLES: { settings: 'Settings', system: 'System', logs: 'Logs', tools: 'Tools' },
+  educatorsAvailable: true,
+  ADMIN_TITLES: { settings: 'Settings', system: 'System', logs: 'Logs', tools: 'Tools', educators: 'Educators' },
 };
 vm.createContext(adminHashContext);
 vm.runInContext(functionSource('readAdminHash'), adminHashContext);
 assert.equal(adminHashContext.readAdminHash(), 'settings', 'a current native admin hash still resolves');
 adminHashContext.location.hash = '#admin=educators';
-assert.equal(adminHashContext.readAdminHash(), null, 'the removed Educators deep link is ignored');
-assert.doesNotMatch(apt, /\beducators?\b/i,
-  'the removed Educators workspace has no production frontend residue');
+assert.equal(adminHashContext.readAdminHash(), 'educators', 'the enabled Educators deep link resolves exactly');
+adminHashContext.educatorsAvailable = false;
+assert.equal(adminHashContext.readAdminHash(), null, 'a stale Educators deep link stays closed while the profile is disabled');
+adminHashContext.educatorsAvailable = true;
 adminHashContext.location.hash = '#admin=constructor';
 assert.equal(adminHashContext.readAdminHash(), null, 'inherited object names cannot become admin routes');
 adminHashContext.location.hash = '#admin=tools-extra';
@@ -1008,7 +1075,7 @@ gateSelectors.forEach(function (selector) {
     'gate off and gate on must not select or reposition the Atlas');
 });
 
-assert.match(html, /styles\.css\?v=r188/, 'the polished styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r214/, 'the polished behavior has a fresh cache key');
+assert.match(html, /styles\.css\?v=r196/, 'the polished styles have a fresh cache key');
+assert.match(html, /apt\.js\?v=r234/, 'the polished behavior has a fresh cache key');
 
 console.log('admin UI polish smoke: ok');

@@ -22,6 +22,7 @@ const writes = [];
 let syncCount = 0;
 const context = {
   currentHours: 24,
+  educatorScopeId() { return ''; },
   readLS(key, fallback) { return store.get(key) || fallback; },
   writeLS(key, value) { store.set(key, value); writes.push([key, value]); },
   syncAtlasAlwaysAll() { syncCount += 1; },
@@ -59,7 +60,7 @@ assert.equal(context.preference.atlasWindowHours(), 168, 'turning it off restore
 assert.equal(syncCount, 2, 'each toggle performs one Atlas-only sync');
 
 const renderStart = source.indexOf('function renderAtlas(');
-const renderEnd = source.indexOf('\n  var atlasResizeFrame', renderStart);
+const renderEnd = source.indexOf('\n  function handleAtlasResize', renderStart);
 const renderAtlas = source.slice(renderStart, renderEnd);
 assert.match(renderAtlas, /var atlasHours = atlasWindowHours\(\)/, 'Atlas resolves its own effective window');
 assert.doesNotMatch(renderAtlas, /currentHours/, 'Atlas rendering no longer reads the shared window directly');
@@ -70,6 +71,7 @@ assert.match(source, /Always show full atlas/, 'Settings copy is present');
 assert.match(source, /show every unlocked stamp/, 'Settings explains the result');
 assert.match(source, /\.switch:not\(\[data-labels-switch\]\):not\(\[data-atlas-always-all\]\)/,
   'client preference is excluded from Pi config autosave');
-assert.match(source, /var forHours = currentHours;/, 'collage and stats requests still use the shared window');
+assert.match(source, /var forHours = educatorScopeId\(\) \? 1000000 : currentHours;/,
+  'collage and stats use the shared window only outside an Educators scope');
 
 console.log('atlas always-all smoke: ok');

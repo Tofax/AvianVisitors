@@ -70,6 +70,22 @@ sudo /usr/local/sbin/avian-admin-control password-reset
 
 The command prompts privately for a new password. Return to **Settings** after it finishes.
 
+### Educators mode
+
+Educators mode is an optional profile for the BirdNET-Pi website. It adds a fifth menu page for starting, pausing, organizing, and reviewing listening periods. Enable it after installation over SSH:
+
+```bash
+sudo /usr/local/sbin/avian-educators enable
+```
+
+New stations can also install with the profile enabled:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitors/newinstaller.sh | bash -s -- --educators
+```
+
+Listening periods scope the Collage, Stats, Atlas, and available detection clips without copying or protecting audio files from normal retention. Saved period and folder exports require a direct local connection. See [the Educators guide](docs/educators.md) for the full workflow and privacy details.
+
 ### Updating an existing station
 
 For the first v1 update, keep the existing checkout and run:

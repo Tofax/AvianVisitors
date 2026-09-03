@@ -165,7 +165,7 @@ assert.equal(committed[0], '<article>one</article>', 'Classic markup is committe
 // Render the real Classic branch with a small data set. This validates the
 // historical card structure and proves stamp-only subsystems remain dormant.
 const renderStart = apt.indexOf('function renderAtlas(');
-const renderEnd = apt.indexOf('\n  var atlasResizeFrame', renderStart);
+const renderEnd = apt.indexOf('\n  function handleAtlasResize', renderStart);
 assert.ok(renderStart >= 0 && renderEnd > renderStart, 'renderAtlas source is present');
 const renderSource = apt.slice(renderStart, renderEnd);
 const renderGrid = {
@@ -207,6 +207,13 @@ const renderContext = {
   stopAtlasCardAudio() { stopCalls += 1; },
   clearAtlasPackedState() {},
   atlasWindowHours() { return effectiveHours; },
+  educatorScopeId() { return ''; },
+  educatorScopeGeneration: 0,
+  educatorScopeLabel() { return 'Listening period'; },
+  effectiveEducatorScope: null,
+  educatorDetectionId() { return null; },
+  adminAttr(value) { return String(value); },
+  mediaApiUrl(endpoint, params) { return `./avian/api/${endpoint}.php?sci=${encodeURIComponent(params.sci || '')}`; },
   EMPTY_WINDOW_COPY: 'none',
   fmtNK(value) { return String(value); },
   windowLabel() { return '24h'; },
@@ -603,7 +610,7 @@ assert.match(css, /#atlasGrid\[data-layout="classic"\][\s\S]*?repeat\(auto-fill,
   'Classic mode restores the historical responsive desktop grid');
 assert.match(css, /#atlasGrid\[data-layout="classic"\][\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/,
   'Classic mode restores the historical two-up mobile grid');
-assert.match(html, /styles\.css\?v=r188/, 'Classic Atlas styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r214/, 'Classic Atlas behavior has a fresh cache key');
+assert.match(html, /styles\.css\?v=r196/, 'Classic Atlas styles have a fresh cache key');
+assert.match(html, /apt\.js\?v=r234/, 'Classic Atlas behavior has a fresh cache key');
 
 console.log('classic Atlas smoke: ok');
