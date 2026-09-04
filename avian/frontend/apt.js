@@ -7579,10 +7579,10 @@
       + '  <p class="lan-auth-status" data-lan-auth-status role="status" aria-live="polite" aria-atomic="true"></p>'
       + (canChangePassword
         ? '  <form id="passwordChangeForm" class="password-change-form" data-password-change-form hidden>'
-          + '    <span class="hint">Contrasenya nova: de 12 a 64 lletres o números.</span>'
+          + '    <span class="hint">Contrasenya nova: de 6 a 64 lletres o números.</span>'
           + '    <label>Contrasenya actual<input type="password" data-password-current autocomplete="current-password" minlength="1" maxlength="64" required></label>'
-          + '    <label>Contrasenya nova<input type="password" data-password-new autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
-          + '    <label>Confirma la contrasenya nova<input type="password" data-password-confirm autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+          + '    <label>Contrasenya nova<input type="password" data-password-new autocomplete="new-password" minlength="6" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+          + '    <label>Confirma la contrasenya nova<input type="password" data-password-confirm autocomplete="new-password" minlength="6" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
           + '    <div><button type="submit" class="chip">canvia la contrasenya</button>'
           + '      <button type="button" class="chip" data-password-change-cancel>cancel·la</button></div>'
           + '  </form>'
@@ -8236,8 +8236,8 @@
         current.focus();
         return;
       }
-      if (!/^[A-Za-z0-9]{12,64}$/.test(nextValue)) {
-        note('La contrasenya nova ha de tenir entre 12 i 64 lletres o números.', true);
+      if (!/^[A-Za-z0-9]{6,64}$/.test(nextValue)) {
+        note('La contrasenya nova ha de tenir entre 6 i 64 lletres o números.', true);
         next.focus();
         return;
       }

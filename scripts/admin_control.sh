@@ -529,7 +529,7 @@ valid_admin_password() {
 }
 
 hash_admin_password() {
-  local password=$1 minimum=${2:-12} verifier
+  local password=$1 minimum=${2:-6} verifier
   valid_admin_password "$password" "$minimum" || return 1
   verifier=$(printf '%s\0' "$password" | php -r '
     $raw = stream_get_contents(STDIN);
@@ -1033,11 +1033,11 @@ case "$action" in
       printf '\n' >/dev/tty
       [ "$new_password" = "$confirmed_password" ] \
         || fail "passwords did not match"
-      valid_admin_password "$new_password" 12 \
-        || fail "password must use 12 to 64 letters or numbers"
+      valid_admin_password "$new_password" 6 \
+        || fail "password must use 6 to 64 letters or numbers"
       unset confirmed_password
     else
-      read_password_fields 1 12
+      read_password_fields 1 6
       new_password=${PASSWORD_FIELDS[0]}
     fi
     safe_root_helper "$CADDY_REFRESH" \
