@@ -180,6 +180,21 @@ valid_number() {
     'BEGIN { exit !(n >= lo && n <= hi) }'
 }
 
+valid_site_name() {
+  local value=$1
+  printf '%s' "$value" | php -r '
+    $value = stream_get_contents(STDIN);
+    $count = preg_match_all("/./us", $value, $chars);
+    exit(
+        $count !== false
+        && $count <= 60
+        && preg_match("/^[\\p{L}\\p{N} _.,\\x{27}\\x{2019}\\-]*$/u", $value) === 1
+            ? 0
+            : 1
+    );
+  '
+}
+
 valid_config_value() {
   local key=$1 value=$2
   case "$key" in
@@ -213,7 +228,7 @@ valid_config_value() {
         && { [ -z "$value" ] || [[ "$value" =~ ^[A-Za-z0-9]{1,64}$ ]]; }
       ;;
     SITE_NAME)
-      [ "${#value}" -le 60 ] && [[ "$value" =~ ^[A-Za-z0-9\ _.,\047-]*$ ]]
+      valid_site_name "$value"
       ;;
     GEMINI_API_KEY)
       [ "${#value}" -le 200 ] && [[ "$value" =~ ^[A-Za-z0-9_.\/+\=:-]*$ ]]

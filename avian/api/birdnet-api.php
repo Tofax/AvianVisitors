@@ -53,7 +53,10 @@ function publicSiteName(string $path): string {
             $raw = preg_replace('/\s+#.*$/', '', $raw) ?? '';
             $raw = trim($raw);
         }
-        if (strlen($raw) <= 60 && preg_match("/^[A-Za-z0-9 _.,'-]*$/u", $raw) === 1) {
+        $charCount = preg_match_all('/./us', $raw, $chars);
+        if ($charCount !== false
+            && $charCount <= 60
+            && preg_match("/^[\\p{L}\\p{N} _.,'?\\-]*$/u", $raw) === 1) {
             $value = $raw;
         }
     }

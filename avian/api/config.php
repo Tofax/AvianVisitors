@@ -159,7 +159,7 @@ function admin_state_revision(array $state): string {
 // Tight allowlist for string fields. The root-owned writer repeats the same
 // validation before it touches birdnet.conf.
 function safe_string_value(string $v): bool {
-    return (bool)preg_match("/^[A-Za-z0-9 _.,'-]*$/u", $v);
+    return preg_match("/^[\\p{L}\\p{N} _.,'?\\-]*$/u", $v) === 1;
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -240,7 +240,11 @@ if ($method === 'POST') {
         } elseif ($spec['type'] === 'string') {
             if (!is_string($v)) { $errors[$k] = 'not a string'; continue; }
             $v = (string)$v;
-            if (strlen($v) > ($spec['maxlen'] ?? 200)) { $errors[$k] = 'too long'; continue; }
+            $charCount = preg_match_all('/./us', $v, $matches);
+            if ($charCount === false || $charCount > ($spec['maxlen'] ?? 200)) {
+                $errors[$k] = 'too long';
+                continue;
+            }
             // String fields land in birdnet.conf which upstream shell tools
             // source. Keep shell metacharacters out before the root writer
             // repeats the same validation.
