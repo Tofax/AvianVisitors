@@ -417,7 +417,7 @@ reconcile_required_policy() {
     || ! commit_auth_state 1 "$epoch" "$verifier"; then
     return 0
   fi
-  AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null 2>&1 \
+  AVIAN_AUTH_LOCK_FD=9 AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null 2>&1 \
     || refresh_status=$?
   REQUIRED_RECOVERY_STATUS=$refresh_status
   if [ "$refresh_status" = 0 ]; then
@@ -869,14 +869,14 @@ case "$action" in
     if [ "$old_policy" = "$2" ]; then
       refresh_status=0
       if [ "$old_policy" = 1 ]; then
-        AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+        AVIAN_AUTH_LOCK_FD=9 AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
         case "$refresh_status" in
           0) ;;
           20) fail "LAN auth remains enabled, but an older live audio connection may remain; over SSH run sudo systemctl stop icecast2 and verify the service is inactive" ;;
           *) fail "Caddy auth refresh failed; LAN password protection remains authoritative" ;;
         esac
       else
-        "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+        AVIAN_AUTH_LOCK_FD=9 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
         case "$refresh_status" in
           0) ;;
           21) fail "LAN auth remains disabled, but Icecast could not be restored; inspect the service over SSH" ;;
@@ -892,13 +892,13 @@ case "$action" in
       new_epoch=$((old_epoch + 1))
       prepare_auth_state 1 "$new_epoch" "$old_verifier"
       refresh_status=0
-      AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
         "$CADDY_REFRESH" >/dev/null || refresh_status=$?
       case "$refresh_status" in
         0|20) ;;
         *)
           restore_status=0
-          "$CADDY_REFRESH" >/dev/null || restore_status=$?
+          AVIAN_AUTH_LOCK_FD=9 "$CADDY_REFRESH" >/dev/null || restore_status=$?
           case "$restore_status" in
             0)
               fail "Caddy auth refresh failed; setting was not changed; the prior access policy and live audio state were restored and verified"
@@ -926,7 +926,7 @@ case "$action" in
       new_epoch=$((old_epoch + 1))
       write_auth_state 0 "$new_epoch" "$old_verifier"
       refresh_status=0
-      "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+      AVIAN_AUTH_LOCK_FD=9 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
       if [ "$refresh_status" != 0 ]; then
         rollback_epoch=$((old_epoch + 2))
         reconcile_required_policy "$rollback_epoch" "$old_verifier"
@@ -959,9 +959,9 @@ case "$action" in
     if admin_password_matches "$old_verifier" "$new_password"; then
       refresh_status=0
       if [ "$old_policy" = 1 ]; then
-        AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+        AVIAN_AUTH_LOCK_FD=9 AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
       else
-        "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+        AVIAN_AUTH_LOCK_FD=9 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
       fi
       case "$refresh_status" in
         0) ;;
@@ -982,10 +982,10 @@ case "$action" in
     prepare_auth_state 1 "$new_epoch" "$new_verifier"
     transition_status=0
     if [ "$old_policy" = 1 ]; then
-      AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
         "$CADDY_REFRESH" >/dev/null || transition_status=$?
     else
-      AVIAN_AUTH_STATE_CANDIDATE="$state_temp" "$CADDY_REFRESH" >/dev/null \
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_AUTH_STATE_CANDIDATE="$state_temp" "$CADDY_REFRESH" >/dev/null \
         || transition_status=$?
     fi
     case "$transition_status" in
@@ -1004,9 +1004,9 @@ case "$action" in
     fi
     refresh_status=0
     if [ "$old_policy" = 1 ]; then
-      AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
     else
-      "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+      AVIAN_AUTH_LOCK_FD=9 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
     fi
     case "$refresh_status" in
       0) ;;
@@ -1062,10 +1062,10 @@ case "$action" in
     prepare_auth_state 1 "$new_epoch" "$new_verifier"
     transition_status=0
     if [ "$old_policy" = 1 ]; then
-      AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_AUTH_STATE_CANDIDATE="$state_temp" AVIAN_CLOSE_STREAMS=1 \
         "$CADDY_REFRESH" >/dev/null || transition_status=$?
     else
-      AVIAN_AUTH_STATE_CANDIDATE="$state_temp" "$CADDY_REFRESH" >/dev/null \
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_AUTH_STATE_CANDIDATE="$state_temp" "$CADDY_REFRESH" >/dev/null \
         || transition_status=$?
     fi
     case "$transition_status" in
@@ -1085,9 +1085,9 @@ case "$action" in
     fi
     refresh_status=0
     if [ "$old_policy" = 1 ]; then
-      AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+      AVIAN_AUTH_LOCK_FD=9 AVIAN_CLOSE_STREAMS=1 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
     else
-      "$CADDY_REFRESH" >/dev/null || refresh_status=$?
+      AVIAN_AUTH_LOCK_FD=9 "$CADDY_REFRESH" >/dev/null || refresh_status=$?
     fi
     case "$refresh_status" in
       0|20|21) ;;
