@@ -281,7 +281,7 @@ if ($method === 'POST') {
             || preg_match('/^[A-Za-z0-9]{12,64}$/D', $newPassword) !== 1) {
             http_response_code(400);
             echo json_encode([
-                'error' => 'password must use 12 to 64 letters or numbers',
+                'error' => 'la contrasenya ha de tenir entre 12 i 64 lletres o números',
             ]);
             exit;
         }
@@ -289,7 +289,7 @@ if ($method === 'POST') {
         if (empty($adminState['valid']) || empty($adminState['configured'])) {
             http_response_code(409);
             echo json_encode([
-                'error' => 'initialize the admin password from SSH first',
+                'error' => 'primer inicialitza la contrasenya d\'administració des d\'SSH',
                 'recovery' => true,
             ]);
             exit;
@@ -318,7 +318,7 @@ if ($method === 'POST') {
                     $finalAdminState
                 )
                     ?? ($reauth
-                        ? 'Unlock with your current password. If that fails, reset it from SSH.'
+                        ? 'Desbloqueja-ho amb la contrasenya actual. Si falla, restableix-la des d\'SSH.'
                         : null),
             ]);
             exit;
@@ -336,7 +336,7 @@ if ($method === 'POST') {
         if (empty($adminState['valid']) || empty($adminState['configured'])) {
             http_response_code(409);
             echo json_encode([
-                'error' => 'set the admin password from SSH first',
+                'error' => 'primer configura la contrasenya d\'administració des d\'SSH',
                 'recovery' => true,
             ]);
             exit;
@@ -393,7 +393,7 @@ if ($method === 'POST') {
         http_response_code(503);
         echo json_encode([
             'ok' => false,
-            'error' => 'security setting saved; sign in again',
+            'error' => 's\'ha desat la configuració de seguretat; torna a iniciar sessió',
             'reauth' => true,
         ]);
         exit;
@@ -414,7 +414,7 @@ if ($method === 'POST') {
             http_response_code(500);
             echo json_encode([
                 'ok' => false,
-                'error' => 'settings saved, but a BirdNET service did not restart',
+                'error' => 's\'ha desat la configuració, però un servei de BirdNET no s\'ha reiniciat',
                 'restarted' => $restarted,
             ]);
             exit;

@@ -633,7 +633,7 @@ function avian_require_explicit_admin_credential(
     $server = $_SERVER;
     if (!avian_admin_credential_requested($server)
         || !avian_has_authorization_header($server)) {
-        avian_api_fail(401, 'password confirmation required');
+        avian_api_fail(401, 'cal confirmar la contrasenya');
     }
     $state = $state ?? avian_admin_state();
     if (empty($state['valid']) || empty($state['configured'])) {
@@ -646,7 +646,7 @@ function avian_require_explicit_admin_credential(
     if ($reuseRequestProof && avian_admin_request_proved()) {
         $verified = avian_verified_request_password(null, true);
         if (is_string($verified)) return $verified;
-        avian_api_fail(401, 'unauthorized');
+        avian_api_fail(401, 'no autoritzat');
     }
     $credentials = avian_basic_credentials($server);
     $user = $credentials[0] ?? '';
@@ -654,9 +654,9 @@ function avian_require_explicit_admin_credential(
     $attempt = avian_admin_password_attempt($server, $state, $user, $provided);
     if ($attempt['retry'] > 0) {
         header('Retry-After: ' . $attempt['retry']);
-        avian_api_fail(429, 'try again shortly');
+        avian_api_fail(429, 'torna-ho a provar d\'aquí a poc');
     }
-    if (!$attempt['allowed']) avian_api_fail(401, 'unauthorized');
+    if (!$attempt['allowed']) avian_api_fail(401, 'no autoritzat');
     avian_verified_request_password($provided);
     return $provided;
 }
@@ -683,7 +683,7 @@ function avian_require_admin_proof(): void {
             return;
         }
         if (!avian_create_admin_session($server, $state)) {
-            avian_api_fail(503, 'authentication session unavailable');
+            avian_api_fail(503, 'la sessió d\'autenticació no està disponible');
         }
         avian_admin_request_proved(true);
         return;
@@ -693,7 +693,7 @@ function avian_require_admin_proof(): void {
         avian_admin_request_proved(true);
         return;
     }
-    avian_api_fail(401, 'unauthorized');
+    avian_api_fail(401, 'no autoritzat');
 }
 
 function avian_require_admin(): void {

@@ -25,7 +25,7 @@ function run_archive_control(string $control, string $action): array {
             'status' => 503,
             'body' => [
                 'ok' => false,
-                'error' => 'archive control is not installed',
+                'error' => 'el control de l\'arxiu no està instal·lat',
                 'hint' => 'reinstall services once after updating AvianVisitors',
             ],
         ];
@@ -38,7 +38,7 @@ function run_archive_control(string $control, string $action): array {
     if (!is_array($decoded)) {
         return [
             'status' => 500,
-            'body' => ['ok' => false, 'error' => 'archive control returned an invalid response'],
+            'body' => ['ok' => false, 'error' => 'el control de l\'arxiu ha retornat una resposta no vàlida'],
         ];
     }
     return ['status' => $rc === 0 ? 200 : 409, 'body' => $decoded];
@@ -61,7 +61,7 @@ if (!in_array($action, $allowed, true)) {
     archive_response(400, ['ok' => false, 'error' => 'unknown action']);
 }
 if ($action === 'purge-on' && ($body['confirm'] ?? '') !== 'verified-local-files') {
-    archive_response(400, ['ok' => false, 'error' => 'cleanup confirmation required']);
+    archive_response(400, ['ok' => false, 'error' => 'cal confirmar la neteja']);
 }
 
 $result = run_archive_control($control, $action);

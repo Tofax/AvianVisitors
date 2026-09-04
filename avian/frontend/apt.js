@@ -4519,22 +4519,22 @@
     btn.setAttribute('data-state', state);
     if (state === 'playing') {
       btn.setAttribute('data-active', 'true');
-      btn.innerHTML = ICON_PAUSE + '<span>stop</span>';
+      btn.innerHTML = ICON_PAUSE + '<span>atura</span>';
     } else if (state === 'loading') {
       btn.setAttribute('data-active', 'true');
       btn.innerHTML = ICON_PLAY + '<span>...</span>';
     } else if (state === 'missing') {
       btn.setAttribute('data-active', 'false');
-      btn.innerHTML = ICON_PLAY + '<span>no audio</span>';
+      btn.innerHTML = ICON_PLAY + '<span>sense àudio</span>';
       setTimeout(function () {
         if (btn.getAttribute('data-state') === 'missing') {
-          btn.innerHTML = ICON_PLAY + '<span>play</span>';
+          btn.innerHTML = ICON_PLAY + '<span>reprodueix</span>';
           btn.setAttribute('data-state', 'idle');
         }
       }, 2200);
     } else {
       btn.setAttribute('data-active', 'false');
-      btn.innerHTML = ICON_PLAY + '<span>play</span>';
+      btn.innerHTML = ICON_PLAY + '<span>reprodueix</span>';
     }
   }
   function clearAtlasCardProgress(card) {
@@ -4770,7 +4770,7 @@
           + ' data-sci="' + escHtml(s.sci) + '" data-com="' + escHtml(s.com || '') + '" data-audio="' + escHtml(audioSrc) + '"'
           + ' data-acc="' + (accession[s.sci] || 0) + '"'
           + ' data-fresh="' + (isLifer ? '1' : '0') + '" data-win="' + win + '" data-total="' + total + '">'
-          + (isLifer ? '<span class="lifer-badge" title="new to the life list in this window">lifer</span>' : '')
+          + (isLifer ? '<span class="lifer-badge" title="nova incorporació a la llista de vida en aquest període">nova</span>' : '')
           + '<div class="stat">' + statRows + '</div>'
           + '<div class="img-wrap">'
           + '<img loading="lazy" decoding="async" src="' + escHtml(imageSrc) + '" alt="' + escHtml(common) + '">'
@@ -4779,8 +4779,8 @@
           + '<div class="sci">' + escHtml(s.sci) + '</div>'
           + '<div class="spectro-wrap" aria-hidden="true"></div>'
           + '<div class="actions">'
-          + '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
-          + ICON_PLAY + '<span>play</span>'
+          + '<button type="button" class="chip play" data-action="play" aria-label="reprodueix l’enregistrament">'
+          + ICON_PLAY + '<span>reprodueix</span>'
           + '</button>'
           + '<a class="chip ext" href="' + escHtml(birdWiki) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
           + (birdEbird ? '<a class="chip ext" href="' + escHtml(birdEbird) + '" target="_blank" rel="noopener" aria-label="eBird">ebird</a>' : '')
@@ -5434,8 +5434,8 @@
     locked.style.display = '';
     if (wasAdminOn) queueVisibleAtlasPack();
     lockHint.textContent = recovery
-      ? 'Admin password is missing or invalid. Over SSH, run sudo /usr/local/sbin/avian-admin-control password-reset.'
-      : (typeof message === 'string' ? message : 'Your admin session expired. Unlock to continue.');
+      ? 'La contrasenya d\'administració falta o no és vàlida. Per SSH, executa sudo /usr/local/sbin/avian-admin-control password-reset.'
+      : (typeof message === 'string' ? message : 'La sessió d\'administració ha caducat. Desbloqueja-la per continuar.');
     lockHint.classList.toggle('lock-err', !!lockHint.textContent);
     if (pendingAdminSection && revealDrawer !== false) {
       openDd();
@@ -5477,7 +5477,7 @@
   }
 
   function signalAdminLock(message) {
-    var event = { type: 'lock', at: Date.now(), message: typeof message === 'string' ? message : 'Admin controls locked.' };
+    var event = { type: 'lock', at: Date.now(), message: typeof message === 'string' ? message : 'Controls d\'administració bloquejats.' };
     try { localStorage.setItem(ADMIN_LOCK_KEY, JSON.stringify(event)); } catch (e) {}
     if (adminChannel) {
       try { adminChannel.postMessage(event); } catch (e) {}
@@ -5548,13 +5548,13 @@
       adminLastActivityAt = Math.max(adminLastActivityAt, data.at);
       scheduleAdminIdleLock();
     } else if (data.type === 'lock') {
-      showAdminLocked(typeof data.message === 'string' ? data.message : 'Admin controls locked in another tab.', false);
+      showAdminLocked(typeof data.message === 'string' ? data.message : 'Els controls d\'administració s\'han bloquejat en una altra pestanya.', false);
       // A stale request from another tab can report its old session after a
       // policy or password change has already installed a fresh shared cookie.
       // Recheck the server. A real logout stays locked because that probe is 401.
       tryAutoUnlock();
     } else if (data.type === 'session-replaced') {
-      showAdminLocked('Admin session changed in another tab.', false);
+      showAdminLocked('La sessió d\'administració ha canviat en una altra pestanya.', false);
       tryAutoUnlock();
     }
   }
@@ -5590,8 +5590,8 @@
           || requestViewGeneration !== adminViewGeneration) {
           return cancelledAdminRequest('stale admin error response');
         }
-        showAdminLocked('Your admin session expired. Unlock to continue.', !!body.recovery);
-        signalAdminLock('Admin session expired. Unlock to continue.');
+        showAdminLocked('La sessió d\'administració ha caducat. Desbloqueja-la per continuar.', !!body.recovery);
+        signalAdminLock('La sessió d\'administració ha caducat. Desbloqueja-la per continuar.');
         tryAutoUnlock();
         return cancelledAdminRequest('admin session expired');
       });
@@ -5666,7 +5666,7 @@
           scheduleAdminIdleLock();
           return;
         }
-        var message = 'Admin controls locked after 30 minutes of inactivity.';
+        var message = 'Els controls d\'administració s\'han bloquejat després de 30 minuts d\'inactivitat.';
         showAdminLocked(message, !!result.recovery);
         signalAdminLock(message);
       }).catch(function () {
@@ -5675,7 +5675,7 @@
           tryAutoUnlock();
           return;
         }
-        showAdminLocked('Admin controls are hidden because the session status could not be checked. Unlock to continue.', false);
+        showAdminLocked('Els controls d\'administració estan ocults perquè no s\'ha pogut comprovar l\'estat de la sessió. Desbloqueja-la per continuar.', false);
       }).then(function () { adminAutoLocking = false; });
       return;
     }
@@ -5759,7 +5759,7 @@
     var hdr = adminBasicAuthorization(p);
     if (!hdr) {
       passInput.value = '';
-      lockHint.textContent = 'Password must use 1 to 64 UTF-8 bytes without control characters.';
+      lockHint.textContent = 'La contrasenya ha de tenir entre 1 i 64 bytes UTF-8 i no pot contenir caràcters de control.';
       lockHint.classList.add('lock-err');
       passInput.focus();
       return;
@@ -6400,49 +6400,49 @@
     var configured = !!security.password_configured;
     var reconciliationNeeded = !!security.policy_reconciliation_needed;
     var hint = reconciliationNeeded
-      ? 'the loaded access policy differs from this saved setting'
+      ? 'la política d\'accés carregada és diferent d\'aquesta configuració desada'
       : configured
-      ? 'lock Settings, System, Logs, and Tools on direct local connections'
-      : 'From SSH, run: sudo /usr/local/sbin/avian-admin-control password-reset';
-    var details = hint + '. Collage, Atlas, Stats, and recordings stay public. On plain HTTP, this blocks casual access '
-      + 'but does not protect your password from a hostile network.';
+      ? 'bloqueja Configuració, Sistema, Registres i Eines en connexions locals directes'
+      : 'Des d\'SSH, executa: sudo /usr/local/sbin/avian-admin-control password-reset';
+    var details = hint + '. El Collage, l\'Atles, les Estadístiques i els enregistraments continuen sent públics. Amb HTTP sense xifrar, això bloqueja l\'accés casual '
+      + 'però no protegeix la contrasenya davant d\'una xarxa hostil.';
     var canChangePassword = on && configured;
     return ''
       + '<div class="lan-auth-control" data-lan-auth-control' + (canChangePassword ? ' data-password-change' : '') + '>'
       + '  <div class="menu-row">'
-      + '    <div class="access-copy"><span class="label">Require password on local network</span>'
-      + settingsInfoMarkup('lanAuthTip', 'About local password protection', details)
+      + '    <div class="access-copy"><span class="label">Demana contrasenya a la xarxa local</span>'
+      + settingsInfoMarkup('lanAuthTip', 'Sobre la protecció amb contrasenya local', details)
       + '    </div>'
       + '    <div class="lan-auth-head-actions">'
       + (canChangePassword
-        ? '      <button type="button" class="settings-disclosure" data-password-change-open aria-controls="passwordChangeForm" aria-expanded="false">change admin password</button>'
+        ? '      <button type="button" class="settings-disclosure" data-password-change-open aria-controls="passwordChangeForm" aria-expanded="false">canvia la contrasenya d’administració</button>'
         : '')
       + '    <button type="button" class="switch" role="switch" data-lan-auth'
-      + '      aria-label="Require password on local network" aria-describedby="lanAuthTip"'
+      + '      aria-label="Demana contrasenya a la xarxa local" aria-describedby="lanAuthTip"'
       + '      aria-checked="' + (on ? 'true' : 'false') + '"'
       + ((!configured && !on) ? ' disabled' : '') + '></button>'
       + '    </div>'
       + '  </div>'
       + (reconciliationNeeded
-        ? '  <button type="button" class="chip lan-auth-reconcile" data-lan-auth-reconcile>reapply saved access setting</button>'
+        ? '  <button type="button" class="chip lan-auth-reconcile" data-lan-auth-reconcile>torna a aplicar la configuració d’accés desada</button>'
         : '')
       + '  <form class="lan-auth-confirm" data-lan-auth-confirm hidden>'
-      + '    <label for="lanAuthPassword">Confirm your admin password</label>'
+      + '    <label for="lanAuthPassword">Confirma la contrasenya d’administració</label>'
       + '    <div><span class="lan-password-field"><input id="lanAuthPassword" type="password" autocomplete="current-password">'
-      + '      <button type="button" class="lan-password-visibility" data-lan-password-visibility aria-label="Show admin password" aria-pressed="false">'
+      + '      <button type="button" class="lan-password-visibility" data-lan-password-visibility aria-label="Mostra la contrasenya d’administració" aria-pressed="false">'
       + '        <span class="eye-show">' + ICON_EYE + '</span><span class="eye-hide">' + ICON_EYE_OFF + '</span></button></span>'
-      + '      <button type="submit" class="chip">turn on</button>'
-      + '      <button type="button" class="chip" data-lan-auth-cancel>cancel</button></div>'
+      + '      <button type="submit" class="chip">activa</button>'
+      + '      <button type="button" class="chip" data-lan-auth-cancel>cancel·la</button></div>'
       + '  </form>'
       + '  <p class="lan-auth-status" data-lan-auth-status role="status" aria-live="polite" aria-atomic="true"></p>'
       + (canChangePassword
         ? '  <form id="passwordChangeForm" class="password-change-form" data-password-change-form hidden>'
-          + '    <span class="hint">New password: 12 to 64 letters or numbers.</span>'
-          + '    <label>Current password<input type="password" data-password-current autocomplete="current-password" minlength="1" maxlength="64" required></label>'
-          + '    <label>New password<input type="password" data-password-new autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
-          + '    <label>Confirm new password<input type="password" data-password-confirm autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
-          + '    <div><button type="submit" class="chip">change password</button>'
-          + '      <button type="button" class="chip" data-password-change-cancel>cancel</button></div>'
+          + '    <span class="hint">Contrasenya nova: de 12 a 64 lletres o números.</span>'
+          + '    <label>Contrasenya actual<input type="password" data-password-current autocomplete="current-password" minlength="1" maxlength="64" required></label>'
+          + '    <label>Contrasenya nova<input type="password" data-password-new autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+          + '    <label>Confirma la contrasenya nova<input type="password" data-password-confirm autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9]+" required></label>'
+          + '    <div><button type="submit" class="chip">canvia la contrasenya</button>'
+          + '      <button type="button" class="chip" data-password-change-cancel>cancel·la</button></div>'
           + '  </form>'
           + '  <p class="lan-auth-status" data-password-change-status role="status" aria-live="polite" aria-atomic="true"></p>'
         : '')
@@ -6461,49 +6461,49 @@
       return '<button type="button" data-v="' + level + '" aria-current="'
         + (level === privacy ? 'true' : 'false') + '">' + level + '</button>';
     }).join('');
-    var sharingDetails = 'BirdWeather receives each bird name, confidence, time, and your station coordinates. '
-      + 'Audio is separate and stays off for a new station unless you turn it on.';
-    var audioDetails = 'This sends the complete recording BirdNET analyzed, not only the detected call. '
-      + 'It may contain people or other nearby sounds.';
-    var privacyDetails = 'BirdNET still analyzes the audio. Level 0 checks the top 10 model candidates for Human, 1 about 60, 2 about 120, and 3 about 180. '
-      + 'A match suppresses local bird detections for that 3-second window and its neighbors. Full recordings are not redacted.';
+    var sharingDetails = 'BirdWeather rep el nom de cada ocell, la confiança, l\'hora i les coordenades de l\'estació. '
+      + 'L\'àudio es gestiona per separat i queda desactivat en una estació nova fins que l\'activis.';
+    var audioDetails = 'Això envia l\'enregistrament complet que BirdNET ha analitzat, no només el reclam detectat. '
+      + 'Pot contenir veus de persones o altres sons propers.';
+    var privacyDetails = 'BirdNET continua analitzant l\'àudio. El nivell 0 comprova els 10 candidats principals del model per detectar Human; l\'1, uns 60; el 2, uns 120; i el 3, uns 180. '
+      + 'Si hi ha coincidència, se suprimeixen les deteccions locals d\'ocells d\'aquella finestra de 3 segons i de les adjacents. Els enregistraments complets no es censuren.';
     return ''
       + '<div class="birdweather-control" data-birdweather-control data-token-configured="' + (configured ? 'true' : 'false') + '">'
       + '  <div class="menu-row birdweather-head">'
-      + '    <div class="access-copy"><span class="label">Share detections with BirdWeather</span>'
-      + settingsInfoMarkup('birdweatherTip', 'About BirdWeather sharing', sharingDetails)
+      + '    <div class="access-copy"><span class="label">Comparteix les deteccions amb BirdWeather</span>'
+      + settingsInfoMarkup('birdweatherTip', 'Sobre l\'ús compartit amb BirdWeather', sharingDetails)
       + '    </div>'
       + '    <div class="birdweather-head-actions">'
-      + '      <button type="button" class="settings-disclosure" data-birdweather-disclosure aria-controls="birdweatherDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>details</button>'
+      + '      <button type="button" class="settings-disclosure" data-birdweather-disclosure aria-controls="birdweatherDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>detalls</button>'
       + '      <button type="button" class="switch" role="switch" data-birdweather-toggle'
-      + '        aria-label="Share detections with BirdWeather" aria-describedby="birdweatherTip"'
+      + '        aria-label="Comparteix les deteccions amb BirdWeather" aria-describedby="birdweatherTip"'
       + '        aria-checked="' + (enabled ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '></button>'
       + '    </div>'
       + '  </div>'
-      + (available ? '' : '  <p class="birdweather-unavailable" role="status">BirdWeather controls are unavailable on this station.</p>')
+      + (available ? '' : '  <p class="birdweather-unavailable" role="status">Els controls de BirdWeather no estan disponibles en aquesta estació.</p>')
       + '  <div id="birdweatherDetails" class="birdweather-details-shell" data-birdweather-details-shell data-open="' + (enabled ? 'true' : 'false') + '" data-settled="' + (enabled ? 'true' : 'false') + '" aria-hidden="' + (enabled ? 'false' : 'true') + '"' + (enabled ? '' : ' hidden inert') + '>'
       + '  <form class="birdweather-details" data-birdweather-details>'
       + '    <div class="birdweather-token">'
       + '      <div class="birdweather-token-editor" data-birdweather-token-editor' + (configured ? ' hidden' : '') + '>'
-      + '        <a id="birdweatherTokenLabel" href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">Station token</a>'
-      + '        <input type="text" data-birdweather-token aria-labelledby="birdweatherTokenLabel" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="161" placeholder="station token">'
+      + '        <a id="birdweatherTokenLabel" href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">Token de l’estació</a>'
+      + '        <input type="text" data-birdweather-token aria-labelledby="birdweatherTokenLabel" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="161" placeholder="token de l’estació">'
       + '      </div>'
       + '      <div class="birdweather-token-actions" data-birdweather-token-actions' + (configured ? '' : ' hidden') + '>'
-      + '        <a class="birdweather-station-link" data-birdweather-station href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">view station on BirdWeather</a>'
-      + '        <button type="button" class="birdweather-forget" data-birdweather-forget>forget token</button>'
+      + '        <a class="birdweather-station-link" data-birdweather-station href="https://app.birdweather.com/account/stations" target="_blank" rel="noopener">mostra l’estació a BirdWeather</a>'
+      + '        <button type="button" class="birdweather-forget" data-birdweather-forget>oblida el token</button>'
       + '      </div>'
       + '    </div>'
       + '    <div class="menu-row">'
-      + '      <div class="access-copy"><span class="label">Upload analyzed recordings</span>'
-      + settingsInfoMarkup('birdweatherAudioTip', 'About BirdWeather audio uploads', audioDetails)
+      + '      <div class="access-copy"><span class="label">Puja els enregistraments analitzats</span>'
+      + settingsInfoMarkup('birdweatherAudioTip', 'Sobre la pujada d\'àudio a BirdWeather', audioDetails)
       + '      </div>'
       + '      <button type="button" class="switch" role="switch" data-birdweather-audio'
-      + '        aria-label="Upload analyzed recordings" aria-describedby="birdweatherAudioTip"'
+      + '        aria-label="Puja els enregistraments analitzats" aria-describedby="birdweatherAudioTip"'
       + '        aria-checked="' + (state.upload_audio ? 'true' : 'false') + '"></button>'
       + '    </div>'
       + '    <div class="menu-row">'
-      + '      <div class="access-copy"><span class="label">Human-sound filter</span>'
-      + settingsInfoMarkup('birdweatherPrivacyTip', 'About the local human-sound filter', privacyDetails)
+      + '      <div class="access-copy"><span class="label">Filtre de sons humans</span>'
+      + settingsInfoMarkup('birdweatherPrivacyTip', 'Sobre el filtre local de sons humans', privacyDetails)
       + '      </div>'
       + '      <div class="seg birdweather-privacy" data-birdweather-privacy><i class="seg-pill" aria-hidden="true"></i>' + privacyButtons + '</div>'
       + '    </div>'
@@ -6545,7 +6545,7 @@
       status.textContent = message || '';
       status.classList.toggle('err', !!error);
       tokenInput.setAttribute('aria-invalid', tokenError ? 'true' : 'false');
-      if (tokenInput.setCustomValidity) tokenInput.setCustomValidity(tokenError ? (message || 'BirdWeather rejected that token') : '');
+      if (tokenInput.setCustomValidity) tokenInput.setCustomValidity(tokenError ? (message || 'BirdWeather ha rebutjat aquest token') : '');
       if (tokenError && !tokenEditor.hidden && !tokenInput.disabled && tokenInput.reportValidity) tokenInput.reportValidity();
     }
     function owns(object, key) {
@@ -6664,7 +6664,7 @@
         credentials: 'same-origin', cache: 'no-store',
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
-          if (!response.ok || !body.ok) throw new Error(body.error || 'station lookup failed');
+          if (!response.ok || !body.ok) throw new Error(body.error || 'no s\'ha pogut consultar l\'estació');
           return body;
         });
       }).then(function (body) {
@@ -6690,7 +6690,7 @@
         credentials: 'same-origin', cache: 'no-store',
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
-          if (!response.ok || !body.ok) throw new Error(body.error || 'BirdWeather state could not be re-read');
+          if (!response.ok || !body.ok) throw new Error(body.error || 'no s\'ha pogut tornar a llegir l\'estat de BirdWeather');
           return body;
         });
       }).then(function (body) {
@@ -6722,7 +6722,7 @@
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
           if (!response.ok || !body.ok) {
-            var error = new Error(body.error || 'BirdWeather setting failed');
+            var error = new Error(body.error || 'ha fallat la configuració de BirdWeather');
             error.saved = !!body.saved;
             error.settings = body.settings || null;
             throw error;
@@ -6790,7 +6790,7 @@
             openDetails(true, false);
             focusAfterWrite = tokenInput;
           }
-          messageAfterWrite = error.message || 'BirdWeather setting failed';
+          messageAfterWrite = error.message || 'ha fallat la configuració de BirdWeather';
           tokenErrorAfterWrite = submittedToken !== null && !error.saved;
           tokenSubmissionRevision = -1;
           return false;
@@ -6882,7 +6882,7 @@
     });
     forget.addEventListener('click', function () {
       if (writing || forgetting) return;
-      if (!confirm('Forget the saved BirdWeather station token? Sharing must stay off until a new token is added.')) return;
+      if (!confirm('Vols oblidar el token desat de l\'estació BirdWeather? L\'intercanvi haurà de continuar desactivat fins que s\'afegeixi un token nou.')) return;
       forgetting = true;
       forget.disabled = true;
       probeSequence += 1;
@@ -6915,7 +6915,7 @@
       password.type = show ? 'text' : 'password';
       if (!passwordVisibility) return;
       passwordVisibility.setAttribute('aria-pressed', show ? 'true' : 'false');
-      passwordVisibility.setAttribute('aria-label', show ? 'Hide admin password' : 'Show admin password');
+      passwordVisibility.setAttribute('aria-label', show ? 'Amaga la contrasenya d\'administració' : 'Mostra la contrasenya d\'administració');
     }
 
     function note(message, error) {
@@ -6936,7 +6936,7 @@
     function save(enabled, authorization) {
       if (enabled && stopLiveAudioNow) stopLiveAudioNow();
       sw.disabled = true;
-      note('saving...', false);
+      note('desant...', false);
       var headers = { 'Content-Type': 'application/json', 'X-Avian-Action': '1' };
       if (authorization) {
         headers.Authorization = authorization;
@@ -6949,7 +6949,7 @@
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
           if (!response.ok || !body.ok) {
-            var error = new Error(body.error || 'access setting failed');
+            var error = new Error(body.error || 'ha fallat la configuració d\'accés');
             error.status = response.status;
             error.recovery = !!body.recovery;
             error.reauth = !!body.reauth;
@@ -6971,7 +6971,7 @@
         }
         sw.disabled = false;
         note([
-          error.status === 401 ? 'Wrong password.' : (error.message || 'access setting failed'),
+          error.status === 401 ? 'Contrasenya incorrecta.' : (error.message || 'ha fallat la configuració d\'accés'),
           error.remediation,
         ].filter(Boolean).join(' '), true);
         form.hidden = false;
@@ -6986,15 +6986,15 @@
       showPassword(false);
       var on = sw.getAttribute('aria-checked') === 'true';
       if (on) {
-        if (!confirm('Turn off local admin password? Anyone on this network will be able to open Settings, System, Logs, and Tools.')) return;
+        if (!confirm('Vols desactivar la contrasenya d\'administració local? Qualsevol persona d\'aquesta xarxa podrà obrir Configuració, Sistema, Registres i Eines.')) return;
         desired = false;
-        submit.textContent = 'turn off';
+        submit.textContent = 'desactiva';
         form.hidden = false;
         note('', false);
         password.focus();
       } else {
         desired = true;
-        submit.textContent = 'turn on';
+        submit.textContent = 'activa';
         form.hidden = false;
         note('', false);
         password.focus();
@@ -7005,9 +7005,9 @@
       closeDd();
       showPassword(false);
       desired = sw.getAttribute('aria-checked') === 'true';
-      submit.textContent = 'reapply';
+      submit.textContent = 'torna a aplicar';
       form.hidden = false;
-      note('Confirm your password to reapply the saved setting.', false);
+      note('Confirma la contrasenya per tornar a aplicar la configuració desada.', false);
       password.focus();
     });
     cancel.addEventListener('click', function () {
@@ -7022,7 +7022,7 @@
       var value = password.value;
       var authorization = adminBasicAuthorization(value);
       if (!authorization) {
-        note('Password must use 1 to 64 UTF-8 bytes without control characters.', true);
+        note('La contrasenya ha de tenir entre 1 i 64 bytes UTF-8 i no pot contenir caràcters de control.', true);
         password.focus();
         return;
       }
@@ -7064,7 +7064,7 @@
       var lanVisibility = control.querySelector('[data-lan-password-visibility]');
       if (lanVisibility) {
         lanVisibility.setAttribute('aria-pressed', 'false');
-        lanVisibility.setAttribute('aria-label', 'Show admin password');
+        lanVisibility.setAttribute('aria-label', 'Mostra la contrasenya d\'administració');
       }
       if (lanForm) lanForm.hidden = true;
       var lanStatus = control.querySelector('[data-lan-auth-status]');
@@ -7090,17 +7090,17 @@
       var nextValue = next.value;
       var authorization = adminBasicAuthorization(currentValue);
       if (!authorization) {
-        note('Current password must use 1 to 64 UTF-8 bytes without control characters.', true);
+        note('La contrasenya actual ha de tenir entre 1 i 64 bytes UTF-8 i no pot contenir caràcters de control.', true);
         current.focus();
         return;
       }
       if (!/^[A-Za-z0-9]{12,64}$/.test(nextValue)) {
-        note('New password must use 12 to 64 letters or numbers.', true);
+        note('La contrasenya nova ha de tenir entre 12 i 64 lletres o números.', true);
         next.focus();
         return;
       }
       if (nextValue !== confirmNext.value) {
-        note('New passwords do not match.', true);
+        note('Les contrasenyes noves no coincideixen.', true);
         confirmNext.focus();
         return;
       }
@@ -7108,7 +7108,7 @@
       clear();
       currentValue = '';
       nextValue = '';
-      note('changing password...', false);
+      note('canviant la contrasenya...', false);
       Array.prototype.forEach.call(form.elements, function (element) { element.disabled = true; });
       fetch('./avian/api/config.php', {
         method: 'POST', credentials: 'same-origin', cache: 'no-store',
@@ -7122,7 +7122,7 @@
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
           if (!response.ok || !body.ok) {
-            var error = new Error(body.error || 'password change failed');
+            var error = new Error(body.error || 'ha fallat el canvi de contrasenya');
             error.status = response.status;
             error.recovery = !!body.recovery;
             error.reauth = !!body.reauth;
@@ -7144,7 +7144,7 @@
         }
         Array.prototype.forEach.call(form.elements, function (element) { element.disabled = false; });
         note([
-          error.status === 401 ? 'Current password is incorrect.' : (error.message || 'password change failed'),
+          error.status === 401 ? 'La contrasenya actual és incorrecta.' : (error.message || 'ha fallat el canvi de contrasenya'),
           error.remediation,
         ].filter(Boolean).join(' '), true);
         current.focus();
@@ -7171,7 +7171,7 @@
       var visibility = lanForm.querySelector('[data-lan-password-visibility]');
       if (visibility) {
         visibility.setAttribute('aria-pressed', 'false');
-        visibility.setAttribute('aria-label', 'Show admin password');
+        visibility.setAttribute('aria-label', 'Mostra la contrasenya d\'administració');
       }
       lanForm.hidden = true;
       var status = control.querySelector('[data-lan-auth-status]');
@@ -8179,9 +8179,9 @@
             + '<button class="rec-loop-handle" data-edge="start" type="button" role="slider" aria-label="Inici de la secció que es repeteix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="-1"></button>'
             + '<button class="rec-loop-handle" data-edge="end" type="button" role="slider" aria-label="Final de la secció que es repeteix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="25" tabindex="-1"></button>'
             + '<div class="rec-player-controls">'
-            + '<button class="rec-player-toggle" type="button" aria-label="Play recording">' + ICON_PLAY + '</button>'
+            + '<button class="rec-player-toggle" type="button" aria-label="Reprodueix l’enregistrament">' + ICON_PLAY + '</button>'
             + '<span class="rec-player-time" aria-hidden="true">0:00 / --:--</span>'
-            + '<button class="rec-loop-toggle" type="button" aria-label="Repeat a selected section" aria-pressed="false">' + ICON_LOOP + '<span>loop</span></button>'
+            + '<button class="rec-loop-toggle" type="button" aria-label="Repeteix una secció seleccionada" aria-pressed="false">' + ICON_LOOP + '<span>repeteix</span></button>'
             + '</div>'
             + '</div>'
             + '</li>';
@@ -8894,17 +8894,17 @@
     var configured = archiveConfiguredState(initialState);
     var enabled = configured && initialState.timer && initialState.timer.enabled === 'enabled';
     var remoteName = initialState && initialState.remote && initialState.remote.name || 'gdrive';
-    var archiveDetails = 'Back up completed days to Google Drive. Before first use, run rclone config on the Pi, name the remote '
-      + adminEsc(remoteName) + ', choose drive.file, then return here and use the button beside the command.';
+    var archiveDetails = 'Fes una còpia dels dies completats a Google Drive. Abans del primer ús, executa rclone config a la Pi i posa al remot el nom '
+      + adminEsc(remoteName) + ', tria drive.file i després torna aquí i utilitza el botó del costat de l\'ordre.';
     return ''
       + '<div class="archive-settings-control" data-archive-control aria-busy="' + (initialState ? 'false' : 'true') + '">'
       + '  <div class="menu-row archive-settings-head">'
-      + '    <div class="access-copy"><span class="label">Nightly Drive backup</span>'
-      + settingsInfoMarkup('archiveBackupTip', 'About Nightly Drive backup', archiveDetails)
+      + '    <div class="access-copy"><span class="label">Còpia nocturna a Drive</span>'
+      + settingsInfoMarkup('archiveBackupTip', 'Sobre la còpia nocturna a Drive', archiveDetails)
       + '    </div>'
       + '    <div class="archive-settings-head-actions">'
-      + '      <button type="button" class="settings-disclosure" data-archive-disclosure aria-controls="archiveSettingsDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '">details</button>'
-      + '      <button type="button" class="switch" role="switch" data-archive-toggle aria-label="Nightly Drive backup" aria-describedby="archiveBackupTip" aria-checked="' + (enabled ? 'true' : 'false') + '"></button>'
+      + '      <button type="button" class="settings-disclosure" data-archive-disclosure aria-controls="archiveSettingsDetails" aria-expanded="' + (enabled ? 'true' : 'false') + '">detalls</button>'
+      + '      <button type="button" class="switch" role="switch" data-archive-toggle aria-label="Còpia nocturna a Drive" aria-describedby="archiveBackupTip" aria-checked="' + (enabled ? 'true' : 'false') + '"></button>'
       + '    </div>'
       + '  </div>'
       + '  <div id="archiveSettingsDetails" class="birdweather-details-shell archive-details-shell" data-archive-details-shell'
@@ -8942,7 +8942,7 @@
         body: JSON.stringify(body),
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (result) {
-          if (!response.ok || !result.ok) throw new Error(result.error || (response.ok ? 'archive controls unavailable' : ('HTTP ' + response.status)));
+          if (!response.ok || !result.ok) throw new Error(result.error || (response.ok ? 'els controls de l\'arxiu no estan disponibles' : ('HTTP ' + response.status)));
           return result;
         });
       });
@@ -8955,7 +8955,7 @@
         body: JSON.stringify(values),
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (result) {
-          if (!response.ok || !result.ok) throw new Error(result.error || 'could not save recording retention');
+          if (!response.ok || !result.ok) throw new Error(result.error || 'no s\'ha pogut desar la retenció dels enregistraments');
           return result;
         });
       });
@@ -8981,11 +8981,11 @@
 
     function prepareArchiveRetention() {
       return flushPendingSettings().then(function (saved) {
-        if (!saved) throw new Error('could not finish saving current settings');
+        if (!saved) throw new Error('no s\'ha pogut acabar de desar la configuració actual');
         return adminFetch('./avian/api/config.php', { credentials: 'same-origin', cache: 'no-store' });
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (result) {
-          if (!response.ok) throw new Error(result.error || 'could not read recording retention');
+          if (!response.ok) throw new Error(result.error || 'no s\'ha pogut llegir la retenció dels enregistraments');
           var previous = {
             MAX_FILES_SPECIES: result.values && Number.isFinite(+result.values.MAX_FILES_SPECIES)
               ? +result.values.MAX_FILES_SPECIES : 0,
@@ -9002,7 +9002,7 @@
     }
 
     function archiveCode(command) {
-      return '<div class="code" role="button" tabindex="0" title="click to copy" aria-label="copy command">'
+      return '<div class="code" role="button" tabindex="0" title="fes clic per copiar" aria-label="copia l’ordre">'
         + '<span class="copy" aria-hidden="true">' + ICON_COPY + '</span>'
         + '<pre>' + adminEsc(command) + '</pre>'
         + '</div>';
@@ -9032,23 +9032,23 @@
       var inner = '<div class="archive-detail' + (configured ? ' is-controls' : '') + '">';
       if (!state) {
         if (archiveFailureKind === 'helper') {
-          inner += '<p>Refresh the archive helper after updating.</p>'
+          inner += '<p>Actualitza l\'ajudant de l\'arxiu després d\'actualitzar.</p>'
             + archiveCode('cd ~/BirdNET-Pi && ./scripts/install_services.sh')
             + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
         } else {
-          inner += '<p>Could not reach this station.</p>'
-            + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh">try again</button>', 'network-retry')
+          inner += '<p>No s\'ha pogut contactar amb aquesta estació.</p>'
+            + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh">torna-ho a provar</button>', 'network-retry')
             + (archiveNotice ? '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>' : '');
         }
       } else if (!state.dependencies || !state.dependencies.rclone || !state.dependencies.sqlite3) {
-        inner += '<p>Install rclone and sqlite3.</p>'
+        inner += '<p>Instal·la rclone i sqlite3.</p>'
           + archiveCode('sudo apt install rclone sqlite3')
           + archiveActionRow('<button type="button" class="archive-button quiet" data-archive-action="refresh"'
-            + (archiveBusy ? ' disabled' : '') + '>check again</button>', 'refresh');
+            + (archiveBusy ? ' disabled' : '') + '>torna a comprovar</button>', 'refresh');
       } else if (!state.remote || !state.remote.configured) {
         var setupAction = state.installed ? 'refresh' : 'install';
-        var setupLabel = state.installed ? 'check again'
-          : (archiveBusyAction === 'install' ? 'setting up...' : 'set up archive');
+        var setupLabel = state.installed ? 'torna a comprovar'
+          : (archiveBusyAction === 'install' ? 'configurant...' : 'configura l\'arxiu');
         inner += '<div class="archive-setup-row">'
           + '<div class="archive-setup-command">'
           + archiveCode('rclone config')
@@ -9063,7 +9063,7 @@
         inner += '<div class="archive-setup-row is-action-only">'
           + '<button type="button" class="archive-setup-button" data-archive-action="install"'
           + (archiveBusy ? ' disabled' : '') + '>'
-          + (archiveBusyAction === 'install' ? 'setting up...' : 'set up archive') + '</button>'
+          + (archiveBusyAction === 'install' ? 'configurant...' : 'configura l\'arxiu') + '</button>'
           + (archiveNotice && archiveNoticeAction === 'install'
             ? '<span class="archive-inline-state' + (archiveNoticeError ? ' is-error' : '') + '">' + adminEsc(archiveNotice) + '</span>'
             : '')
@@ -9073,13 +9073,13 @@
         var running = state.service && (state.service.active === 'active' || state.service.active === 'activating');
         inner += '<div class="archive-run-row">'
           + '<button type="button" class="archive-button quiet archive-run-button" data-archive-action="run"'
-          + (running || archiveBusy ? ' disabled' : '') + '>' + (running ? 'running...' : 'run now') + '</button>'
+          + (running || archiveBusy ? ' disabled' : '') + '>' + (running ? 'executant...' : 'executa ara') + '</button>'
           + '</div>';
         var canPurge = state.last && state.last.state === 'OK' && state.last.verified_files > 0;
         if (enabled) {
-          inner += archiveToggle('Clear verified local files', !!state.purge,
+          inner += archiveToggle('Elimina els fitxers locals verificats', !!state.purge,
             state.purge ? 'purge-off' : 'purge-on', archiveBusy || running || !canPurge,
-            'Run the archive once before enabling local cleanup.');
+            'Executa l\'arxiu una vegada abans d\'activar la neteja local.');
         }
         if (archiveNoticeError) inner += '<div class="archive-command-error">' + adminEsc(archiveNotice) + '</div>';
       }
@@ -9142,13 +9142,13 @@
           return response.json().catch(function () { return {}; }).then(function (result) {
             if (request !== archiveSequence) return;
             if (!response.ok || !result.ok) {
-              var error = new Error(result.error || (response.ok ? 'archive controls unavailable' : ('HTTP ' + response.status)));
+              var error = new Error(result.error || (response.ok ? 'els controls de l\'arxiu no estan disponibles' : ('HTTP ' + response.status)));
               error.archiveKind = response.status === 503 && result.hint ? 'helper' : 'request';
               throw error;
             }
             archiveState = result;
             archiveFailureKind = '';
-            if (archiveNoticeAction === 'run' && archiveNotice === 'started'
+            if (archiveNoticeAction === 'run' && archiveNotice === 'iniciat'
               && (!result.service || (result.service.active !== 'active' && result.service.active !== 'activating'))
               && result.last && result.last.state !== 'never') {
               archiveNotice = '';
@@ -9161,7 +9161,7 @@
           archiveState = null;
           archiveFailureKind = error.archiveKind || 'network';
           archiveNoticeAction = 'refresh';
-          archiveNotice = error.message || 'archive controls unavailable';
+          archiveNotice = error.message || 'els controls de l\'arxiu no estan disponibles';
           archiveNoticeError = true;
           paintArchive();
         });
@@ -9170,16 +9170,16 @@
     function performArchiveAction(action) {
       if (archiveBusy) return;
       if (action === 'purge-on'
-        && !confirm('Clear local recordings only after each file is copied and checksum-verified? Today always stays on this Pi.')) return;
+        && !confirm('Vols eliminar els enregistraments locals només després que cada fitxer s\'hagi copiat i verificat amb checksum? El dia d\'avui sempre es conserva en aquesta Pi.')) return;
       archiveBusy = true;
       archiveBusyAction = action;
       archiveNoticeAction = action;
       archiveNoticeError = false;
-      archiveNotice = action === 'run' ? 'starting...'
-        : action === 'install' ? 'installing...'
-          : action === 'enable' ? 'enabling...'
-            : action === 'disable' ? 'disabling...'
-              : 'saving...';
+      archiveNotice = action === 'run' ? 'iniciant...'
+        : action === 'install' ? 'instal·lant...'
+          : action === 'enable' ? 'activant...'
+            : action === 'disable' ? 'desactivant...'
+              : 'desant...';
       paintArchive();
       var prepared = action === 'enable' || action === 'run';
       var timerWasEnabled = !!(archiveState && archiveState.timer && archiveState.timer.enabled === 'enabled');
@@ -9198,16 +9198,16 @@
         : archiveApi(action, action === 'purge-on' ? 'verified-local-files' : '');
       work.then(function (result) {
         archiveState = result;
-        archiveNotice = action === 'run' ? 'started'
-          : action === 'install' ? 'installed'
-            : action === 'enable' ? 'enabled'
-              : action === 'disable' ? 'disabled' : 'saved';
+        archiveNotice = action === 'run' ? 'iniciat'
+          : action === 'install' ? 'instal·lat'
+            : action === 'enable' ? 'activat'
+              : action === 'disable' ? 'desactivat' : 'desat';
         archiveNoticeError = false;
         if (action === 'enable' || action === 'install' || action === 'run') archiveOpen = true;
         if (action === 'disable') archiveOpen = false;
       }).catch(function (error) {
         if (adminAuthCancelled(error)) return;
-        archiveNotice = error.message || 'archive action failed';
+        archiveNotice = error.message || 'ha fallat l\'acció de l\'arxiu';
         archiveNoticeError = true;
       }).then(function () {
         archiveBusy = false;
@@ -9250,7 +9250,7 @@
         archiveBusy = true;
         archiveBusyAction = 'refresh';
         archiveNoticeAction = 'refresh';
-        archiveNotice = 'checking...';
+        archiveNotice = 'comprovant...';
         archiveNoticeError = false;
         paintArchive();
         loadArchiveStatus().then(function () {
@@ -9303,13 +9303,13 @@
             if (response.ok && body.ok) return body;
             return {
               ok: false,
-              error: body.error || 'archive controls unavailable',
+              error: body.error || 'els controls de l\'arxiu no estan disponibles',
               failure_kind: response.status === 503 && body.hint ? 'helper' : 'request',
             };
           });
         }).catch(function (error) {
           if (adminAuthCancelled(error)) throw error;
-          return { ok: false, error: 'archive controls unavailable', failure_kind: 'network' };
+          return { ok: false, error: 'els controls de l\'arxiu no estan disponibles', failure_kind: 'network' };
         }),
     ])
       .then(function (parts) {

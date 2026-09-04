@@ -385,7 +385,7 @@ async function flushPromises() {
 
 const firstTokenPosts = [];
 const firstTokenResponses = [
-  jsonResponse(503, { ok: false, error: 'BirdWeather could not verify the station token' }),
+  jsonResponse(503, { ok: false, error: 'BirdWeather no ha pogut verificar el token de l’estació' }),
   jsonResponse(200, {
     ok: true, enabled: true, token_configured: true, configuration_valid: true,
     upload_audio: false, privacy_threshold: 1,
@@ -457,7 +457,7 @@ const savedWithoutSettings = birdweatherHarness({
     savedWithoutSettingsPost = JSON.parse(options.body);
     return Promise.resolve(jsonResponse(500, {
       ok: false, saved: true,
-      error: 'settings saved, but station config could not be re-read',
+      error: 's’ha desat la configuració, però no s’ha pogut tornar a llegir la configuració de l’estació',
     }));
   }
   return Promise.resolve(jsonResponse(503, {

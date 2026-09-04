@@ -303,11 +303,11 @@ function birdweather_probe(string $token): array {
 function birdweather_validate_update(array $body, array $conf): array {
     $allowed = ['enabled', 'upload_audio', 'token', 'forget_token', 'privacy_threshold'];
     if ($body === []) {
-        return ['ok' => false, 'status' => 400, 'error' => 'no setting supplied'];
+        return ['ok' => false, 'status' => 400, 'error' => 'no s\'ha indicat cap configuració'];
     }
     foreach (array_keys($body) as $key) {
         if (!is_string($key) || !in_array($key, $allowed, true)) {
-            return ['ok' => false, 'status' => 400, 'error' => 'unknown setting'];
+            return ['ok' => false, 'status' => 400, 'error' => 'configuració desconeguda'];
         }
     }
     if (array_key_exists('enabled', $body) && !is_bool($body['enabled'])) {
@@ -337,13 +337,13 @@ function birdweather_validate_update(array $body, array $conf): array {
     if (array_key_exists('token', $body)) {
         $newToken = birdweather_normalize_token($body['token']);
         if ($newToken === null) {
-            return ['ok' => false, 'status' => 400, 'error' => 'station token is invalid'];
+            return ['ok' => false, 'status' => 400, 'error' => 'el token de l\'estació no és vàlid'];
         }
     }
     $hasUsableToken = $newToken !== null
         || ($effective['token_configured'] && $effective['configuration_valid']);
     if (($body['enabled'] ?? false) && !$hasUsableToken) {
-        return ['ok' => false, 'status' => 409, 'error' => 'add a BirdWeather station token first'];
+        return ['ok' => false, 'status' => 409, 'error' => 'primer afegeix un token d\'estació de BirdWeather'];
     }
 
     // Each request is a patch. This keeps independently autosaved controls
@@ -393,9 +393,9 @@ function birdweather_validate_new_token(array $validation, callable $probe): arr
     $state = is_array($station) ? ($station['state'] ?? '') : '';
     if ($state === 'connected') return ['ok' => true, 'station' => $station];
     if ($state === 'invalid') {
-        return ['ok' => false, 'status' => 422, 'error' => 'BirdWeather rejected the station token'];
+        return ['ok' => false, 'status' => 422, 'error' => 'BirdWeather ha rebutjat el token de l\'estació'];
     }
-    return ['ok' => false, 'status' => 503, 'error' => 'BirdWeather could not verify the station token'];
+    return ['ok' => false, 'status' => 503, 'error' => 'BirdWeather no ha pogut verificar el token de l\'estació'];
 }
 
 function birdweather_run_admin_control(string $control, array $arguments, string $input): array {
@@ -474,7 +474,7 @@ function birdweather_main(): void {
     $confPath = birdweather_conf_path();
     $conf = birdweather_read_conf($confPath);
     if ($conf === [] && !is_readable($confPath)) {
-        birdweather_response(503, ['ok' => false, 'error' => 'station config is unavailable']);
+        birdweather_response(503, ['ok' => false, 'error' => 'la configuració de l\'estació no està disponible']);
     }
 
     if ($method === 'GET') {
@@ -549,7 +549,7 @@ function birdweather_main(): void {
         $failure = [
             'ok' => false,
             'saved' => true,
-            'error' => 'settings saved, but birdnet_analysis did not restart',
+            'error' => 's\'ha desat la configuració, però birdnet_analysis no s\'ha reiniciat',
         ];
         if (is_array($response)) $failure['settings'] = $response;
         birdweather_response(500, $failure);
@@ -558,7 +558,7 @@ function birdweather_main(): void {
         birdweather_response(500, [
             'ok' => false,
             'saved' => true,
-            'error' => 'settings saved, but station config could not be re-read',
+            'error' => 's\'ha desat la configuració, però no s\'ha pogut tornar a llegir la configuració de l\'estació',
         ]);
     }
     birdweather_response(200, $response);

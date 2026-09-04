@@ -29,7 +29,7 @@ if ($menuAction === 'activity') {
         avian_admin_password_missing_fail();
     }
     if (!avian_admin_session_valid($_SERVER, $activityState, true)) {
-        avian_api_fail(401, 'unauthorized');
+        avian_api_fail(401, 'no autoritzat');
     }
     echo json_encode(['ok' => true]);
     exit;
