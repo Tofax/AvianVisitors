@@ -397,7 +397,7 @@ assert.equal(scopePillNodes.returnToEducators.hidden, false,
   'an unavailable capability retains a safe route back to Educators');
 assert.doesNotMatch(html, /educatorScopeLabel|educator-scope-pill/,
   'the public header contains no private folder or listening-period name');
-assert.match(html, /id="returnToEducators" href="#admin=educators" aria-label="back to educators"[\s\S]*>\s*educators\s*<\/a>/,
+assert.match(html, /id="returnToEducators" href="#admin=educators" aria-label="torna a Educadors"[\s\S]*>\s*Educadors\s*<\/a>/,
   'the scoped back control exactly mirrors the terse collage component');
 
 function backRouteContext(accessState, available) {
@@ -674,21 +674,21 @@ const activeContext = {
 vm.createContext(activeContext);
 vm.runInContext(functionSource('educatorActiveHtml'), activeContext);
 const startMarkup = activeContext.educatorActiveHtml(null);
-assert.match(startMarkup, /id="educatorStart"[\s\S]*New listening period[\s\S]*id="educatorStartName"[\s\S]*value="Biology 2"/,
+assert.match(startMarkup, /id="educatorStart"[\s\S]*Període d.escolta nou[\s\S]*id="educatorStartName"[\s\S]*value="Biology 2"/,
   'idle state offers one named listening-period form with its preserved draft');
-assert.match(startMarkup, /placeholder="session name"[\s\S]*type="submit" data-educator-start-submit data-has-name="true" aria-label="Start new listening period"[\s\S]*<svg/,
+assert.match(startMarkup, /placeholder="nom de la sessi\u00f3"[\s\S]*type="submit" data-educator-start-submit data-has-name="true" aria-label="Inicia un per\u00edode d.escolta nou"[\s\S]*<svg/,
   'the form exposes a compact accessible arrow submit control');
 activeContext.educatorStartDraft = '';
 const blankStartMarkup = activeContext.educatorActiveHtml(null);
-assert.match(blankStartMarkup, /placeholder="session name"[\s\S]*data-has-name="false" aria-label="Start new listening period with date and time"/,
+assert.match(blankStartMarkup, /placeholder="nom de la sessi\u00f3"[\s\S]*data-has-name="false" aria-label="Inicia un per\u00edode d.escolta nou amb data i hora"/,
   'blank Start remains available and explains the server date and time default');
 assert.doesNotMatch(blankStartMarkup, /data-educator-start-submit[^>]*disabled/,
   'the subtle blank arrow remains a real submit control');
 const running = activeContext.educatorActiveHtml({ id: c1, name: 'Biology', status: 'running', folder_id: null });
 assert.match(running, /data-educator-action="pause"/, 'running state offers Pause');
 assert.match(running, /data-educator-action="stop"/, 'running state offers Stop');
-assert.match(running, /aria-label="Pause Biology"/, 'Pause names its active listening period');
-assert.match(running, /aria-label="Stop Biology"/, 'Stop names its active listening period');
+assert.match(running, /aria-label="Pausa Biology"/, 'Pause names its active listening period');
+assert.match(running, /aria-label="Atura Biology"/, 'Stop names its active listening period');
 assert.match(running, /data-educator-menu-kind="active"/, 'the active period exposes the same compact action menu');
 assert.doesNotMatch(running, /<select|data-move-capture/, 'the active card has no permanently visible folder select');
 const paused = activeContext.educatorActiveHtml({ id: c1, name: 'Biology', status: 'paused', folder_id: null });
@@ -1086,11 +1086,11 @@ assert.match(apt, /educatorOlderBusy \? ' disabled aria-busy="true"'/,
   'the loading pagination control exposes its busy state and rejects duplicate activation');
 assert.match(apt, /educatorCaptureArchiveRevision !== next\.state_revision/, 'revision changes invalidate paged captures');
 assert.match(apt, /educatorCaptureOrder = educatorCaptureOrder\.concat\(incoming\)/, 'older pages append with ID deduplication');
-assert.match(apt, /total \? 'Load older/, 'folder counts stay honest when older rows are not loaded');
+assert.match(functionSource('educatorFolderGroup'), /Carrega els antics/, 'folder counts stay honest when older rows are not loaded');
 const folderContext = {
   educatorEditing: null,
   educatorRenameHtml(kind, folder) { return `<span>${folder.name}</span>`; },
-  educatorMoreButton(kind, folder) { return `<button data-educator-menu-kind="${kind}" aria-label="Actions for ${folder.name}"></button>`; },
+  educatorMoreButton(kind, folder) { return `<button data-educator-menu-kind="${kind}" aria-label="Accions per a ${folder.name}"></button>`; },
   educatorCaptureRow(capture) { return `<li>${capture.id}</li>`; },
   educatorFolderKey(id) { return id || 'unfiled'; },
   educatorFolderIsCollapsed() { return false; },
@@ -1101,30 +1101,30 @@ vm.createContext(folderContext);
 vm.runInContext(functionSource('educatorFolderGroup'), folderContext);
 const largeFolder = folderContext.educatorFolderGroup({ id: f1, name: 'Biology', capture_count: 150 },
   [{ id: c1 }], 150);
-assert.match(largeFolder, /educator-count">1 of 150</, 'paged folder headings show loaded and authoritative totals');
-assert.match(largeFolder, /aria-label="View Biology\. 1 of 150 listening periods loaded\."/,
+assert.match(largeFolder, /educator-count">1 de 150</, 'paged folder headings show loaded and authoritative totals');
+assert.match(largeFolder, /aria-label="Mostra Biology\. 1 de 150 períodes d\'escolta carregats\."/,
   'paged folder View exposes its visible loaded and authoritative totals');
 assert.match(largeFolder, /data-educator-menu-kind="folder"/, 'folder actions live behind one accessible menu button');
 assert.match(largeFolder, /data-folder-toggle=.*aria-expanded="true".*aria-controls=/,
   'folder contents have an independent labelled collapse control');
-assert.doesNotMatch(largeFolder, />Remove</, 'folder Remove is not a permanent visible control');
+assert.doesNotMatch(largeFolder, />Elimina</, 'folder Remove is not a permanent visible control');
 assert.match(folderContext.educatorFolderGroup({ id: f1, name: 'Biology' }, [{ id: c1 }, { id: c2 }], 2),
-  /aria-label="View Biology\. 2 listening periods\."/,
+  /aria-label="Mostra Biology\. 2 períodes d\'escolta\."/,
   'ordinary folder View exposes its complete visible count');
 assert.match(folderContext.educatorFolderGroup({ id: f1, name: 'Biology' }, [{ id: c1 }], 1),
-  /aria-label="View Biology\. 1 listening period\."/,
+  /aria-label="Mostra Biology\. 1 període d\'escolta\."/,
   'single-period folder View uses honest singular count copy');
 assert.match(folderContext.educatorFolderGroup({ id: f1, name: 'Biology' }, [], 0),
-  /aria-label="View Biology\. 0 listening periods\."/,
+  /aria-label="Mostra Biology\. 0 períodes d\'escolta\."/,
   'empty folder View exposes its visible zero count');
 assert.doesNotMatch(functionSource('paintEducators'), /educatorFolderGroup\(null/,
   'unfiled listening periods render as loose rows instead of a fake folder');
-assert.match(functionSource('paintEducators'), /<ol class="educator-unfiled" aria-label="Unfiled listening periods">[\s\S]*unfiled\.map\(educatorCaptureRow\)/,
+assert.match(functionSource('paintEducators'), /<ol class="educator-unfiled" aria-label="Períodes d\'escolta sense carpeta">[\s\S]*unfiled\.map\(educatorCaptureRow\)/,
   'loose unfiled periods retain an accessible list name');
 const captureContext = {
   educatorEditing: null,
   educatorRenameHtml(kind, capture) { return `<span>${capture.name}</span>`; },
-  educatorMoreButton(kind, capture) { return `<button data-educator-menu-kind="${kind}" aria-label="Actions for ${capture.name}"></button>`; },
+  educatorMoreButton(kind, capture) { return `<button data-educator-menu-kind="${kind}" aria-label="Accions per a ${capture.name}"></button>`; },
   educatorDateLabel() { return 'Sep 1, 9:00 AM'; },
   educatorDurationSeconds() { return 65; },
   educatorDurationLabel() { return '1:05'; },
@@ -1136,20 +1136,20 @@ vm.runInContext(functionSource('educatorCaptureRow'), captureContext);
 const captureMarkup = captureContext.educatorCaptureRow({
   id: c1, name: 'Period 3', folder_id: null, detection_count: 2, species_count: 1,
 });
-assert.match(captureMarkup, /aria-label="View Period 3\. Duration 1:05\. 1 bird\. 2 calls\. Started Sep 1, 9:00 AM\."/,
+assert.match(captureMarkup, /aria-label="Mostra Period 3\. Durada 1:05\. 1 ocell\. 2 cants\. Iniciat Sep 1, 9:00 AM\."/,
   'capture View exposes every visible metadata value in its accessible name');
 assert.match(captureMarkup, /class="sr-only" role="heading" aria-level="3"[^>]*data-capture-heading[^>]*>Period 3<\/span>/,
   'each saved listening period retains a separate accessible heading outside its button');
 assert.match(captureMarkup, /class="educator-period-grid" aria-hidden="true"/,
   'the visual metadata grid does not duplicate the complete button name');
 assert.match(captureMarkup, /data-educator-menu-kind="capture"/, 'capture actions live behind one accessible menu button');
-assert.doesNotMatch(captureMarkup, /<select|>Remove</, 'saved rows stay compact without visible move or remove controls');
+assert.doesNotMatch(captureMarkup, /<select|>Elimina</, 'saved rows stay compact without visible move or remove controls');
 const unknownCountMarkup = captureContext.educatorCaptureRow({
   id: c1, name: 'Period 3', folder_id: null, detection_count: null, species_count: null,
 });
-assert.doesNotMatch(unknownCountMarkup, /0 calls|0 birds/,
+assert.doesNotMatch(unknownCountMarkup, /0 cants|0 ocells/,
   'saved periods with unavailable counts never render fake zero totals');
-assert.match(unknownCountMarkup, /Bird count unavailable\. Call count unavailable\./,
+assert.match(unknownCountMarkup, /Recompte d\'ocells no disponible\. Recompte de cants no disponible\./,
   'unavailable metadata is stated honestly in the row accessible name');
 
 const menuItemsContext = {
@@ -1161,13 +1161,13 @@ const menuItemsContext = {
 vm.createContext(menuItemsContext);
 vm.runInContext(functionSource('educatorActionMenuItems'), menuItemsContext);
 const activeMenu = menuItemsContext.educatorActionMenuItems('active');
-assert.match(activeMenu, /data-icon="move"[\s\S]*<span>Move<\/span>[\s\S]*data-icon="rename"[\s\S]*<span>Rename<\/span>/,
+assert.match(activeMenu, /data-icon="move"[\s\S]*<span>Mou<\/span>[\s\S]*data-icon="rename"[\s\S]*<span>Reanomena<\/span>/,
   'the active menu contains icon-led Move and Rename actions');
-assert.doesNotMatch(activeMenu, /Remove/, 'the active listening period cannot be removed while active');
+assert.doesNotMatch(activeMenu, /Elimina/, 'the active listening period cannot be removed while active');
 const savedMenu = menuItemsContext.educatorActionMenuItems('capture');
-assert.match(savedMenu, /<span>Move<\/span>[\s\S]*<span>Rename<\/span>[\s\S]*<span>Remove<\/span>/,
+assert.match(savedMenu, /<span>Mou<\/span>[\s\S]*<span>Reanomena<\/span>[\s\S]*<span>Elimina<\/span>/,
   'saved listening periods expose the complete compact action set');
-assert.match(menuItemsContext.educatorActionMenuItems('pane'), /Create new folder/,
+assert.match(menuItemsContext.educatorActionMenuItems('pane'), /Crea una carpeta nova/,
   'the saved-pane menu exposes the accessible Create new folder path');
 
 const viewHandlers = {};
@@ -1729,7 +1729,7 @@ for (const response of [
   let sharedScopeFallbacks = 0;
   const sharedScopeLoading = {
     views: { setAttribute() {} },
-    educatorDataLoading: { hidden: false, textContent: 'loading birds...' },
+    educatorDataLoading: { hidden: false, textContent: 'carregant ocells...' },
   };
   const sharedScopeContext = {
     AUTOMATIC_EDUCATOR_SCOPE_ID: 'active',
@@ -1772,7 +1772,7 @@ for (const response of [
     `${response.label} response scrubs the fresh shared scope`);
   assert.equal(sharedScopeContext.educatorScopeBlocked, true,
     `${response.label} response leaves its shared scope fail closed`);
-  assert.equal(sharedScopeLoading.educatorDataLoading.textContent, 'listening period unavailable',
+  assert.equal(sharedScopeLoading.educatorDataLoading.textContent, 'període d\'escolta no disponible',
     `${response.label} response resolves the indefinite loading message`);
   assert.equal(sharedScopeFallbacks, 0,
     `${response.label} response never exposes station-wide data`);
@@ -1941,7 +1941,7 @@ assert.match(functionSource('mount'), /data-live-audio-toggle/,
   'the shared live control exposes a stable keyboard-focus identity');
 assert.match(functionSource('syncCanvasExpansion'), /state !== 'playing'[\s\S]*aria-hidden', 'true'[\s\S]*else if \(expandable\)[\s\S]*setAttribute\('role', 'button'\)[\s\S]*setAttribute\('aria-expanded'/,
   'the spectrogram becomes an announced expansion control only while audio is playing');
-assert.match(functionSource('syncCanvasExpansion'), /Restore live microphone spectrogram'[\s\S]*Expand live microphone spectrogram'/,
+assert.match(functionSource('syncCanvasExpansion'), /Restaura l\\'espectrograma del micr\u00f2fon en directe'[\s\S]*Amplia l\\'espectrograma del micr\u00f2fon en directe'/,
   'the spectrogram control has an honest size-neutral accessible name at every breakpoint');
 assert.doesNotMatch(functionSource('syncCanvasExpansion'), /spectrogram width|Widen live/,
   'narrow screens never announce a width change they cannot show');
@@ -2015,7 +2015,7 @@ assert.equal(terminalCanvas.attrs['aria-hidden'], 'true',
   'the failed stream canvas leaves the accessibility tree after focus moves');
 assert.equal('tabindex' in terminalCanvas.attrs, false,
   'the failed stream canvas is no longer keyboard reachable');
-assert.equal(terminalButton.attrs['aria-label'], 'Retry live audio',
+assert.equal(terminalButton.attrs['aria-label'], 'Torna a provar l\'àudio en directe',
   'the focus destination exposes the terminal Retry action');
 
 let blessingPlayCalls = 0;
@@ -2325,7 +2325,7 @@ const folderWorkflowContext = {
   },
   wireEducatorExport() {},
   finishEducatorAction(message) {
-    assert.equal(message, 'Folder created.', 'a successful folder workflow reports its result');
+    assert.equal(message, 'Carpeta creada.', 'a successful folder workflow reports its result');
     folderFinishCalls += 1;
     folderWorkflowContext.rememberEducatorFocus();
     draftsAtAuthoritativeReload.push(folderWorkflowContext.educatorFolderDraft);
@@ -2657,7 +2657,7 @@ const startWorkflowContext = {
   educatorScopeForEntity(entity, revision) { return { id: entity.id, label: entity.name, revision }; },
   applyEducatorScope(scope, options) { startScope = { scope, options }; },
   finishEducatorAction(message) {
-    assert.equal(message, 'Listening period started.');
+    assert.equal(message, 'Període d\'escolta iniciat.');
     startFinishes += 1;
     return Promise.resolve();
   },
@@ -3019,7 +3019,7 @@ const displayMarkupContext = { displayModeEnabled() { return false; } };
 vm.createContext(displayMarkupContext);
 vm.runInContext(functionSource('educatorDisplayHtml'), displayMarkupContext);
 const displayMarkup = displayMarkupContext.educatorDisplayHtml();
-assert.match(displayMarkup, /Hide page controls until you move to an edge\./,
+assert.match(displayMarkup, /Oculta els controls de la p\u00e0gina fins que et moguis cap a una vora\./,
   'Display Mode explains the lightweight edge-reveal behavior');
 assert.match(displayMarkup, /role="switch"[\s\S]*aria-disabled="false"[\s\S]*data-display-mode/,
   'Display Mode is available without a Fullscreen API');
@@ -3500,7 +3500,7 @@ assert.match(functionSource('educatorLoad'), /error\.status === 404[\s\S]*disabl
 assert.match(apt, /event\.preventDefault\(\)[\s\S]*event\.stopPropagation\(\)/,
   'a hidden touch edge reveals controls without activating a card below it');
 
-assert.match(html, /id="returnToEducators" href="#admin=educators" aria-label="back to educators" hidden[\s\S]*educators\s*<\/a>/,
+assert.match(html, /id="returnToEducators" href="#admin=educators" aria-label="torna a Educadors" hidden[\s\S]*Educadors\s*<\/a>/,
   'scoped public views use the same terse top-left Back component as collage');
 assert.doesNotMatch(html, /educatorScopePill|educatorScopeLabel/,
   'private listening-period and folder names have no public top-chrome surface');
@@ -3630,7 +3630,7 @@ assert.match(apt, /educatorLiveWideQuery\.addEventListener\('change', syncEducat
   'the live controller responds to breakpoint changes after initial mount');
 assert.match(functionSource('paintEducators'), /liveAudioController\.mount\(liveHost, educatorLiveMountOptions\(\)\)/,
   'initial Educators paint uses the same responsive live options as resize');
-assert.match(functionSource('educatorMoreButton'), /aria-haspopup="menu"[\s\S]*aria-expanded="false"[\s\S]*aria-label="Actions for/,
+assert.match(functionSource('educatorMoreButton'), /aria-haspopup="menu"[\s\S]*aria-expanded="false"[\s\S]*aria-label="Accions per a /,
   'every three-dot row action has an accessible name and menu semantics');
 assert.match(functionSource('educatorMoreButton'), /ICON_MORE_VERTICAL/,
   'row menus use the shared vertical-ellipsis SVG icon');
@@ -3710,7 +3710,7 @@ exportContext.adminAuthMeta = { direct_local: false };
 assert.equal(exportContext.educatorSavedExportNeedsDirect(folderExport), true,
   'a remote saved folder is disabled before any grant request');
 assert.equal(exportContext.educatorSavedExportMessage(),
-  'Saved-view exports require a direct local connection.',
+  'Les exportacions de vistes desades requereixen una connexió local directa.',
   'remote saved exports explain the direct-local requirement');
 exportEdu = 'active';
 assert.equal(exportContext.educatorSavedExportNeedsDirect(exportContext.educatorExportSnapshot('detections')), false,
@@ -3734,7 +3734,7 @@ assert.match(functionSource('renderAdminTools'),
   /directRequired[\s\S]*aria-disabled="true"[\s\S]*educatorSavedExportMessage\(\)/,
   'Tools renders remote saved exports disabled with an immediate honest message');
 assert.match(functionSource('renderAdminTools'),
-  /response\.status === 413[\s\S]*Export is too large\. Choose a smaller listening period or folder\./,
+  /response\.status === 413[\s\S]*L\\'exportaci\u00f3 \u00e9s massa gran\. Tria un per\u00edode d\\'escolta o una carpeta m\u00e9s petits\./,
   'an over-cap export fails closed with an honest recovery instruction');
 
 const authMetaContext = { Array };
@@ -3929,7 +3929,7 @@ assert.equal(unavailableCallCell.textContent, 'n/a');
 assert.equal(unavailableCompactCell.textContent, 'n/a');
 assert.equal(unavailableRow.attrs['data-count-unavailable'], 'true',
   'only the over-budget row receives the unavailable marker');
-assert.match(unavailableView.attrs['aria-label'], /Bird and call counts unavailable/,
+assert.match(unavailableView.attrs['aria-label'], /Recompte d\'ocells i cants no disponible/,
   'the unavailable row exposes an honest accessible summary');
 
 countNow = 3000;
@@ -4092,7 +4092,7 @@ const patchCountRow = {
 const patchCountContext = {
   adminSect: 'educators',
   adminBody: { querySelector(selector) { return selector === `#educator-${c1}` ? patchCountRow : null; } },
-  educatorCaptureAccessibleLabel(capture) { return `View ${capture.name}. 4 birds. 9 calls.`; },
+  educatorCaptureAccessibleLabel(capture) { return `Mostra ${capture.name}. 4 ocells. 9 cants.`; },
   educatorDurationSeconds() { return 60; },
   educatorDurationLabel() { return '1:00'; },
   educatorDateLabel() { return 'Sep 2, 9:00 AM'; },
@@ -4105,7 +4105,7 @@ assert.equal(patchCountContext.patchEducatorCaptureCounts({
 assert.equal(countCells.birds.textContent, '4', 'the existing Birds cell receives the fresh count');
 assert.equal(countCells.calls.textContent, '9', 'the existing Calls cell receives the fresh count');
 assert.equal(countCells.compact.textContent, '4b / 9c', 'the compact mobile count receives the same values');
-assert.equal(countCells.view.label, 'View Period 3. 4 birds. 9 calls.',
+assert.equal(countCells.view.label, 'Mostra Period 3. 4 ocells. 9 cants.',
   'the existing View control receives a fresh accessible summary');
 assert.equal(pendingCountRemoved, 1, 'the patched row leaves the pending observation set');
 assert.match(functionSource('suspendEducatorScopes'), /clearEducatorCountState/,

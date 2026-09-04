@@ -490,9 +490,9 @@ async function overCapMessage(authorized) {
   return messages[0];
 }
 
-assert.equal(await overCapMessage(false), 'listening period unavailable',
+assert.equal(await overCapMessage(false), 'període d\'escolta no disponible',
   'a shared over-cap capability fails with generic copy');
-assert.equal(await overCapMessage(true), 'saved view is too large; split it into a smaller folder',
+assert.equal(await overCapMessage(true), 'la vista desada és massa gran; divideix-la en una carpeta més petita',
   'an authenticated over-cap scope gives the educator an honest recovery path');
 let activeCapMessage = '';
 let activeCapFallbacks = 0;
@@ -527,7 +527,7 @@ await assert.rejects(activeCapContext.scopedFetchJson('stats', {}, {
   generation: 18, scopeId: 'active',
 }));
 assert.equal(activeCapMessage,
-  'current listening period is too large; stop it and start a new period',
+  'el període d\'escolta actual és massa gran; atura\'l i inicia\'n un de nou',
   'an over-cap active period fails closed with an honest recovery instruction');
 assert.equal(activeCapFallbacks, 0, 'an over-cap active period never falls back to global data');
 assert.equal(activeCapRetries, 0, 'a permanent active-period 413 does not enter the 5xx retry controller');
@@ -548,7 +548,7 @@ await assert.rejects(activeCapContext.scopedFetchJson('stats', {}, {
   generation: 18, scopeId: '',
 }));
 assert.equal(activeCapMessage,
-  'current listening period is too large; stop it and start a new period',
+  'el període d\'escolta actual és massa gran; atura\'l i inicia\'n un de nou',
   'a fresh no-edu request recognizes an automatic active-period 413 safely');
 assert.equal(activeCapFallbacks, 0,
   'a fresh automatic active-period 413 cannot fall through to global data');
@@ -626,7 +626,7 @@ assert.equal(retryContext.noteEducatorScopeFailure(savedRetryRequest), true,
   'the first saved-scope 5xx schedules one bounded retry');
 assert.equal(retryTimers.length, 1, 'the first failure owns one timer');
 assert.equal(retryTimers[0].delay, 1400, 'the retry is short and bounded');
-assert.equal(retryStatus.textContent, 'birds are temporarily unavailable; retrying...',
+assert.equal(retryStatus.textContent, 'els ocells no estan disponibles temporalment; tornant-ho a provar...',
   'the blank scoped view honestly announces its pending retry');
 retryContext.noteEducatorScopeFailure(savedRetryRequest);
 retryContext.noteEducatorScopeFailure(savedRetryRequest);
@@ -669,7 +669,7 @@ repeatedFailureTimer.callback();
 assert.equal(retryRefreshes, 2, 'a separate saved scope still receives its one retry');
 retryContext.noteEducatorScopeFailure({ ...repeatedFailureRequest, attempt: 4 });
 assert.equal(retryTimers.length, 2, 'a repeated 5xx after the retry cannot schedule an endless loop');
-assert.equal(retryStatus.textContent, 'birds are temporarily unavailable; try again shortly',
+assert.equal(retryStatus.textContent, 'els ocells no estan disponibles temporalment; torna-ho a provar d\'aquí a poc',
   'a repeated 5xx resolves retrying copy to an honest temporary-unavailable state');
 retryContext.clearEducatorScopeFailure({ ...repeatedFailureRequest, attempt: 4 });
 

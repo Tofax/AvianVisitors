@@ -399,7 +399,7 @@
   function educatorScopeLabel(scope) {
     if (!scope) return '';
     if (scope.label) return scope.label;
-    return scope.kind === 'folder' ? 'Saved folder' : 'Listening period';
+    return scope.kind === 'folder' ? 'Carpeta desada' : 'Període d\'escolta';
   }
   function educatorSpeciesCacheAllowed(scopeId) {
     return !validEducatorScopeKey(scopeId);
@@ -439,7 +439,7 @@
     var status = document.getElementById('educatorDataLoading');
     if (status) {
       status.hidden = !loading;
-      if (loading && !educatorScopeBlocked) status.textContent = 'loading birds...';
+      if (loading && !educatorScopeBlocked) status.textContent = 'carregant ocells...';
     }
   }
   function educatorScopeRequestCurrent(request) {
@@ -467,8 +467,8 @@
     setEducatorDataLoading(true);
     var status = document.getElementById('educatorDataLoading');
     if (status) status.textContent = retrying
-      ? 'birds are temporarily unavailable; retrying...'
-      : 'birds are temporarily unavailable; try again shortly';
+      ? 'els ocells no estan disponibles temporalment; tornant-ho a provar...'
+      : 'els ocells no estan disponibles temporalment; torna-ho a provar d\'aquí a poc';
   }
   function cancelEducatorScopeRetry() {
     if (educatorScopeRetry && educatorScopeRetry.timer) clearTimeout(educatorScopeRetry.timer);
@@ -521,7 +521,7 @@
     syncEducatorScopePill({ immediateTitle: true });
     setEducatorDataLoading(true);
     var status = document.getElementById('educatorDataLoading');
-    if (status) status.textContent = message || 'listening period unavailable';
+    if (status) status.textContent = message || 'període d\'escolta no disponible';
   }
   function initializeEducatorScopeFromUrl() {
     var state = educatorScopeUrlState();
@@ -718,11 +718,11 @@
   }
   function educatorScopeTooLargeMessage(scopeId) {
     if (scopeId === AUTOMATIC_EDUCATOR_SCOPE_ID) {
-      return 'current listening period is too large; stop it and start a new period';
+      return 'el període d\'escolta actual és massa gran; atura\'l i inicia\'n un de nou';
     }
     return educatorScopesAuthorized
-      ? 'saved view is too large; split it into a smaller folder'
-      : 'listening period unavailable';
+      ? 'la vista desada és massa gran; divideix-la en una carpeta més petita'
+      : 'període d\'escolta no disponible';
   }
   function automaticEducatorScopeTooLarge(error) {
     var raw = error && error.status === 413 && error.body && error.body.educator_scope;
@@ -752,7 +752,7 @@
       var code = error && error.body && (error.body.code || error.body.error);
       var authLost = error && error.status === 401 && validEducatorId(request.scopeId) && !educatorScopeShared;
       if (authLost && request.generation === educatorScopeGeneration && adminAccessState !== 'locked') {
-        var authMessage = 'Your admin session expired. Unlock to continue.';
+        var authMessage = 'La sessió d\'administració ha caducat. Desbloqueja-la per continuar.';
         showAdminLocked(authMessage, false, false);
         signalAdminLock(authMessage);
       }
@@ -6880,14 +6880,14 @@
         canvas.setAttribute('tabindex', '0');
         canvas.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         canvas.setAttribute('aria-label', expanded
-          ? 'Restore live microphone spectrogram' : 'Expand live microphone spectrogram');
+          ? 'Restaura l\'espectrograma del micròfon en directe' : 'Amplia l\'espectrograma del micròfon en directe');
         canvas.removeAttribute('aria-hidden');
       } else {
         canvas.removeAttribute('role');
         canvas.removeAttribute('tabindex');
         canvas.removeAttribute('aria-expanded');
         canvas.removeAttribute('aria-hidden');
-        canvas.setAttribute('aria-label', 'Live microphone spectrogram');
+        canvas.setAttribute('aria-label', 'Espectrograma del micròfon en directe');
       }
     }
     function setCanvasExpanded(expanded) {
@@ -6935,8 +6935,8 @@
       if (button) {
         button.removeAttribute('aria-busy');
         button.removeAttribute('aria-disabled');
-        button.setAttribute('aria-label', 'Listen to live audio');
-        button.innerHTML = playIcon + '<span>listen</span>';
+        button.setAttribute('aria-label', 'Escolta l\'àudio en directe');
+        button.innerHTML = playIcon + '<span>escolta</span>';
       }
       setStatus('');
       quietCanvas();
@@ -7028,7 +7028,7 @@
       }).then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (body) {
           var url = response.ok && body.ok !== false ? validateGrantUrl(body.url) : '';
-          if (!url) throw new Error(body.error || 'live audio unavailable');
+          if (!url) throw new Error(body.error || 'àudio en directe no disponible');
           return url;
         });
       });
@@ -7050,10 +7050,10 @@
       if (box) box.setAttribute('data-state', 'error');
       if (button) {
         button.removeAttribute('aria-disabled');
-        button.setAttribute('aria-label', 'Retry live audio');
-        button.innerHTML = '<span>retry</span>';
+        button.setAttribute('aria-label', 'Torna a provar l\'àudio en directe');
+        button.innerHTML = '<span>torna-ho a provar</span>';
       }
-      setStatus('Live audio unavailable.');
+      setStatus('Àudio en directe no disponible.');
     }
     function recoverStream(established) {
       stop(true);
@@ -7080,8 +7080,8 @@
       box.setAttribute('data-on', 'true');
       box.setAttribute('data-state', 'connecting');
       button.setAttribute('aria-busy', 'true');
-      button.setAttribute('aria-label', 'Stop live audio');
-      button.innerHTML = stopIcon + '<span>stop</span>';
+      button.setAttribute('aria-label', 'Atura l\'àudio en directe');
+      button.innerHTML = stopIcon + '<span>atura</span>';
       setStatus('connecting...');
       if (!audio) audio = new Audio();
       // A protected grant arrives after this click. Start one persistent
@@ -7102,7 +7102,7 @@
           earlyFailures = 0;
           box.setAttribute('data-state', 'streaming');
           button.removeAttribute('aria-busy');
-          setStatus('live now');
+          setStatus('en directe ara');
           syncCanvasExpansion();
           attachAnalyser();
         }, { once: true });
@@ -7137,10 +7137,10 @@
       mountProtected = nextProtected;
       host.innerHTML = '<div class="live-audio" data-on="false" data-state="idle">'
         + '<div class="pulse" aria-hidden="true"></div>'
-        + '<div class="label">Live audio<span class="hint">raw microphone stream</span></div>'
-        + '<button type="button" data-live-audio-toggle aria-label="Listen to live audio">' + playIcon + '<span>listen</span></button>'
+        + '<div class="label">Àudio en directe<span class="hint">flux directe del micròfon</span></div>'
+        + '<button type="button" data-live-audio-toggle aria-label="Escolta l\'àudio en directe">' + playIcon + '<span>escolta</span></button>'
         + '</div>'
-        + '<canvas class="live-spectro" width="900" height="180" aria-label="Live microphone spectrogram"></canvas>'
+        + '<canvas class="live-spectro" width="900" height="180" aria-label="Espectrograma del micròfon en directe"></canvas>'
         + '<div class="live-status" role="status" aria-live="polite" aria-atomic="true"></div>';
       box = host.querySelector('.live-audio');
       button = host.querySelector('.live-audio button');
@@ -10215,7 +10215,7 @@
       var status = /^(running|paused|stopped)$/.test(item.status || '') ? item.status : 'stopped';
       return {
         id: item.id,
-        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 80) : 'Listening period',
+        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 80) : 'Període d\'escolta',
         status: status,
         folder_id: validEducatorId(item.folder_id) && item.folder_id.indexOf('f_') === 0 ? item.folder_id : null,
         started_at: typeof item.started_at === 'string' ? item.started_at : '',
@@ -10236,7 +10236,7 @@
       if (!item || !validEducatorId(item.id) || item.id.indexOf('f_') !== 0) return null;
       return {
         id: item.id,
-        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 80) : 'Folder',
+        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 80) : 'Carpeta',
         revision: Number.isFinite(+item.revision) ? +item.revision : 0,
         capture_count: Number.isFinite(+item.capture_count) ? +item.capture_count : 0,
       };
@@ -10396,7 +10396,7 @@
     return true;
   }
   function educatorPost(action, fields) {
-    if (educatorActionBusy || !educatorState) return Promise.reject(new Error('action already running'));
+    if (educatorActionBusy || !educatorState) return Promise.reject(new Error('ja hi ha una acció en curs'));
     educatorActionBusy = true;
     if (adminBody) adminBody.setAttribute('aria-busy', 'true');
     var payload = Object.assign({ action: action, state_revision: educatorState.state_revision }, fields || {});
@@ -10411,7 +10411,7 @@
           conflict.conflict = true;
           throw conflict;
         }
-        if (!response.ok || body.ok === false) throw new Error(body.error || 'Action unavailable.');
+        if (!response.ok || body.ok === false) throw new Error(body.error || 'Acció no disponible.');
         return body;
       });
     }).then(function (body) {
@@ -10420,7 +10420,7 @@
       return body;
     }).catch(function (error) {
       if (!adminAuthCancelled(error)) {
-        educatorStatusMessage = error.message || 'Action unavailable.';
+        educatorStatusMessage = error.message || 'Acció no disponible.';
         educatorStatusError = true;
       }
       throw error;
@@ -10494,7 +10494,7 @@
         return;
       }
       rememberEducatorFocus();
-      if (!acceptEducatorState(value, options)) throw new Error('Educators unavailable.');
+      if (!acceptEducatorState(value, options)) throw new Error('Educadors no disponible.');
       if (educatorEditing && educatorPendingState && !options.force) return;
       paintEducators();
     }).catch(function (error) {
@@ -10505,12 +10505,12 @@
       }
       var liveWorkspace = adminBody && adminBody.querySelector('[data-educator-live]');
       if (liveWorkspace) {
-        educatorStatusMessage = error.message || 'Listening periods unavailable.';
+        educatorStatusMessage = error.message || 'Períodes d\'escolta no disponibles.';
         educatorStatusError = true;
         updateEducatorStatus();
       } else {
         liveAudioController.unmount();
-        adminBody.innerHTML = adminUnreachableHtml(error.message || 'Educators unavailable.');
+        adminBody.innerHTML = adminUnreachableHtml(error.message || 'Educadors no disponible.');
       }
     });
   }
@@ -10555,7 +10555,7 @@
       }).catch(function (error) {
         educatorOlderBusy = false;
         if (!adminAuthCancelled(error)) {
-          educatorStatusMessage = error.message || 'Older listening periods unavailable.';
+          educatorStatusMessage = error.message || 'Els períodes d\'escolta antics no estan disponibles.';
           educatorStatusError = true;
           educatorFocusSelector = '[data-load-older]';
           paintEducators();
@@ -10594,11 +10594,11 @@
   function educatorCaptureAccessibleLabel(capture, duration, started) {
     var birds = capture.species_count === null ? '' : String(capture.species_count);
     var calls = capture.detection_count === null ? '' : String(capture.detection_count);
-    return 'View ' + capture.name + '. Duration ' + duration + '. '
-      + (capture._countsUnavailable ? 'Bird and call counts unavailable. '
-        : (birds ? birds + (birds === '1' ? ' bird' : ' birds') : 'Bird count unavailable') + '. '
-          + (calls ? calls + (calls === '1' ? ' call' : ' calls') : 'Call count unavailable') + '. ')
-      + (started ? 'Started ' + started : 'Start time unavailable') + '.';
+    return 'Mostra ' + capture.name + '. Durada ' + duration + '. '
+      + (capture._countsUnavailable ? 'Recompte d\'ocells i cants no disponible. '
+        : (birds ? birds + (birds === '1' ? ' ocell' : ' ocells') : 'Recompte d\'ocells no disponible') + '. '
+          + (calls ? calls + (calls === '1' ? ' cant' : ' cants') : 'Recompte de cants no disponible') + '. ')
+      + (started ? 'Iniciat ' + started : 'Hora d\'inici no disponible') + '.';
   }
   function educatorCaptureNeedsCounts(capture) {
     if (!capture || capture.status !== 'stopped' || !educatorState
@@ -10885,7 +10885,7 @@
     return true;
   }
   function educatorFolderOptions(selected) {
-    var html = '<option value=""' + (!selected ? ' selected' : '') + '>Unfiled</option>';
+    var html = '<option value=""' + (!selected ? ' selected' : '') + '>Sense carpeta</option>';
     (educatorState && educatorState.folders || []).forEach(function (folder) {
       html += '<option value="' + adminAttr(folder.id) + '"' + (folder.id === selected ? ' selected' : '') + '>'
         + adminEsc(folder.name) + '</option>';
@@ -10896,13 +10896,13 @@
     var editing = educatorEditing && educatorEditing.kind === kind && educatorEditing.id === item.id;
     return '<form class="educator-rename" data-rename-form="' + kind + '" data-rename-id="' + adminAttr(item.id) + '"'
       + (editing ? '' : ' hidden') + '>'
-      + '<label class="sr-only" for="rename-' + adminAttr(item.id) + '">Rename ' + kind + '</label>'
+      + '<label class="sr-only" for="rename-' + adminAttr(item.id) + '">Reanomena ' + (kind === 'folder' ? 'la carpeta' : 'el període d\'escolta') + '</label>'
       + '<input id="rename-' + adminAttr(item.id) + '" name="name" maxlength="80" value="' + adminAttr(item.name) + '" required>'
-      + '<button type="submit">save</button><button type="button" data-rename-cancel>cancel</button></form>';
+      + '<button type="submit">desa</button><button type="button" data-rename-cancel>cancel·la</button></form>';
   }
   function educatorMoreButton(kind, item, hidden) {
     return '<button type="button" class="educator-more" data-educator-menu-trigger data-educator-menu-kind="' + kind
-      + '" data-educator-menu-id="' + adminAttr(item.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for '
+      + '" data-educator-menu-id="' + adminAttr(item.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Accions per a '
       + adminAttr(item.name) + '"' + (hidden ? ' hidden' : '') + '>' + ICON_MORE_VERTICAL + '</button>';
   }
   function educatorCaptureRow(capture) {
@@ -10919,10 +10919,10 @@
     var headingId = 'educator-capture-heading-' + capture.id;
     var accessibleLabel = typeof educatorCaptureAccessibleLabel === 'function'
       ? educatorCaptureAccessibleLabel(capture, duration, started)
-      : 'View ' + capture.name + '. Duration ' + duration + '. '
-        + (birds ? birds + (birds === '1' ? ' bird' : ' birds') : 'Bird count unavailable') + '. '
-        + (calls ? calls + (calls === '1' ? ' call' : ' calls') : 'Call count unavailable') + '. '
-        + (started ? 'Started ' + started : 'Start time unavailable') + '.';
+      : 'Mostra ' + capture.name + '. Durada ' + duration + '. '
+        + (birds ? birds + (birds === '1' ? ' ocell' : ' ocells') : 'Recompte d\'ocells no disponible') + '. '
+        + (calls ? calls + (calls === '1' ? ' cant' : ' cants') : 'Recompte de cants no disponible') + '. '
+        + (started ? 'Iniciat ' + started : 'Hora d\'inici no disponible') + '.';
     var needsCounts = typeof educatorCaptureNeedsCounts === 'function'
       ? educatorCaptureNeedsCounts(capture)
       : capture.status === 'stopped'
@@ -10954,23 +10954,23 @@
     var bodyId = 'educator-items-' + folder.id;
     var accessibleName = folder.name;
     var total = Number.isFinite(+expectedTotal) ? Math.max(captures.length, +expectedTotal) : captures.length;
-    var count = captures.length < total ? captures.length + ' of ' + total : String(total);
+    var count = captures.length < total ? captures.length + ' de ' + total : String(total);
     var accessibleCount = captures.length < total
-      ? count + ' listening periods loaded'
-      : count + (total === 1 ? ' listening period' : ' listening periods');
+      ? count + ' períodes d\'escolta carregats'
+      : count + (total === 1 ? ' període d\'escolta' : ' períodes d\'escolta');
     return '<section class="educator-folder" id="educator-' + adminAttr(folder.id)
       + '" aria-label="' + adminAttr(accessibleName) + '" data-collapsed="' + (collapsed ? 'true' : 'false') + '">'
       + '<header class="educator-folder-row" data-educator-row-kind="folder" data-educator-row-id="' + adminAttr(id) + '">'
-      + '<button type="button" class="educator-row-view educator-folder-view" data-view-folder="' + adminAttr(id) + '" data-folder-heading aria-label="View '
+      + '<button type="button" class="educator-row-view educator-folder-view" data-view-folder="' + adminAttr(id) + '" data-folder-heading aria-label="Mostra '
       + adminAttr(accessibleName) + '. ' + adminAttr(accessibleCount) + '."' + (editing ? ' hidden' : '') + '><span class="educator-inline-name" id="' + adminAttr(headingId) + '">'
       + adminEsc(folder.name) + '</span><span class="educator-count">' + count + '</span></button>'
       + educatorRenameHtml('folder', folder) + educatorMoreButton('folder', folder, editing)
       + '<button type="button" class="educator-caret" data-folder-toggle="' + adminAttr(id) + '" aria-expanded="' + (collapsed ? 'false' : 'true')
-      + '" aria-controls="' + adminAttr(bodyId) + '" aria-label="' + (collapsed ? 'Expand ' : 'Collapse ') + adminAttr(accessibleName)
+      + '" aria-controls="' + adminAttr(bodyId) + '" aria-label="' + (collapsed ? 'Expandeix ' : 'Replega ') + adminAttr(accessibleName)
       + '"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 2 4 4-4 4"/></svg></button></header>'
       + '<div class="educator-folder-body" id="' + adminAttr(bodyId) + '"' + (collapsed ? ' hidden' : '') + '>'
       + (captures.length ? '<ol>' + captures.map(educatorCaptureRow).join('') + '</ol>'
-        : '<p class="educator-empty">' + (total ? 'Load older to see listening periods.' : 'No listening periods.') + '</p>')
+        : '<p class="educator-empty">' + (total ? 'Carrega els antics per veure els períodes d\'escolta.' : 'No hi ha períodes d\'escolta.') + '</p>')
       + '</div></section>';
   }
   function syncEducatorStartSubmit(input) {
@@ -10981,40 +10981,40 @@
     if (button) {
       button.setAttribute('data-has-name', hasName ? 'true' : 'false');
       button.setAttribute('aria-label', hasName
-        ? 'Start new listening period' : 'Start new listening period with date and time');
+        ? 'Inicia un període d\'escolta nou' : 'Inicia un període d\'escolta nou amb data i hora');
     }
     return hasName;
   }
   function educatorActiveHtml(active) {
     if (!active) {
-      return '<form class="educator-active educator-start" id="educatorStart"><label for="educatorStartName"><span class="label">New listening period</span></label>'
+      return '<form class="educator-active educator-start" id="educatorStart"><label for="educatorStartName"><span class="label">Període d\'escolta nou</span></label>'
         + '<div class="educator-start-action"><input id="educatorStartName" name="name" maxlength="80" value="' + adminAttr(educatorStartDraft)
-        + '" placeholder="session name" autocomplete="off"><button type="submit" data-educator-start-submit data-has-name="'
+        + '" placeholder="nom de la sessió" autocomplete="off"><button type="submit" data-educator-start-submit data-has-name="'
         + (String(educatorStartDraft || '').trim() ? 'true' : 'false') + '" aria-label="'
-        + (String(educatorStartDraft || '').trim() ? 'Start new listening period' : 'Start new listening period with date and time') + '">'
+        + (String(educatorStartDraft || '').trim() ? 'Inicia un període d\'escolta nou' : 'Inicia un període d\'escolta nou amb data i hora') + '">'
         + '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7h8.5M7.5 3.5 11 7l-3.5 3.5"/></svg></button></div></form>';
     }
     var running = active.status === 'running';
     var editing = educatorEditing && educatorEditing.kind === 'capture' && educatorEditing.id === active.id;
     return '<div class="educator-active" id="educator-' + adminAttr(active.id) + '" data-status="' + adminAttr(active.status)
       + '" data-educator-row-kind="active" data-educator-row-id="' + adminAttr(active.id) + '">'
-      + '<div class="educator-active-head"><div class="educator-active-copy"' + (editing ? ' hidden' : '') + '><span class="educator-state"><i aria-hidden="true"></i>' + adminEsc(active.status) + '</span>'
+      + '<div class="educator-active-head"><div class="educator-active-copy"' + (editing ? ' hidden' : '') + '><span class="educator-state"><i aria-hidden="true"></i>' + adminEsc(active.status === 'running' ? 'en curs' : (active.status === 'paused' ? 'pausat' : active.status)) + '</span>'
       + '<strong>' + adminEsc(active.name) + '</strong>'
       + '<time data-educator-elapsed data-capture-id="' + adminAttr(active.id) + '">' + educatorDurationLabel(educatorDurationSeconds(active)) + '</time></div>'
       + educatorRenameHtml('capture', active) + educatorMoreButton('active', active, editing) + '</div>'
       + '<div class="educator-row-actions"><button type="button" data-educator-action="' + (running ? 'pause' : 'resume') + '" data-id="' + adminAttr(active.id) + '" aria-label="'
-      + (running ? 'Pause ' : 'Resume ') + adminAttr(active.name) + '">'
-      + (running ? 'pause' : 'resume') + '</button>'
-      + '<button type="button" class="educator-primary" data-educator-action="stop" data-id="' + adminAttr(active.id) + '" aria-label="Stop ' + adminAttr(active.name) + '">stop</button></div></div>';
+      + (running ? 'Pausa ' : 'Reprèn ') + adminAttr(active.name) + '">'
+      + (running ? 'pausa' : 'reprèn') + '</button>'
+      + '<button type="button" class="educator-primary" data-educator-action="stop" data-id="' + adminAttr(active.id) + '" aria-label="Atura ' + adminAttr(active.name) + '">atura</button></div></div>';
   }
   function educatorLivePanelHtml() {
     return '<section class="educator-live-panel admin-card" data-live-panel data-wide="' + (educatorLiveWide ? 'true' : 'false') + '">'
       + '<div class="educator-live" data-educator-live></div></section>';
   }
   function educatorDisplayHtml() {
-    return '<div class="educator-display admin-card"><div class="menu-row"><div><span class="label">Display mode</span><span class="hint">'
-      + 'Hide page controls until you move to an edge.'
-      + '</span></div><button type="button" class="switch" role="switch" aria-label="Display mode" aria-checked="'
+    return '<div class="educator-display admin-card"><div class="menu-row"><div><span class="label">Mode de visualització</span><span class="hint">'
+      + 'Oculta els controls de la pàgina fins que et moguis cap a una vora.'
+      + '</span></div><button type="button" class="switch" role="switch" aria-label="Mode de visualització" aria-checked="'
       + (displayModeEnabled() ? 'true' : 'false') + '" aria-disabled="false" data-display-mode></button></div></div>';
   }
   function updateEducatorElapsed() {
@@ -11046,13 +11046,13 @@
     var activeId = educatorState.active && educatorState.active.id;
     var saved = educatorState.captures.filter(function (capture) { return capture.id !== activeId; });
     var folderComposer = educatorFolderComposerOpen
-      ? '<form class="educator-new-folder" id="educatorNewFolder"><label class="sr-only" for="educatorFolderName">Folder name</label>'
+      ? '<form class="educator-new-folder" id="educatorNewFolder"><label class="sr-only" for="educatorFolderName">Nom de la carpeta</label>'
         + '<input id="educatorFolderName" name="name" maxlength="80" value="' + adminAttr(educatorFolderDraft)
-        + '" placeholder="Folder name" required><button type="submit">create</button><button type="button" data-folder-create-cancel>cancel</button></form>'
+        + '" placeholder="Nom de la carpeta" required><button type="submit">crea</button><button type="button" data-folder-create-cancel>cancel·la</button></form>'
       : '';
     var savedHtml = '<div class="educator-saved-header"><div class="educator-saved-header-row">'
-      + '<div class="educator-table-head" aria-hidden="true"><span class="educator-name-head">Listening period</span><span class="educator-duration-head">Duration</span><span class="educator-birds-head">Birds</span><span class="educator-calls-head">Calls</span><span class="educator-started-head">Started</span><span class="educator-counts-head">Birds / calls</span></div>'
-      + '<button type="button" class="educator-folder-add" data-folder-create-open aria-label="Create new folder" aria-expanded="'
+      + '<div class="educator-table-head" aria-hidden="true"><span class="educator-name-head">Període d\'escolta</span><span class="educator-duration-head">Durada</span><span class="educator-birds-head">Ocells</span><span class="educator-calls-head">Cants</span><span class="educator-started-head">Iniciat</span><span class="educator-counts-head">Ocells / cants</span></div>'
+      + '<button type="button" class="educator-folder-add" data-folder-create-open aria-label="Crea una carpeta nova" aria-expanded="'
       + (educatorFolderComposerOpen ? 'true' : 'false') + '"' + (educatorFolderComposerOpen ? ' aria-controls="educatorNewFolder"' : '')
       + '>' + ICON_FOLDER_PLUS + '</button></div>' + folderComposer + '</div>';
     educatorState.folders.forEach(function (folder) {
@@ -11062,22 +11062,22 @@
     });
     var unfiled = saved.filter(function (capture) { return !capture.folder_id; });
     if (unfiled.length) {
-      savedHtml += '<ol class="educator-unfiled" aria-label="Unfiled listening periods">'
+      savedHtml += '<ol class="educator-unfiled" aria-label="Períodes d'escolta sense carpeta">'
         + unfiled.map(educatorCaptureRow).join('') + '</ol>';
     } else if (!educatorState.folders.length) {
-      savedHtml += '<p class="educator-empty educator-saved-empty">No listening periods.</p>';
+      savedHtml += '<p class="educator-empty educator-saved-empty">No hi ha períodes d'escolta.</p>';
     }
     if (educatorCapturePage.more) {
       savedHtml += '<div class="educator-load-older"><button type="button" data-load-older'
         + (educatorOlderBusy ? ' disabled aria-busy="true"' : '') + '>'
-        + (educatorOlderBusy ? 'loading...' : 'load older') + '</button><span>'
-        + educatorCaptureOrder.length + ' of ' + educatorCapturePage.total + '</span></div>';
+        + (educatorOlderBusy ? 'carregant...' : 'carrega els antics') + '</button><span>'
+        + educatorCaptureOrder.length + ' de ' + educatorCapturePage.total + '</span></div>';
     }
-    var html = '<div class="educator-workspace' + (educatorLiveWide ? ' live-wide' : '') + '"><aside class="educator-controls" aria-label="Listening controls">'
+    var html = '<div class="educator-workspace' + (educatorLiveWide ? ' live-wide' : '') + '"><aside class="educator-controls" aria-label="Controls d'escolta">'
       + educatorActiveHtml(educatorState.active) + educatorLivePanelHtml() + educatorDisplayHtml()
       + '<p class="educator-status' + (educatorStatusError ? ' error' : '') + '" role="status" aria-live="polite" aria-atomic="true">'
       + adminEsc(educatorStatusMessage) + '</p></aside>'
-      + '<section class="educator-saved" data-educator-saved tabindex="0" aria-labelledby="educatorSavedTitle"><h2 class="sr-only" id="educatorSavedTitle">Saved listening periods</h2>'
+      + '<section class="educator-saved" data-educator-saved tabindex="0" aria-labelledby="educatorSavedTitle"><h2 class="sr-only" id="educatorSavedTitle">Períodes d'escolta desats</h2>'
       + savedHtml + '</section></div>';
     replaceEducatorBody(html);
     wireEducators();
@@ -11109,7 +11109,7 @@
       return;
     }
     if (!educatorStatusMessage) {
-      educatorStatusMessage = error && error.message || 'Action unavailable.';
+      educatorStatusMessage = error && error.message || 'Acció no disponible.';
       educatorStatusError = true;
     }
     updateEducatorStatus();
@@ -11171,12 +11171,12 @@
         + icon + '</span><span>' + label + '</span></button>';
     }
     if (kind === 'capture') {
-      return item('move', 'Move', ICON_MOVE) + item('rename', 'Rename', ICON_RENAME)
-        + item('remove', 'Remove', ICON_REMOVE, true);
+      return item('move', 'Mou', ICON_MOVE) + item('rename', 'Reanomena', ICON_RENAME)
+        + item('remove', 'Elimina', ICON_REMOVE, true);
     }
-    if (kind === 'active') return item('move', 'Move', ICON_MOVE) + item('rename', 'Rename', ICON_RENAME);
-    if (kind === 'folder') return item('rename', 'Rename', ICON_RENAME) + item('remove', 'Remove', ICON_REMOVE, true);
-    if (kind === 'pane') return item('create-folder', 'Create new folder', ICON_FOLDER_PLUS);
+    if (kind === 'active') return item('move', 'Mou', ICON_MOVE) + item('rename', 'Reanomena', ICON_RENAME);
+    if (kind === 'folder') return item('rename', 'Reanomena', ICON_RENAME) + item('remove', 'Elimina', ICON_REMOVE, true);
+    if (kind === 'pane') return item('create-folder', 'Crea una carpeta nova', ICON_FOLDER_PLUS);
     return '';
   }
   function positionEducatorPopover(popover, anchor, point) {
@@ -11223,8 +11223,8 @@
     menu.className = 'educator-action-menu';
     menu.id = 'educatorActionMenu';
     menu.setAttribute('role', 'menu');
-    menu.setAttribute('aria-label', kind === 'capture' || kind === 'active' ? 'Listening period actions'
-      : (kind === 'folder' ? 'Folder actions' : 'Saved listening period actions'));
+    menu.setAttribute('aria-label', kind === 'capture' || kind === 'active' ? 'Accions del període d\'escolta'
+      : (kind === 'folder' ? 'Accions de la carpeta' : 'Accions dels períodes d\'escolta desats'));
     menu.innerHTML = educatorActionMenuItems(kind);
     adminBody.appendChild(menu);
     var returnFocus = trigger && adminBody.contains(trigger) ? trigger : null;
@@ -11257,10 +11257,10 @@
     popover.setAttribute('role', 'dialog');
     popover.setAttribute('aria-modal', 'false');
     popover.setAttribute('aria-labelledby', 'educatorMoveTitle');
-    popover.innerHTML = '<form data-educator-move-form><strong id="educatorMoveTitle">Move listening period</strong>'
-      + '<label for="educatorMoveFolder">Folder</label><select id="educatorMoveFolder" name="folder" data-educator-move-select>'
-      + educatorFolderOptions(capture.folder_id) + '</select><div><button type="button" data-educator-move-cancel>cancel</button>'
-      + '<button type="submit" class="educator-primary">move</button></div></form>';
+    popover.innerHTML = '<form data-educator-move-form><strong id="educatorMoveTitle">Mou el període d\'escolta</strong>'
+      + '<label for="educatorMoveFolder">Carpeta</label><select id="educatorMoveFolder" name="folder" data-educator-move-select>'
+      + educatorFolderOptions(capture.folder_id) + '</select><div><button type="button" data-educator-move-cancel>cancel·la</button>'
+      + '<button type="submit" class="educator-primary">mou</button></div></form>';
     adminBody.appendChild(popover);
     educatorMoveState = { id: capture.id, popover: popover, returnFocus: returnFocus };
     positionEducatorPopover(popover, returnFocus, null);
@@ -11279,7 +11279,7 @@
         .then(function () {
           closeEducatorMovePopover(false);
           educatorFocusSelector = '#educator-' + current.id + ' [data-educator-menu-trigger]';
-          return finishEducatorAction('Listening period moved.');
+          return finishEducatorAction('Període d\'escolta mogut.');
         }).catch(handleEducatorActionError);
     });
     var cancel = popover.querySelector('[data-educator-move-cancel]');
@@ -11309,19 +11309,19 @@
   }
   function removeEducatorCapture(id) {
     var capture = educatorCapture(id);
-    if (!capture || !confirm('Remove this saved listening period? Detections and recordings stay on the station.')) return false;
+    if (!capture || !confirm('Vols eliminar aquest període d\'escolta desat? Les deteccions i els enregistraments es conservaran a l\'estació.')) return false;
     educatorPost('delete-capture', { id: capture.id, revision: capture.revision }).then(function () {
       if (educatorScopeId() === capture.id) applyEducatorScope(null, { refresh: true });
       educatorFocusSelector = capture.folder_id
         ? '#educator-' + capture.folder_id + ' [data-folder-heading]'
         : '[data-folder-create-open]';
-      return finishEducatorAction('Listening period removed.');
+      return finishEducatorAction('Període d\'escolta eliminat.');
     }).catch(handleEducatorActionError);
     return true;
   }
   function removeEducatorFolder(id) {
     var folder = educatorFolder(id);
-    if (!folder || !confirm('Remove this folder? Its listening periods move to Unfiled.')) return false;
+    if (!folder || !confirm('Vols eliminar aquesta carpeta? Els seus períodes d\'escolta passaran a Sense carpeta.')) return false;
     var moved = educatorState.captures.find(function (capture) {
       return capture.folder_id === folder.id && (!educatorState.active || capture.id !== educatorState.active.id);
     });
@@ -11330,7 +11330,7 @@
       educatorFocusSelector = moved
         ? '#educator-' + moved.id + ' [data-view-capture]'
         : '[data-folder-create-open]';
-      return finishEducatorAction('Folder removed.');
+      return finishEducatorAction('Carpeta eliminada.');
     }).catch(handleEducatorActionError);
     return true;
   }
@@ -11364,8 +11364,8 @@
     setEducatorFolderCollapsed(button.dataset.folderToggle === 'unfiled' ? '' : button.dataset.folderToggle, collapsed);
     section.setAttribute('data-collapsed', collapsed ? 'true' : 'false');
     button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    button.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ')
-      + (section.querySelector('.educator-inline-name') ? section.querySelector('.educator-inline-name').textContent : 'folder'));
+    button.setAttribute('aria-label', (collapsed ? 'Expandeix ' : 'Replega ')
+      + (section.querySelector('.educator-inline-name') ? section.querySelector('.educator-inline-name').textContent : 'carpeta'));
     body.hidden = collapsed;
     if (typeof observeEducatorCaptureCounts === 'function') observeEducatorCaptureCounts();
     return true;
@@ -11554,7 +11554,7 @@
             applyEducatorScope(activeScope, { explicit: false, clearExplicit: true, refresh: true });
             educatorFocusSelector = '[data-educator-action="pause"]';
           }
-          return finishEducatorAction('Listening period started.');
+          return finishEducatorAction('Període d\'escolta iniciat.');
         }).catch(handleEducatorActionError);
       });
     }
@@ -11573,7 +11573,7 @@
           var created = body.result && body.result.folder;
           if (created && cleared) educatorFocusSelector = '#educator-' + created.id + ' [data-folder-heading]';
           else if (!cleared && educatorFolderComposerOpen) educatorFocusSelector = '#educatorFolderName';
-          return finishEducatorAction('Folder created.');
+          return finishEducatorAction('Carpeta creada.');
         }).catch(handleEducatorActionError);
       });
     }
@@ -11592,7 +11592,7 @@
           } else {
             educatorFocusSelector = '[data-educator-action="' + (action === 'pause' ? 'resume' : 'pause') + '"]';
           }
-          return finishEducatorAction(action === 'stop' ? 'Listening period saved.' : 'Listening period ' + (action === 'pause' ? 'paused.' : 'resumed.'));
+          return finishEducatorAction(action === 'stop' ? 'Període d\'escolta desat.' : 'Període d\'escolta ' + (action === 'pause' ? 'pausat.' : 'reprès.'));
         }).catch(handleEducatorActionError);
       });
     });
@@ -11629,7 +11629,7 @@
         if (!item || !name) return;
         educatorPost('rename-' + kind, { id: item.id, revision: item.revision, name: name }).then(function () {
           closeEducatorRename(kind, item.id);
-          return finishEducatorAction(kind === 'capture' ? 'Listening period renamed.' : 'Folder renamed.');
+          return finishEducatorAction(kind === 'capture' ? 'Període d\'escolta reanomenat.' : 'Carpeta reanomenada.');
         }).catch(function (error) {
           if (error && error.conflict) closeEducatorRename(kind, item.id);
           handleEducatorActionError(error);
@@ -11675,7 +11675,7 @@
     educatorFolderDraft = '';
     educatorFolderComposerOpen = false;
     educatorLiveWide = false;
-    adminBody.innerHTML = '<div class="educator-loading" role="status">Loading listening periods...</div>';
+    adminBody.innerHTML = '<div class="educator-loading" role="status">Carregant períodes d'escolta...</div>';
     educatorLoad({ force: true });
     adminPollT = setInterval(function () {
       if (!document.hidden && adminSect === 'educators' && !educatorActionBusy) educatorLoad();
@@ -11810,7 +11810,7 @@
     else if (section === 'logs') renderAdminLogs();
     else if (section === 'tools') renderAdminTools();
     else if (section === 'educators') renderAdminEducators();
-    else adminBody.innerHTML = adminUnreachableHtml('unknown admin section');
+    else adminBody.innerHTML = adminUnreachableHtml('secció d'administració desconeguda');
     if (section === 'educators' && educatorAdminRouteFocus) {
       educatorAdminRouteFocus = false;
       adminTitle.setAttribute('tabindex', '-1');
@@ -11927,7 +11927,7 @@
       + '<div class="map-card">'
       + '  <div class="map-head">'
       + '    <input id="mapSearch" type="text" placeholder="cerca un lloc" autocomplete="off">'
-      + '    <button type="button" class="pin-btn" id="mapClose" aria-label="close">' + ICON_CLOSE + '</button>'
+      + '    <button type="button" class="pin-btn" id="mapClose" aria-label="Tanca">' + ICON_CLOSE + '</button>'
       + '  </div>'
       + '  <div class="map-view" id="mapView"><div class="map-tiles" id="mapTiles"></div>'
       + '    <div class="map-pin" aria-hidden="true"></div>'
@@ -13574,7 +13574,7 @@
     return !!snapshot && validEducatorId(snapshot.edu) && adminAuthMeta.direct_local !== true;
   }
   function educatorSavedExportMessage() {
-    return 'Saved-view exports require a direct local connection.';
+    return 'Les exportacions de vistes desades requereixen una connexió local directa.';
   }
   function setAdminExportStatus(link, message, error) {
     if (!link) return;
@@ -13724,8 +13724,8 @@
             if (adminAuthCancelled(error)) return;
             if (!educatorExportSnapshotCurrent(snapshot)) return;
             setAdminExportStatus(link, error && error.status === 413
-              ? 'Export is too large. Choose a smaller listening period or folder.'
-              : 'Download unavailable.', true);
+              ? 'L\'exportació és massa gran. Tria un període d\'escolta o una carpeta més petits.'
+              : 'Descàrrega no disponible.', true);
             setTimeout(function () { link.removeAttribute('data-error'); }, 1800);
           }).then(function () {
             link.removeAttribute('aria-busy');
