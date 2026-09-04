@@ -23,6 +23,7 @@ import re
 import statistics
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 
@@ -94,8 +95,14 @@ def fetch_recent(base, hours, timeout, auth=None):
     req = urllib.request.Request(url, headers={"User-Agent": "AvianVisitors-frame/1.0"})
     if auth:
         req.add_header("Authorization", auth)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read(2_000_000)).get("species", [])
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read(2_000_000)).get("species", [])
+    except urllib.error.HTTPError as e:
+        body = e.read(4096).decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"HTTP {e.code} fetching {url}: {body}"
+        ) from e
 
 
 def signature(species):
