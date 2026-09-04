@@ -146,14 +146,9 @@
     syncPill(slider);
     setTitleForView(i);
 
-    // Resolve the incoming view's header state before its entrance animation.
-    // Otherwise an Atlas that becomes non-scrollable can briefly inherit the
-    // previous compact header and expand one frame later, shifting the grid.
-    var nextView = document.getElementById('v' + i);
-    if (stage && nextView && nextView.scrollTop <= 0) {
-      stage.classList.remove('is-compact');
-    }
-    requestAnimationFrame(syncCompactHeader);
+    // Resolve the incoming view's header state synchronously so it never paints
+    // with the previous view's compact/expanded state.
+    syncCompactHeader();
 
     if (!switching) return;
     // Replay the view's entrance animation on switch (collage bloom,
