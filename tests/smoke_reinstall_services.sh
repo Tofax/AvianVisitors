@@ -45,6 +45,7 @@ cp /source/scripts/link_webroot.sh "$repo/scripts/link_webroot.sh"
 cp /source/scripts/livestream.sh "$repo/scripts/livestream.sh"
 cp /source/scripts/update_caddyfile.sh "$repo/scripts/update_caddyfile.sh"
 cp /source/scripts/security_refresh.sh "$repo/scripts/security_refresh.sh"
+cp /source/scripts/educators_control.sh "$repo/scripts/educators_control.sh"
 cat >"$repo/scripts/example.sh" <<'EOF'
 #!/usr/bin/env bash
 echo example
@@ -175,6 +176,8 @@ grep -q 'another update is already running' "$test_root/contention.log" \
   || fail 'contended service refresh changed security state'
 flock -u 8
 exec 8>&-
+[ ! -e /var/lib/avian-visitors/educators.lock ] \
+  || fail 'pre-Educators refresh fixture already had a coordination lock'
 
 # The updater passes its already locked descriptor to avoid deadlocking its
 # own post-update refresh.
@@ -184,7 +187,7 @@ AVIAN_UPDATE_LOCK_FD=9 /usr/local/sbin/avian-service-refresh \
   >"$test_root/refresh.log" 2>&1 || fail 'inherited-lock service refresh failed'
 flock -u 9
 exec 9>&-
-[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 3 ] \
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 4 ] \
   || fail 'first-hop refresh performed an unexpected daemon reload'
 
 # This invocation began in the exact 16c7217d helper. It atomically replaced
@@ -299,7 +302,7 @@ grep -q 'shared audio or RTSP remains available' "$test_root/safe-policy.out" \
   || fail 'shared-audio policy status was not reported'
 [ "$(stat -c '%U:%G:%a' "$policy_file")" = root:root:644 ] \
   || fail 'safe existing live stream drop-in lost its ownership or mode'
-[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 4 ] \
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 5 ] \
   || fail 'explicit audio-policy refresh performed an unexpected daemon reload'
 
 # Never replace a policy file whose ownership shows that it is not managed by
@@ -318,7 +321,7 @@ grep -q 'live stream drop-in file is unsafe' "$test_root/unsafe-policy.err" \
   || fail 'unsafe live stream drop-in contents were changed'
 chown root:root "$policy_file"
 chmod 0644 "$policy_file"
-[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 4 ] \
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 5 ] \
   || fail 'rejected audio policy changed systemd state'
 
 sed -i 's|^RTSP_STREAM=.*|RTSP_STREAM=rtsp://camera.example.test/audio|' \
@@ -348,10 +351,17 @@ grep -qx 'keep local bin' /usr/local/bin/avian-refresh-unknown \
 for helper in \
   avian-update-control avian-service-refresh avian-maintenance-control \
   avian-archive-control avian-security-refresh avian-admin-control \
-  avian-link-webroot avian-caddy-refresh; do
+  avian-link-webroot avian-caddy-refresh avian-educators; do
   [ "$(stat -c '%U:%G:%a' "/usr/local/sbin/$helper")" = root:root:755 ] \
     || fail "unsafe helper installation: $helper"
 done
+[ ! -e /var/lib/avian-visitors/educators.state ] \
+  || fail 'disabled service refresh created Educators profile state'
+[ ! -e /var/lib/avian-visitors/educators ] \
+  || fail 'disabled service refresh created Educators storage'
+[ "$(stat -c '%U:%G:%a:%h' /var/lib/avian-visitors/educators.lock)" = \
+  root:caddy:660:1 ] \
+  || fail 'helper-bootstrap update did not provision the Educators coordination lock'
 [ "$(stat -c '%U:%G:%a' /usr/local/bin)" = root:root:755 ] \
   || fail '/usr/local/bin permissions changed'
 [ "$(grep -c '^reload caddy$' "$test_root/systemctl.log")" -eq 2 ] \
@@ -373,7 +383,7 @@ done
 # Three reloads belong to each full refresh: live-stream policy, final service
 # refresh, and Icecast start guard. The explicit safe audio-policy check adds
 # one more. The phase checks above prevent duplicate reloads from canceling out.
-[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 7 ] \
+[ "$(grep -c '^daemon-reload$' "$test_root/systemctl.log")" -eq 9 ] \
   || fail 'daemon reload was not idempotent'
 [ "$(grep -c '^stop livestream.service$' "$test_root/systemctl.log")" -eq 2 ] \
   || fail 'direct ALSA mode did not stop live streaming'

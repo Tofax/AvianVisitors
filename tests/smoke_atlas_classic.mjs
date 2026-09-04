@@ -88,11 +88,11 @@ assert.equal(preferenceSyncs, 2, 'each preference change performs one immediate 
 const rowContext = { atlasUsesClassicCards() { return true; } };
 vm.createContext(rowContext);
 vm.runInContext(`${functionSource('atlasClassicRow')}; this.markup = atlasClassicRow();`, rowContext);
-assert.match(rowContext.markup, />Classic Atlas cards</, 'Settings uses the requested concise label');
+assert.match(rowContext.markup, />Targetes cl.ssiques de l.atles</, 'Settings uses the requested concise label');
 assert.match(rowContext.markup, /data-atlas-classic/, 'Settings exposes a dedicated local switch');
 assert.match(rowContext.markup, /aria-checked="true"/, 'the switch reflects the saved preference');
 assert.doesNotMatch(rowContext.markup, /hint/, 'the preference adds no helper-copy clutter');
-assert.match(apt, /atlasAlwaysAllRow\(\)\s*\+ atlasClassicRow\(\)\s*\+ settingsText\('SITE_NAME', 'Station name'/,
+assert.match(apt, /atlasAlwaysAllRow\(\)\s*\+ atlasClassicRow\(\)\s*\+ settingsText\('SITE_NAME', 'Nom de l.estaci.'/,
   'Classic Atlas cards stays in the first preference group immediately above Station name');
 assert.match(apt, /\.switch:not\(\[data-labels-switch\]\):not\(\[data-atlas-always-all\]\):not\(\[data-atlas-classic\]\)/,
   'the local preference is excluded from Pi config autosave');
@@ -165,7 +165,7 @@ assert.equal(committed[0], '<article>one</article>', 'Classic markup is committe
 // Render the real Classic branch with a small data set. This validates the
 // historical card structure and proves stamp-only subsystems remain dormant.
 const renderStart = apt.indexOf('function renderAtlas(');
-const renderEnd = apt.indexOf('\n  var atlasResizeFrame', renderStart);
+const renderEnd = apt.indexOf('\n  function handleAtlasResize', renderStart);
 assert.ok(renderStart >= 0 && renderEnd > renderStart, 'renderAtlas source is present');
 const renderSource = apt.slice(renderStart, renderEnd);
 const renderGrid = {
@@ -207,6 +207,13 @@ const renderContext = {
   stopAtlasCardAudio() { stopCalls += 1; },
   clearAtlasPackedState() {},
   atlasWindowHours() { return effectiveHours; },
+  educatorScopeId() { return ''; },
+  educatorScopeGeneration: 0,
+  educatorScopeLabel() { return 'Listening period'; },
+  effectiveEducatorScope: null,
+  educatorDetectionId() { return null; },
+  adminAttr(value) { return String(value); },
+  mediaApiUrl(endpoint, params) { return `./avian/api/${endpoint}.php?sci=${encodeURIComponent(params.sci || '')}`; },
   EMPTY_WINDOW_COPY: 'none',
   fmtNK(value) { return String(value); },
   windowLabel() { return '24h'; },
@@ -219,6 +226,7 @@ const renderContext = {
   wikiUrl(sci) { return `https://example.test/wiki/${encodeURIComponent(sci)}`; },
   ebirdUrl() { return 'https://example.test/ebird'; },
   escHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); },
+  displayName(s) { return s.com || s.sci; },
   ICON_PLAY: '<svg class="play-icon"></svg>',
   commitClassicAtlasMarkup(grid, markup, sortMode, familyMode) {
     classicCommits.push({ markup, sortMode, familyMode });
@@ -603,7 +611,7 @@ assert.match(css, /#atlasGrid\[data-layout="classic"\][\s\S]*?repeat\(auto-fill,
   'Classic mode restores the historical responsive desktop grid');
 assert.match(css, /#atlasGrid\[data-layout="classic"\][\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/,
   'Classic mode restores the historical two-up mobile grid');
-assert.match(html, /styles\.css\?v=r188/, 'Classic Atlas styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r214/, 'Classic Atlas behavior has a fresh cache key');
+assert.match(html, /styles\.css\?v=r197/, 'Classic Atlas styles have a fresh cache key');
+assert.match(html, /apt\.js\?v=r235/, 'Classic Atlas behavior has a fresh cache key');
 
 console.log('classic Atlas smoke: ok');

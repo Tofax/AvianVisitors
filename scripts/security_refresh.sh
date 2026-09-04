@@ -205,10 +205,37 @@ for helper in \
   fi
 done
 
+educator_helper=/usr/local/sbin/avian-educators
+if [ ! -e "$educator_helper" ] && [ ! -L "$educator_helper" ]; then
+  update_lock=/run/lock/avian-update.lock
+  if [ ! -e /proc/self/fd/9 ] \
+    || [ "$(readlink -f /proc/self/fd/9)" != "$update_lock" ]; then
+    echo "Missing Educators helper cannot be bootstrapped outside an update" >&2
+    exit 1
+  fi
+  AVIAN_UPDATE_LOCK_FD=9 \
+    /usr/local/sbin/avian-service-refresh --helper-bootstrap \
+    || { echo "Educators helper bootstrap failed" >&2; exit 1; }
+fi
+if [ ! -f "$educator_helper" ] || [ -L "$educator_helper" ] \
+  || [ ! -x "$educator_helper" ] \
+  || [ "$(stat -c '%U:%G:%a' "$educator_helper")" != root:root:755 ]; then
+  echo "Unsafe or missing helper: $educator_helper" >&2
+  exit 1
+fi
+
 # Only the root install/update path may claim an absent state from the legacy
 # CADDY_PWD value. Existing state is authoritative and is never resynced here.
 if ! admin_init_output=$(/usr/local/sbin/avian-admin-control auth-state-init); then
   printf '%s\n' "$admin_init_output" >&2
+  exit 1
+fi
+if ! educator_recovery_output=$(/usr/local/sbin/avian-educators install-recovery-unit); then
+  printf '%s\n' "$educator_recovery_output" >&2
+  exit 1
+fi
+if ! educator_init_output=$(/usr/local/sbin/avian-educators refresh-install); then
+  printf '%s\n' "$educator_init_output" >&2
   exit 1
 fi
 

@@ -5,12 +5,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/admin-state.php';
+require_once __DIR__ . '/educator-state.php';
 
 const AVIAN_ADMIN_SESSION_NAME = 'avian_admin';
 const AVIAN_ADMIN_SESSION_KEY = 'password_fingerprint';
 const AVIAN_ADMIN_SESSION_CREATED_KEY = 'created_at';
 const AVIAN_ADMIN_SESSION_SEEN_KEY = 'seen_at';
 const AVIAN_ADMIN_SESSION_GRANTS_KEY = 'download_grants';
+const AVIAN_ADMIN_SESSION_EDUCATOR_AUDIO_GRANTS_KEY = 'educator_audio_grants';
 const AVIAN_ADMIN_SESSION_IDLE_SECONDS = 1800;
 const AVIAN_ADMIN_SESSION_ABSOLUTE_SECONDS = 28800;
 const AVIAN_ADMIN_RATE_DEFAULT_PATH = '/var/lib/avian-visitors/admin-auth.rate';
@@ -352,8 +354,27 @@ function avian_admin_session_valid(
     return $valid;
 }
 
-function avian_create_admin_download_grant(array $server, string $scope): ?string {
+function avian_valid_educator_scope_id(?string $scope): bool {
+    return $scope === null || preg_match('/\A[cf]_[a-f0-9]{32}\z/D', $scope) === 1;
+}
+
+function avian_create_admin_download_grant(
+    array $server,
+    string $scope,
+    ?string $educatorScope = null,
+    bool $allowForwardedEducatorScope = false
+): ?string {
     if (!in_array($scope, ['detections', 'recordings'], true)) return null;
+    if (!avian_valid_educator_scope_id($educatorScope)) return null;
+    if ($educatorScope !== null
+        && !avian_is_direct_local_request($server)
+        && !$allowForwardedEducatorScope) return null;
+    $educatorEpoch = null;
+    if ($educatorScope !== null) {
+        $profile = educator_profile_state();
+        if (empty($profile['valid']) || empty($profile['enabled'])) return null;
+        $educatorEpoch = (int)$profile['epoch'];
+    }
     $state = avian_admin_state();
     if (!avian_admin_session_valid($server, $state, false, true)) return null;
     try {
@@ -369,17 +390,36 @@ function avian_create_admin_download_grant(array $server, string $scope): ?strin
         if (!is_array($grant) || (int)($grant['expires'] ?? 0) < $now) unset($grants[$key]);
     }
     if (count($grants) >= 4) $grants = [];
-    $grants[hash('sha256', $token)] = ['scope' => $scope, 'expires' => $now + 30];
+    $grants[hash('sha256', $token)] = [
+        'scope' => $scope,
+        'educator_scope' => $educatorScope,
+        'educator_epoch' => $educatorEpoch,
+        'expires' => $now + 30,
+    ];
     $_SESSION[AVIAN_ADMIN_SESSION_GRANTS_KEY] = $grants;
     session_write_close();
     return $token;
 }
 
-function avian_consume_admin_download_grant(array $server, string $scope, string $token): bool {
+/**
+ * Consume a download grant and return its server-side scope binding.
+ *
+ * The caller must resolve the current request scope after this succeeds and
+ * compare it with `educator_scope`. This keeps a private capture id out of a
+ * public `edu=active` URL while still binding the one-use grant to one exact
+ * listening period.
+ *
+ * @return array{educator_scope:?string}|null
+ */
+function avian_consume_admin_download_grant_details(
+    array $server,
+    string $scope,
+    string $token
+): ?array {
     if (!in_array($scope, ['detections', 'recordings'], true)
-        || preg_match('/\A[a-f0-9]{48}\z/D', $token) !== 1) return false;
+        || preg_match('/\A[a-f0-9]{48}\z/D', $token) !== 1) return null;
     $state = avian_admin_state();
-    if (!avian_admin_session_valid($server, $state, false, true, false)) return false;
+    if (!avian_admin_session_valid($server, $state, false, true, false)) return null;
     $key = hash('sha256', $token);
     $grants = $_SESSION[AVIAN_ADMIN_SESSION_GRANTS_KEY] ?? [];
     $grant = is_array($grants) ? ($grants[$key] ?? null) : null;
@@ -388,9 +428,87 @@ function avian_consume_admin_download_grant(array $server, string $scope, string
         $_SESSION[AVIAN_ADMIN_SESSION_GRANTS_KEY] = $grants;
     }
     session_write_close();
-    return is_array($grant)
-        && hash_equals($scope, (string)($grant['scope'] ?? ''))
-        && (int)($grant['expires'] ?? 0) >= time();
+    if (!is_array($grant)
+        || !hash_equals($scope, (string)($grant['scope'] ?? ''))
+        || (int)($grant['expires'] ?? 0) < time()) return null;
+    $educatorScope = $grant['educator_scope'] ?? null;
+    if (!is_string($educatorScope) && $educatorScope !== null) return null;
+    if (!avian_valid_educator_scope_id($educatorScope)) return null;
+    if ($educatorScope !== null) {
+        $profile = educator_profile_state();
+        if (empty($profile['valid']) || empty($profile['enabled'])
+            || !is_int($grant['educator_epoch'] ?? null)
+            || (int)$grant['educator_epoch'] !== (int)$profile['epoch']) return null;
+    }
+    return ['educator_scope' => $educatorScope];
+}
+
+/** Backwards-compatible exact-binding wrapper. */
+function avian_consume_admin_download_grant(
+    array $server,
+    string $scope,
+    string $token,
+    ?string $educatorScope = null
+): bool {
+    if (!avian_valid_educator_scope_id($educatorScope)) return false;
+    $details = avian_consume_admin_download_grant_details($server, $scope, $token);
+    return is_array($details) && $details['educator_scope'] === $educatorScope;
+}
+
+function avian_create_educator_audio_grant(array $server): ?string {
+    if (!avian_is_direct_local_request($server) || !avian_lan_admin_auth_required($server)) return null;
+    $profile = educator_profile_state();
+    if (empty($profile['valid']) || empty($profile['enabled'])) return null;
+    $state = avian_admin_state();
+    if (!avian_admin_session_valid($server, $state, false, true, true, false)) return null;
+    try {
+        $token = bin2hex(random_bytes(24));
+    } catch (Throwable $error) {
+        session_write_close();
+        return null;
+    }
+    $now = time();
+    $grants = $_SESSION[AVIAN_ADMIN_SESSION_EDUCATOR_AUDIO_GRANTS_KEY] ?? [];
+    if (!is_array($grants)) $grants = [];
+    foreach ($grants as $key => $grant) {
+        if (!is_array($grant) || (int)($grant['expires'] ?? 0) < $now) unset($grants[$key]);
+    }
+    if (count($grants) >= 4) $grants = [];
+    $grants[hash('sha256', $token)] = [
+        'expires' => $now + 15,
+        'profile_epoch' => (int)$profile['epoch'],
+    ];
+    $_SESSION[AVIAN_ADMIN_SESSION_EDUCATOR_AUDIO_GRANTS_KEY] = $grants;
+    session_write_close();
+    return $token;
+}
+
+/** Return the validated session cookie associated with a one-use grant. */
+function avian_consume_educator_audio_grant(array $server, string $token): ?string {
+    if (preg_match('/\A[a-f0-9]{48}\z/D', $token) !== 1) return null;
+    if (!avian_is_direct_local_request($server) || !avian_lan_admin_auth_required($server)) return null;
+    $profile = educator_profile_state();
+    if (empty($profile['valid']) || empty($profile['enabled'])) return null;
+    $state = avian_admin_state();
+    if (!avian_admin_session_valid($server, $state, false, true, true, false)) return null;
+    $cookie = session_id();
+    $key = hash('sha256', $token);
+    $grants = $_SESSION[AVIAN_ADMIN_SESSION_EDUCATOR_AUDIO_GRANTS_KEY] ?? [];
+    $grant = is_array($grants) ? ($grants[$key] ?? null) : null;
+    if (is_array($grants)) {
+        unset($grants[$key]);
+        $_SESSION[AVIAN_ADMIN_SESSION_EDUCATOR_AUDIO_GRANTS_KEY] = $grants;
+    }
+    session_write_close();
+    if (!is_array($grant)
+        || (int)($grant['expires'] ?? 0) < time()
+        || (int)($grant['profile_epoch'] ?? -1) !== (int)$profile['epoch']
+        || strlen($cookie) < 16
+        || strlen($cookie) > 128
+        || preg_match('/\A[A-Za-z0-9,-]+\z/D', $cookie) !== 1) {
+        return null;
+    }
+    return $cookie;
 }
 
 /** @return array{locked:bool,remaining:int} */

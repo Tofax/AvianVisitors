@@ -37,6 +37,7 @@ $ALLOWED = [
     // silently disables the range filter for the whole station.
     'SF_THRESH'          => ['type' => 'float', 'min' => 0.0005, 'max' => 0.99, 'restart' => true],
     'OVERLAP'            => ['type' => 'float', 'min' => 0.0,  'max' => 2.5,  'restart' => true],
+    'RESET_AT_MIDNIGHT'  => ['type' => 'bool'],
     'MAX_FILES_SPECIES'  => ['type' => 'int',   'min' => 0,    'max' => 100000],
     'FULL_DISK'          => ['type' => 'enum',  'values' => ['purge', 'keep']],
     'PURGE_THRESHOLD'    => ['type' => 'int',   'min' => 50,   'max' => 99],
@@ -181,6 +182,7 @@ if ($method === 'GET') {
         $v = $conf[$k];
         if ($spec['type'] === 'float') $v = (float)$v;
         elseif ($spec['type'] === 'int') $v = (int)$v;
+        elseif ($spec['type'] === 'bool') $v = in_array(strtolower($v), ['1', 'true', 'yes', 'on'], true);
         $out[$k] = $v;
     }
     echo json_encode([
@@ -234,6 +236,9 @@ if ($method === 'POST') {
         } elseif ($spec['type'] === 'int') {
             if (!is_int($v)) { $errors[$k] = 'not an integer'; continue; }
             if ($v < ($spec['min'] ?? -PHP_INT_MAX) || $v > ($spec['max'] ?? PHP_INT_MAX)) { $errors[$k] = 'out of range'; continue; }
+        } elseif ($spec['type'] === 'bool') {
+            if (!is_bool($v)) { $errors[$k] = 'not a boolean'; continue; }
+            $v = $v ? 1 : 0;
         } elseif ($spec['type'] === 'enum') {
             if (!is_string($v)) { $errors[$k] = 'invalid value'; continue; }
             if (!in_array($v, $spec['values'], true)) { $errors[$k] = 'invalid value'; continue; }
