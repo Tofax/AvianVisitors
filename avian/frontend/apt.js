@@ -4761,7 +4761,7 @@
       var needsArt = tablesReady && !DIMS[slugify(s.sci)];
       var fresh = justGenerated[s.sci] ? '&t=' + justGenerated[s.sci] : '';
       if (classic) {
-        var common = s.com || s.sci;
+        var common = displayName(s);
         var imageSrc = needsArt ? './nest-eggs.webp' : sketchSrc + fresh;
         var birdWiki = wikiUrl(s.sci);
         var birdEbird = ebirdUrl(s.sci);

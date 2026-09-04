@@ -2683,6 +2683,7 @@ body.postcard-open { overflow: hidden; }
   .admin-screen {
     position: fixed; inset: 0 0 60px 0;
     background: var(--paper);
+    overflow-x: hidden;
     overflow-y: auto;
     z-index: 5;
     opacity: 0; pointer-events: none;

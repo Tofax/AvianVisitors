@@ -1008,7 +1008,7 @@ gateSelectors.forEach(function (selector) {
     'gate off and gate on must not select or reposition the Atlas');
 });
 
-assert.match(html, /styles\.css\?v=r188/, 'the polished styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r215/, 'the polished behavior has a fresh cache key');
+assert.match(html, /styles\.css\?v=r189/, 'the polished styles have a fresh cache key');
+assert.match(html, /apt\.js\?v=r216/, 'the polished behavior has a fresh cache key');
 
 console.log('admin UI polish smoke: ok');
