@@ -75,13 +75,12 @@ function educator_store_file_metadata_valid(array $stat): bool {
 
 function educator_store_parent_metadata_valid(string $path): bool {
     if (educator_store_test_metadata()) return true;
-    $identity = educator_caddy_identity();
     $stat = @lstat(dirname($path));
-    return is_array($identity) && is_array($stat)
+    return is_array($stat)
         && (($stat['mode'] ?? 0) & 0170000) === 0040000
         && (int)($stat['uid'] ?? -1) === 0
-        && (int)($stat['gid'] ?? -1) === $identity['gid']
-        && (($stat['mode'] ?? 0) & 0777) === 0770;
+        && (int)($stat['gid'] ?? -1) === 0
+        && (($stat['mode'] ?? 0) & 0777) === 0755;
 }
 
 function educator_lock_metadata_valid(array $stat): bool {
