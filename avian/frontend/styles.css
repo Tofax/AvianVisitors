@@ -189,6 +189,7 @@
   .view#v2 {
     overflow-x: hidden;
     overflow-y: hidden;
+    overflow-anchor: none;
     scrollbar-gutter: stable;
     overscroll-behavior-y: none;
     padding-left: clamp(18px, calc(12.6667vw - 70.6667px), 56px);
