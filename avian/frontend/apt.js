@@ -11062,10 +11062,10 @@
     });
     var unfiled = saved.filter(function (capture) { return !capture.folder_id; });
     if (unfiled.length) {
-      savedHtml += '<ol class="educator-unfiled" aria-label="Períodes d'escolta sense carpeta">'
+      savedHtml += '<ol class="educator-unfiled" aria-label="Períodes d\'escolta sense carpeta">'
         + unfiled.map(educatorCaptureRow).join('') + '</ol>';
     } else if (!educatorState.folders.length) {
-      savedHtml += '<p class="educator-empty educator-saved-empty">No hi ha períodes d'escolta.</p>';
+      savedHtml += '<p class="educator-empty educator-saved-empty">No hi ha períodes d\'escolta.</p>';
     }
     if (educatorCapturePage.more) {
       savedHtml += '<div class="educator-load-older"><button type="button" data-load-older'
@@ -11073,11 +11073,11 @@
         + (educatorOlderBusy ? 'carregant...' : 'carrega els antics') + '</button><span>'
         + educatorCaptureOrder.length + ' de ' + educatorCapturePage.total + '</span></div>';
     }
-    var html = '<div class="educator-workspace' + (educatorLiveWide ? ' live-wide' : '') + '"><aside class="educator-controls" aria-label="Controls d'escolta">'
+    var html = '<div class="educator-workspace' + (educatorLiveWide ? ' live-wide' : '') + '"><aside class="educator-controls" aria-label="Controls d\'escolta">'
       + educatorActiveHtml(educatorState.active) + educatorLivePanelHtml() + educatorDisplayHtml()
       + '<p class="educator-status' + (educatorStatusError ? ' error' : '') + '" role="status" aria-live="polite" aria-atomic="true">'
       + adminEsc(educatorStatusMessage) + '</p></aside>'
-      + '<section class="educator-saved" data-educator-saved tabindex="0" aria-labelledby="educatorSavedTitle"><h2 class="sr-only" id="educatorSavedTitle">Períodes d'escolta desats</h2>'
+      + '<section class="educator-saved" data-educator-saved tabindex="0" aria-labelledby="educatorSavedTitle"><h2 class="sr-only" id="educatorSavedTitle">Períodes d\'escolta desats</h2>'
       + savedHtml + '</section></div>';
     replaceEducatorBody(html);
     wireEducators();
@@ -11675,7 +11675,7 @@
     educatorFolderDraft = '';
     educatorFolderComposerOpen = false;
     educatorLiveWide = false;
-    adminBody.innerHTML = '<div class="educator-loading" role="status">Carregant períodes d'escolta...</div>';
+    adminBody.innerHTML = '<div class="educator-loading" role="status">Carregant períodes d\'escolta...</div>';
     educatorLoad({ force: true });
     adminPollT = setInterval(function () {
       if (!document.hidden && adminSect === 'educators' && !educatorActionBusy) educatorLoad();
@@ -11810,7 +11810,7 @@
     else if (section === 'logs') renderAdminLogs();
     else if (section === 'tools') renderAdminTools();
     else if (section === 'educators') renderAdminEducators();
-    else adminBody.innerHTML = adminUnreachableHtml('secció d'administració desconeguda');
+    else adminBody.innerHTML = adminUnreachableHtml("secció d'administració desconeguda");
     if (section === 'educators' && educatorAdminRouteFocus) {
       educatorAdminRouteFocus = false;
       adminTitle.setAttribute('tabindex', '-1');
