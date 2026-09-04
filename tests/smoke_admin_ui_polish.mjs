@@ -1009,6 +1009,6 @@ gateSelectors.forEach(function (selector) {
 });
 
 assert.match(html, /styles\.css\?v=r190/, 'the polished styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r217/, 'the polished behavior has a fresh cache key');
+assert.match(html, /apt\.js\?v=r218/, 'the polished behavior has a fresh cache key');
 
 console.log('admin UI polish smoke: ok');

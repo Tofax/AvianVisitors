@@ -181,7 +181,10 @@
     compactFrame = 0;
     var view = document.getElementById('v' + currentView);
     if (!stage || !view) return;
-    var canScroll = view.scrollHeight > view.clientHeight + 3;
+    // Keep a view scrollable while it is already displaced. Collapsing the
+    // masthead increases the available height and can make a short Atlas fit,
+    // but that must not turn a user scroll into an automatic jump to the top.
+    var canScroll = view.scrollHeight > view.clientHeight + 3 || view.scrollTop > 0;
     var threshold = stage.classList.contains('is-compact') ? 8 : 26;
     stage.classList.toggle('is-compact', canScroll && view.scrollTop > threshold);
   }
@@ -198,9 +201,11 @@
     atlasOverflowFrame = 0;
     var view = document.getElementById('v2');
     if (!view) return;
-    var scrollable = view.scrollHeight > view.clientHeight + 3;
+    // Once the user has scrolled the Atlas, keep its scroll axis alive until
+    // they return to the top. The compact masthead can otherwise make a short
+    // Atlas fit and the old reset would snap scrollTop back to zero.
+    var scrollable = view.scrollHeight > view.clientHeight + 3 || view.scrollTop > 0;
     view.setAttribute('data-scrollable', scrollable ? 'true' : 'false');
-    if (!scrollable && view.scrollTop) view.scrollTop = 0;
     queueCompactHeader();
   }
   function queueAtlasOverflowState() {
