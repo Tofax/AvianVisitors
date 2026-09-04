@@ -58,23 +58,23 @@ vm.runInContext([
 ].join('\n'), preferenceMarkupContext);
 const themeMarkup = preferenceMarkupContext.themeRow();
 const labelsMarkup = preferenceMarkupContext.labelsRow();
-assert.match(themeMarkup, /data-theme-seg role="group" aria-label="Theme"/,
+assert.match(themeMarkup, /data-theme-seg role="group" aria-label="Tema"/,
   'Theme exposes one named group without claiming radio-keyboard behavior');
 assert.equal((themeMarkup.match(/data-theme=/g) || []).length, 3,
   'Theme keeps all three explicit choices');
 assert.equal((themeMarkup.match(/<svg /g) || []).length, 3,
   'Theme choices use icons instead of visible words');
-assert.match(themeMarkup, /aria-label="Follow system theme"[^>]*aria-describedby="themeAutoTip"/,
+assert.match(themeMarkup, /aria-label="Segueix el tema del sistema"[^>]*aria-describedby="themeAutoTip"/,
   'the system icon has an accessible name and tooltip relationship');
-assert.match(themeMarkup, /role="tooltip">follow system<\/span>/,
+assert.match(themeMarkup, /role="tooltip">automàtic<\/span>/,
   'the system icon explains itself on hover or focus');
-assert.match(themeMarkup, /aria-label="Use light theme"[\s\S]*role="tooltip">light<\/span>/,
+assert.match(themeMarkup, /aria-label="Utilitza el tema clar"[\s\S]*role="tooltip">clar<\/span>/,
   'the light icon has matching accessible and visible tooltip copy');
-assert.match(themeMarkup, /aria-label="Use dark theme"[\s\S]*role="tooltip">dark<\/span>/,
+assert.match(themeMarkup, /aria-label="Utilitza el tema fosc"[\s\S]*role="tooltip">fosc<\/span>/,
   'the dark icon has matching accessible and visible tooltip copy');
 assert.doesNotMatch(themeMarkup, />\s*(auto|light|dark)\s*<\/button>/i,
   'Theme option names are not rendered as button text');
-assert.match(labelsMarkup, /class="switch" role="switch" aria-label="Show bird names"[\s\S]*aria-checked="true"[\s\S]*data-labels-switch/,
+assert.match(labelsMarkup, /class="switch" role="switch" aria-label="Mostra els noms dels ocells"[\s\S]*aria-checked="true"[\s\S]*data-labels-switch/,
   'Bird names uses the standard Settings switch and keeps its on-by-default state');
 assert.doesNotMatch(labelsMarkup, /data-labels-seg|>off<|>on</,
   'Bird names no longer renders a bespoke off-on segmented picker');
@@ -122,13 +122,13 @@ assert.doesNotMatch(markupContext.lanAuthRow({
 assert.match(markupContext.lanAuthRow({
   lan_admin_auth: true,
   password_configured: true,
-}), /data-password-change-open[^>]*>change admin password</,
+}), /data-password-change-open[^>]*>canvia la contrasenya d’administració</,
   'the inline admin-password action appears only while local protection is on');
 const accessOn = markupContext.lanAuthRow({
   lan_admin_auth: true,
   password_configured: true,
 });
-assert.match(accessOn, /data-lan-password-visibility[^>]*aria-label="Show admin password"[^>]*aria-pressed="false"/,
+assert.match(accessOn, /data-lan-password-visibility[^>]*aria-label="Mostra la contrasenya d’administració"[^>]*aria-pressed="false"/,
   'the LAN confirmation includes an accessible, initially concealed password reveal');
 assert.match(accessOn, /data-lan-password-visibility[\s\S]*<svg aria-hidden="true"><\/svg>/,
   'the LAN confirmation uses an aria-hidden eye icon instead of visible show text');
@@ -145,11 +145,11 @@ const birdweatherOff = markupContext.birdweatherRow({
 assert.match(birdweatherOff, /type="text" data-birdweather-token/, 'BirdWeather token stays readable inside protected Settings');
 assert.doesNotMatch(birdweatherOff, /data-birdweather-token[^>]*\svalue=/, 'BirdWeather never puts a saved token in the DOM');
 assert.match(birdweatherOff, /data-v="1" aria-current="true"/, 'a fresh station starts at local privacy level one');
-assert.match(birdweatherOff, /Level 0 checks the top 10 model candidates for Human, 1 about 60, 2 about 120, and 3 about 180/,
+assert.match(birdweatherOff, /El nivell 0 comprova els 10 candidats principals del model per detectar Human; l'1, uns 60; el 2, uns 120; i el 3, uns 180/,
   'privacy disclosure defines every level using the analyzer candidate counts');
-assert.match(birdweatherOff, /BirdNET still analyzes the audio[\s\S]*suppresses local bird detections for that 3-second window and its neighbors/,
+assert.match(birdweatherOff, /BirdNET continua analitzant l'àudio[\s\S]*se suprimeixen les deteccions locals d'ocells d'aquella finestra de 3 segons i de les adjacents/,
   'privacy disclosure describes local post-analysis suppression accurately');
-assert.match(birdweatherOff, /Full recordings are not redacted/,
+assert.match(birdweatherOff, /Els enregistraments complets no es censuren/,
   'privacy disclosure preserves the full-recording caveat');
 assert.doesNotMatch(birdweatherOff, /data-birdweather-save|Save settings/, 'BirdWeather settings have no manual save action');
 assert.doesNotMatch(birdweatherOff, /create a BirdWeather station and paste|higher checks more candidates/i,
@@ -158,11 +158,11 @@ assert.match(birdweatherOff, /data-birdweather-details-shell data-open="false" d
   'the closed details disclosure starts noninteractive and out of layout');
 const birdweatherUnavailable = markupContext.birdweatherRow({ ok: false });
 assert.match(birdweatherUnavailable, /data-birdweather-disclosure[^>]* disabled/, 'unavailable BirdWeather Details action is disabled');
-assert.match(birdweatherUnavailable, /class="birdweather-unavailable"[^>]*>BirdWeather controls are unavailable/,
+assert.match(birdweatherUnavailable, /class="birdweather-unavailable"[^>]*>Els controls de BirdWeather no estan disponibles en aquesta estació/,
   'an endpoint failure remains visible while the unavailable details panel is closed');
 assert.match(birdweatherOff, /href="https:\/\/app\.birdweather\.com\/account\/stations"/,
   'BirdWeather account settings use the direct station-management link');
-assert.match(birdweatherOff, /<a id="birdweatherTokenLabel"[^>]*>Station token<\/a>/,
+assert.match(birdweatherOff, /<a id="birdweatherTokenLabel"[^>]*>Token de l’estació<\/a>/,
   'the Station token label itself opens BirdWeather station settings');
 assert.match(birdweatherOff, /data-birdweather-token-editor(?![^>]* hidden)/,
   'an unconfigured station shows the empty token editor');
@@ -178,7 +178,7 @@ const birdweatherConfigured = markupContext.birdweatherRow({
 });
 assert.match(birdweatherConfigured, /data-birdweather-token-editor hidden/,
   'a configured station replaces the token field instead of retaining the credential');
-assert.match(birdweatherConfigured, /data-birdweather-token-actions[^>]*>[\s\S]*view station on BirdWeather[\s\S]*forget token/,
+assert.match(birdweatherConfigured, /data-birdweather-token-actions[^>]*>[\s\S]*mostra l’estació a BirdWeather[\s\S]*oblida el token/,
   'a configured station shows the view and forget actions inline');
 assert.doesNotMatch(birdweatherConfigured, /data-birdweather-forget[^>]* hidden/,
   'forget remains available while BirdWeather sharing is active');
@@ -214,7 +214,7 @@ function lanRevealHarness() {
   const sw = element({ 'aria-checked': 'false' });
   const form = element();
   const password = element({ type: 'password' });
-  const visibility = element({ 'aria-pressed': 'false', 'aria-label': 'Show admin password' });
+  const visibility = element({ 'aria-pressed': 'false', 'aria-label': 'Mostra la contrasenya d’administració' });
   const status = element();
   const cancel = element();
   const submit = element();
@@ -254,7 +254,7 @@ lanReveal.password.value = 'StationReview26';
 lanReveal.visibility.dispatch('click');
 assert.equal(lanReveal.password.type, 'text', 'Show exposes the pending password without changing its value');
 assert.equal(lanReveal.visibility.attrs['aria-pressed'], 'true', 'Show publishes its pressed state');
-assert.equal(lanReveal.visibility.attrs['aria-label'], 'Hide admin password', 'Show becomes an explicit Hide action');
+assert.equal(lanReveal.visibility.attrs['aria-label'], "Amaga la contrasenya d'administració", 'Show becomes an explicit Hide action');
 lanReveal.cancel.dispatch('click');
 assert.equal(lanReveal.password.value, '', 'Cancel clears the pending password');
 assert.equal(lanReveal.password.type, 'password', 'Cancel always reconceals the password field');
@@ -730,10 +730,10 @@ assert.match(functionSource('wireSettingsControls'), /\.switch:not\(\[data-label
 assert.match(functionSource('renderAdminSettings'), /wireLabelsPreference\(adminBody\)/,
   'Settings wires the dedicated Bird names switch controller');
 
-assert.match(apt, /themeRow\(\)[\s\S]{0,100}labelsRow\(\)[\s\S]{0,100}atlasAlwaysAllRow\(\)[\s\S]{0,100}atlasClassicRow\(\)[\s\S]{0,120}settingsText\('SITE_NAME', 'Station name'/,
+assert.match(apt, /themeRow\(\)[\s\S]{0,100}labelsRow\(\)[\s\S]{0,100}atlasAlwaysAllRow\(\)[\s\S]{0,100}atlasClassicRow\(\)[\s\S]{0,120}settingsText\('SITE_NAME', 'Nom de l’estació'/,
   'Station name finishes the appearance group beneath Classic Atlas cards');
 assert.match(functionSource('archiveDetail'), /class="archive-button quiet archive-run-button"/,
-  'Nightly Drive Run now uses the same light secondary treatment as nearby controls');
+  'Nightly Drive executa ara uses the same light secondary treatment as nearby controls');
 const archiveMarkupContext = {
   adminEsc(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
 };
@@ -752,12 +752,12 @@ const archiveRowMarkup = archiveMarkupContext.archiveSettingsRow({
 });
 assert.equal((archiveRowMarkup.match(/data-settings-info/g) || []).length, 1,
   'Nightly Drive has one stable information control beside its row label');
-assert.match(archiveRowMarkup, /Nightly Drive backup<\/span>[\s\S]*id="archiveBackupTip" role="tooltip">Back up completed days to Google Drive\.[\s\S]*run rclone config[\s\S]*name the remote gdrive[\s\S]*choose drive\.file[\s\S]*button beside the command/,
+assert.match(archiveRowMarkup, /Còpia nocturna a Drive<\/span>[\s\S]*id="archiveBackupTip" role="tooltip">Fes una còpia dels dies completats a Google Drive\.[\s\S]*executa rclone config[\s\S]*posa al remot el nom gdrive[\s\S]*tria drive\.file[\s\S]*utilitza el botó del costat de l'ordre/,
   'the Nightly Drive tooltip gives the complete first-use sequence');
 assert.match(archiveRowMarkup, /data-archive-toggle[^>]*aria-describedby="archiveBackupTip"/,
   'the archive switch shares the stable workflow explanation');
 assert.match(functionSource('archiveDetail'), /var setupAction = state\.installed \? 'refresh' : 'install'[\s\S]*archiveCode\('rclone config'\)[\s\S]*data-archive-action="' \+ setupAction/,
-  'an uninstalled archive shows rclone config with Set up archive while an installed archive shows Check again');
+  'an uninstalled archive shows rclone config with configura l’arxiu while an installed archive shows torna a comprovar');
 assert.doesNotMatch(functionSource('archiveDetail'), /settingsInfoMarkup|archiveRcloneTip|data-settings-info/,
   'the repainted archive details contain no disposable tooltip control');
 assert.doesNotMatch(functionSource('archiveDetail'), /Install the archive service|It stays off until|install archive/,
@@ -767,7 +767,7 @@ assert.match(css, /\.archive-detail\s*\{[\s\S]*margin-top:\s*0;\s*padding-top:\s
 assert.match(css, /\.archive-setup-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto/,
   'archive commands and actions share one compact row');
 assert.match(css, /\.password-change-form \.chip,[\s\S]*\.archive-setup-button\s*\{[\s\S]*background:\s*var\(--paper-2\)[\s\S]*box-shadow:\s*var\(--raised\)/,
-  'Set up archive uses the same raised paper action style as password controls');
+  'configura l’arxiu uses the same raised paper action style as password controls');
 assert.match(css, /\.archive-setup-button\s*\{[\s\S]*min-height:\s*32px;[\s\S]*white-space:\s*nowrap/,
   'archive setup actions match the one-line rclone field height');
 assert.match(css, /\.archive-settings-details \.archive-setup-row \.code \.copy\s*\{\s*top:\s*50%;\s*transform:\s*translateY\(-50%\)/,
@@ -815,10 +815,10 @@ function adminTitlePinHarness() {
 }
 adminTitlePinHarness();
 assert.equal(crypto.createHash('sha256').update(archiveApi).digest('hex'),
-  '746cc9259d7d05366d756442142584c81d8d3b0ad7386e75c71b68c9e1946b69',
+  'b51fcf900103d3bbfc4dee743cf0362c94b59a8f17be190caf6cfef634be6bad',
   'the frontend polish pass does not change the Nightly Drive API backend');
 assert.equal(crypto.createHash('sha256').update(archiveHelper).digest('hex'),
-  'ac9d8c617b91068f177571f8884a290cea9e5a97b2d00516f385f068f796bf2a',
+  '6bde443b14c951af41802bc1af63a7e63396a0c1524b894f77a1a6582a971cb2',
   'the frontend polish pass does not change the Nightly Drive privileged helper');
 assert.match(html, /id="aboutLink" data-site-name/, 'the collage masthead consumes the canonical station name');
 assert.match(api, /'site_name'\s*=>\s*publicSiteName\(\$CONF_PATH\)/,
@@ -1009,6 +1009,6 @@ gateSelectors.forEach(function (selector) {
 });
 
 assert.match(html, /styles\.css\?v=r188/, 'the polished styles have a fresh cache key');
-assert.match(html, /apt\.js\?v=r214/, 'the polished behavior has a fresh cache key');
+assert.match(html, /apt\.js\?v=r215/, 'the polished behavior has a fresh cache key');
 
 console.log('admin UI polish smoke: ok');
