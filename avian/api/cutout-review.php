@@ -44,6 +44,20 @@ function read_json_file(string $path): array {
     return is_array($decoded) ? $decoded : [];
 }
 
+function cutout_conf_value(string $conf, string $key): string {
+    if (!is_readable($conf)) return '';
+    foreach (file($conf, FILE_IGNORE_NEW_LINES) as $line) {
+        if (preg_match('/^\\s*' . $key . '\\s*=\\s*(.*)$/', $line, $m)) {
+            $v = trim($m[1]);
+            if (strlen($v) >= 2 && $v[0] === '"' && substr($v, -1) === '"') {
+                $v = substr($v, 1, -1);
+            }
+            return $v;
+        }
+    }
+    return '';
+}
+
 function atomic_write_json(string $path, array $body): bool {
     $json = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     if (!is_string($json)) return false;
@@ -135,11 +149,11 @@ function catalog_species_by_slug(string $labelsPath): array {
 function local_species_by_slug(string $root, string $python, string $script,
                                string $cachePath, string $confPath): array {
     $week = (int)date('W');
-    $thresholdRaw = avian_conf_value($confPath, 'SF_THRESH');
+    $thresholdRaw = cutout_conf_value($confPath, 'SF_THRESH');
     $threshold = is_string($thresholdRaw) && is_numeric($thresholdRaw)
         ? max(0.001, min(0.99, (float)$thresholdRaw)) : 0.03;
-    $lat = avian_conf_value($confPath, 'LATITUDE');
-    $lon = avian_conf_value($confPath, 'LONGITUDE');
+    $lat = cutout_conf_value($confPath, 'LATITUDE');
+    $lon = cutout_conf_value($confPath, 'LONGITUDE');
     $scriptMtime = is_file($script) ? (int)@filemtime($script) : 0;
     $cacheKey = hash('sha256', implode('|', [(string)$week, (string)$threshold,
         (string)$lat, (string)$lon, (string)$scriptMtime]));
