@@ -145,7 +145,16 @@
     btns.forEach(function (b, j) { b.setAttribute('aria-current', j === i ? 'true' : 'false'); });
     syncPill(slider);
     setTitleForView(i);
+
+    // Resolve the incoming view's header state before its entrance animation.
+    // Otherwise an Atlas that becomes non-scrollable can briefly inherit the
+    // previous compact header and expand one frame later, shifting the grid.
+    var nextView = document.getElementById('v' + i);
+    if (stage && nextView && nextView.scrollTop <= 0) {
+      stage.classList.remove('is-compact');
+    }
     requestAnimationFrame(syncCompactHeader);
+
     if (!switching) return;
     // Replay the view's entrance animation on switch (collage bloom,
     // stats left-to-right, atlas row-by-row).
