@@ -692,6 +692,7 @@ def make_report(
           "image": variant["path"].relative_to(review_dir).as_posix(),
           "matches_local": bool(local_hash and local_hash == variant["sha256"]),
           "similarity": None,
+          "similarity_status": "unscored",
           "sources": variant["sources"],
         })
       poses[str(pose)].sort(
@@ -2355,6 +2356,26 @@ def apply_manual_references(
 
 
 
+def similarity_score_status(
+    similarity: Any,
+    reference_revision: str,
+) -> str:
+  """Return whether a similarity score matches the current references."""
+  if not isinstance(similarity, dict):
+    return "unscored"
+
+  scored_revision = str(similarity.get("reference_revision", "")).strip()
+  current_revision = str(reference_revision or "").strip()
+
+  if not scored_revision:
+    return "unscored"
+
+  if not current_revision or scored_revision != current_revision:
+    return "stale"
+
+  return "fresh"
+
+
 def reference_set_metadata(refs: dict[str, Any]) -> dict[str, Any]:
   """Return a stable identity for the current effective reference set."""
   rows: list[dict[str, str]] = []
@@ -2998,8 +3019,21 @@ def serve_review_site(
           )
           if unchanged and previous.get("updated_at") is not None:
             metadata["updated_at"] = previous["updated_at"]
-          else:
-            bird["references"] = metadata
+
+          report_changed = not unchanged
+          bird["references"] = metadata
+
+          for pose in ("1", "2"):
+            for variant in bird.get("poses", {}).get(pose, []):
+              expected_status = similarity_score_status(
+                  variant.get("similarity"),
+                  metadata["revision"],
+              )
+              if variant.get("similarity_status") != expected_status:
+                variant["similarity_status"] = expected_status
+                report_changed = True
+
+          if report_changed:
             atomic_json_write(review_root / "review-data.json", live_report)
 
           self._json(200, {"ok": True, "metadata": metadata, **refs})
