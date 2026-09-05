@@ -127,11 +127,25 @@ start_server() {
     fail 'could not start fork review server'
   fi
 
-  sleep 1
+  local ready=0
+  for _ in $(seq 1 30); do
+    if ! systemctl is-active --quiet "$UNIT.service"; then
+      rm -f "$TOKEN_FILE"
+      fail 'fork review server did not stay running'
+    fi
 
-  if ! systemctl is-active --quiet "$UNIT.service"; then
+    if ss -ltnH 'sport = :8765' 2>/dev/null | grep -q .; then
+      ready=1
+      break
+    fi
+
+    sleep 1
+  done
+
+  if [ "$ready" -ne 1 ]; then
+    systemctl stop "$UNIT.service" >/dev/null 2>&1 || true
     rm -f "$TOKEN_FILE"
-    fail 'fork review server did not stay running'
+    fail 'fork review server did not become ready'
   fi
 
   print_status
