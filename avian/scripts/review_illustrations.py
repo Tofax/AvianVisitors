@@ -691,6 +691,7 @@ def make_report(
           "bytes": variant["bytes"],
           "image": variant["path"].relative_to(review_dir).as_posix(),
           "matches_local": bool(local_hash and local_hash == variant["sha256"]),
+          "similarity": None,
           "sources": variant["sources"],
         })
       poses[str(pose)].sort(
@@ -713,6 +714,11 @@ def make_report(
       "slug": bird.slug,
       "status": state,
       "status_label": STATUS_LABEL[state],
+      "references": {
+        "revision": None,
+        "count": 0,
+        "updated_at": None,
+      },
       "local": {"pose1": local1, "pose2": local2},
       "summary": {
         "pose1_variants": len(poses["1"]),
