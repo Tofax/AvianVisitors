@@ -130,10 +130,13 @@ def github_from_git_credentials() -> Credential | None:
   if not exe:
     return None
   try:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "Never"
     proc = subprocess.run(
         [exe, "credential", "fill"],
         input="protocol=https\nhost=github.com\n\n",
-        capture_output=True, text=True, timeout=15
+        capture_output=True, text=True, timeout=15, env=env
     )
   except Exception:
     return None
