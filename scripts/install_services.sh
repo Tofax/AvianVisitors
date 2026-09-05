@@ -9,9 +9,28 @@ tmpfile=$(mktemp)
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 my_dir=$(cd -- "$script_dir/.." && pwd -P)
 config_file=$my_dir/birdnet.conf
-export USER=$USER
-export HOME=$HOME
 
+# sudo changes USER/HOME to root. Services and repository paths must keep
+# referring to the account that owns the BirdNET-Pi checkout.
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+  USER=$SUDO_USER
+else
+  USER=$(stat -c '%U' "$my_dir")
+fi
+
+HOME=$(getent passwd "$USER" | awk -F: 'NR == 1 { print $6 }')
+
+if [ -z "$USER" ] || [ "$USER" = "root" ]; then
+  echo "Could not determine the BirdNET-Pi user" >&2
+  exit 1
+fi
+
+if [ -z "$HOME" ]; then
+  echo "Could not determine the BirdNET-Pi home directory" >&2
+  exit 1
+fi
+
+export USER HOME
 export PYTHON_VIRTUAL_ENV="$HOME/BirdNET-Pi/birdnet/bin/python3"
 
 install_depends() {
