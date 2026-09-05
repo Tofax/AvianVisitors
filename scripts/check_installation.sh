@@ -264,8 +264,10 @@ fi
 
 if [ -f "${GENERATION_LOCK}" ]; then
   lock_state="$(stat -c '%U:%G:%a:%h' "${GENERATION_LOCK}" 2>/dev/null || true)"
+  station_group="$(id -gn 2>/dev/null || true)"
 
-  if [ "${lock_state}" = "root:caddy:660:1" ]; then
+  if [ -n "${station_group}" ] \
+    && [ "${lock_state}" = "root:${station_group}:660:1" ]; then
     pass "Illustration generation lock is safe"
   else
     fail "Unexpected generation lock: ${lock_state}"

@@ -127,13 +127,21 @@ install_avian_generation_lock() {
 
   local source="${my_dir}/scripts/avian-generation.conf"
   local target="/etc/tmpfiles.d/avian-generation.conf"
+  local station_group
 
   if [ ! -f "$source" ]; then
     echo "AvianVisitors generation tmpfiles configuration was not found: $source" >&2
     return 1
   fi
 
-  install -o root -g root -m 0644 "$source" "$target"
+  if ! station_group=$(id -gn "$USER"); then
+    echo "Could not determine BirdNET-Pi group" >&2
+    return 1
+  fi
+
+  sed "s/@BIRDNET_GROUP@/${station_group}/g" "$source" > "$target"
+  chown root:root "$target"
+  chmod 0644 "$target"
 
   systemd-tmpfiles --create "$target"
 
@@ -142,7 +150,7 @@ install_avian_generation_lock() {
     return 1
   fi
 
-  if [ "$(stat -c '%U:%G:%a' /run/lock/avian-generation.lock)" != "root:caddy:660" ]; then
+  if [ "$(stat -c '%U:%G:%a' /run/lock/avian-generation.lock)" != "root:${station_group}:660" ]; then
     echo "Invalid permissions on /run/lock/avian-generation.lock" >&2
     return 1
   fi
