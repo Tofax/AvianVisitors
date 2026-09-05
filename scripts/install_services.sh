@@ -565,7 +565,11 @@ install_services() {
   generate_BirdDB
   configure_caddy_php
   config_icecast
-  USER=$USER HOME=$HOME ${my_dir}/scripts/createdb.sh
+  if [ -f "${my_dir}/scripts/birds.db" ]; then
+    echo "Existing detections database found; preserving birds.db"
+  else
+    USER=$USER HOME=$HOME "${my_dir}/scripts/createdb.sh"
+  fi
 }
 
 if [ -f "${config_file}" ];then
