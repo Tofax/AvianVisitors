@@ -2355,6 +2355,58 @@ def apply_manual_references(
 
 
 
+def reference_set_metadata(refs: dict[str, Any]) -> dict[str, Any]:
+  """Return a stable identity for the current effective reference set."""
+  rows: list[dict[str, str]] = []
+  seen: set[tuple[str, str, str]] = set()
+
+  for category in ("perched", "flight"):
+    for item in refs.get(category, []):
+      if not isinstance(item, dict):
+        continue
+
+      source_url = str(item.get("source_url", "")).strip()
+      thumb_url = str(item.get("thumb_url", "")).strip()
+      source = str(item.get("source", "")).strip()
+
+      if not source_url and not thumb_url:
+        continue
+
+      identity = (category, source_url, thumb_url)
+      if identity in seen:
+        continue
+      seen.add(identity)
+
+      rows.append({
+        "category": category,
+        "source": source,
+        "source_url": source_url,
+        "thumb_url": thumb_url,
+      })
+
+  rows.sort(
+      key=lambda row: (
+        row["category"],
+        row["source_url"],
+        row["thumb_url"],
+        row["source"],
+      )
+  )
+
+  canonical = json.dumps(
+      rows,
+      ensure_ascii=False,
+      sort_keys=True,
+      separators=(",", ":"),
+  ).encode("utf-8")
+
+  return {
+    "revision": hashlib.sha256(canonical).hexdigest(),
+    "count": len(rows),
+    "updated_at": int(time.time()),
+  }
+
+
 def mark_review_status(
     status_path: Path,
     slug: str,
