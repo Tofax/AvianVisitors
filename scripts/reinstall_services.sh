@@ -233,6 +233,7 @@ helper_sources=(
   scripts/update_birdnet.sh
   scripts/reinstall_services.sh
   scripts/maintenance_control.sh
+  scripts/fork_review_control.sh
   scripts/archive_control.sh
   scripts/security_refresh.sh
   scripts/admin_control.sh
@@ -244,6 +245,7 @@ helper_targets=(
   /usr/local/sbin/avian-update-control
   /usr/local/sbin/avian-service-refresh
   /usr/local/sbin/avian-maintenance-control
+  /usr/local/sbin/avian-fork-review
   /usr/local/sbin/avian-archive-control
   /usr/local/sbin/avian-security-refresh
   /usr/local/sbin/avian-admin-control

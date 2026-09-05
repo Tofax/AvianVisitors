@@ -2536,6 +2536,8 @@ def serve_review_site(
   """Serve the generated review UI and a same-origin local apply endpoint."""
   review_root = review_dir.resolve()
   token = secrets.token_urlsafe(32)
+  access_token = os.environ.get("AVIAN_REVIEW_ACCESS_TOKEN", "").strip()
+  access_cookie = "avian_review_access"
   status_path = review_root / "review-status.json"
   manual_references_path = review_root / "manual-references.json"
   references_dir = review_root / "reference-cache"
@@ -2829,7 +2831,10 @@ def serve_review_site(
     server_version = "AvianReview/2.7.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
-      print("[server] " + (fmt % args), file=sys.stderr)
+      safe_args = list(args)
+      if safe_args and isinstance(safe_args[0], str):
+        safe_args[0] = safe_args[0].split("?", 1)[0]
+      print("[server] " + (fmt % tuple(safe_args)), file=sys.stderr)
 
     def _json(self, status: int, payload: dict[str, Any]) -> None:
       body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -2853,9 +2858,46 @@ def serve_review_site(
       self.end_headers()
       self.wfile.write(data)
 
+    def _has_access(self) -> bool:
+      if not access_token:
+        return True
+      raw_cookie = self.headers.get("Cookie", "")
+      for item in raw_cookie.split(";"):
+        name, sep, value = item.strip().partition("=")
+        if (
+            sep
+            and name == access_cookie
+            and secrets.compare_digest(value, access_token)
+        ):
+          return True
+      return False
+
     def do_GET(self) -> None:
       parsed = urllib.parse.urlsplit(self.path)
       request_path = urllib.parse.unquote(parsed.path)
+
+      if access_token:
+        query = urllib.parse.parse_qs(parsed.query)
+        supplied = str((query.get("access") or [""])[0])
+
+        if supplied:
+          if not secrets.compare_digest(supplied, access_token):
+            self._json(403, {"ok": False, "error": "invalid access token"})
+            return
+
+          self.send_response(303)
+          self.send_header("Location", "/")
+          self.send_header(
+              "Set-Cookie",
+              f"{access_cookie}={access_token}; Path=/; HttpOnly; SameSite=Strict",
+          )
+          self.send_header("Cache-Control", "no-store")
+          self.end_headers()
+          return
+
+        if not self._has_access():
+          self._json(403, {"ok": False, "error": "review access required"})
+          return
 
       if request_path == "/api/status":
         self._json(200, load_review_status(status_path))
@@ -2929,6 +2971,11 @@ def serve_review_site(
 
     def do_POST(self) -> None:
       parsed = urllib.parse.urlsplit(self.path)
+
+      if not self._has_access():
+        self._json(403, {"ok": False, "error": "review access required"})
+        return
+
       if parsed.path not in ("/api/apply", "/api/status", "/api/rescan", "/api/reference-manual"):
         self.send_error(404)
         return

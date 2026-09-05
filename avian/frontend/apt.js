@@ -13668,12 +13668,86 @@
     var cutoutReviewOpen = document.getElementById('cutoutReviewOpen');
     var cutoutReviewSummary = document.getElementById('cutoutReviewSummary');
     var forkReviewOpen = document.getElementById('forkReviewOpen');
+    var forkReviewSummary = document.getElementById('forkReviewSummary');
+
+    function forkReviewRequest(action) {
+      var options = {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      };
+      if (action) {
+        options.method = 'POST';
+        options.headers = {
+          'Content-Type': 'application/json',
+          'X-Avian-Action': '1',
+        };
+        options.body = JSON.stringify({ action: action });
+      }
+
+      return adminFetch('./avian/api/fork-review.php', options)
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (body) {
+            if (!response.ok || !body.ok) {
+              throw new Error(body.error || 'revisi\u00f3 de forks no disponible');
+            }
+            return body;
+          });
+        });
+    }
+
+    function paintForkReview(state) {
+      if (!forkReviewSummary || !document.body.contains(forkReviewSummary)) return;
+      forkReviewSummary.textContent = state && state.running
+        ? 'visor actiu'
+        : 'visor aturat';
+    }
+
+    function forkReviewUrl(state) {
+      var host = window.location.hostname || 'birdnet.local';
+      var port = +(state && state.port) || 8765;
+      var access = state && state.access ? String(state.access) : '';
+      if (!access) throw new Error("falta la clau d'acc\u00e9s del visor");
+      return 'http://' + host + ':' + port + '/?access=' + access;
+    }
+
     if (forkReviewOpen) {
       forkReviewOpen.addEventListener('click', function () {
-        var host = window.location.hostname || 'birdnet.local';
-        window.open('http://' + host + ':8765/', '_blank', 'noopener');
+        var reviewWindow = window.open('about:blank', '_blank');
+        if (reviewWindow) reviewWindow.opener = null;
+
+        forkReviewOpen.disabled = true;
+        if (forkReviewSummary) forkReviewSummary.textContent = 'comprovant...';
+
+        forkReviewRequest().then(function (state) {
+          if (state.running) return state;
+          if (forkReviewSummary) forkReviewSummary.textContent = 'engegant...';
+          return forkReviewRequest('start');
+        }).then(function (state) {
+          paintForkReview(state);
+          if (reviewWindow) {
+            reviewWindow.location.replace(forkReviewUrl(state));
+          } else {
+            window.location.href = forkReviewUrl(state);
+          }
+        }).catch(function (error) {
+          if (reviewWindow) reviewWindow.close();
+          if (adminAuthCancelled(error)) return;
+          if (forkReviewSummary) {
+            forkReviewSummary.textContent =
+              error.message || 'revisi\\u00f3 de forks no disponible';
+          }
+        }).finally(function () {
+          forkReviewOpen.disabled = false;
+        });
+      });
+
+      forkReviewRequest().then(paintForkReview).catch(function () {
+        if (forkReviewSummary && document.body.contains(forkReviewSummary)) {
+          forkReviewSummary.textContent = 'revisi\\u00f3 de forks no disponible';
+        }
       });
     }
+
     if (cutoutReviewOpen) {
       cutoutReviewOpen.addEventListener('click', renderCutoutReview);
       adminApi('./avian/api/cutout-review.php?action=list').then(function (r) {

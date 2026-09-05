@@ -51,6 +51,7 @@ install_avian_controls() {
 admin_control.sh avian-admin-control
 archive_control.sh avian-archive-control
 maintenance_control.sh avian-maintenance-control
+fork_review_control.sh avian-fork-review
 update_birdnet.sh avian-update-control
 reinstall_services.sh avian-service-refresh
 security_refresh.sh avian-security-refresh
