@@ -13613,6 +13613,12 @@
       + '<p>detecta transparències incorrectes i valida els retalls sospitosos</p>'
       + '<span class="state" id="cutoutReviewSummary">carregant...</span>'
       + '</button>'
+      + '<button type="button" class="admin-action" id="forkReviewOpen">'
+      + '<span class="run">obre</span>'
+      + '<h4>Revisi\u00f3 de forks</h4>'
+      + '<p>compara les il\u00b7lustracions locals amb les disponibles als forks</p>'
+      + '<span class="state" id="forkReviewSummary">visor al port 8765</span>'
+      + '</button>'
       + '</div>';
 
     html += '<h2 class="admin-section-head">actualització</h2>';
@@ -13661,6 +13667,13 @@
 
     var cutoutReviewOpen = document.getElementById('cutoutReviewOpen');
     var cutoutReviewSummary = document.getElementById('cutoutReviewSummary');
+    var forkReviewOpen = document.getElementById('forkReviewOpen');
+    if (forkReviewOpen) {
+      forkReviewOpen.addEventListener('click', function () {
+        var host = window.location.hostname || 'birdnet.local';
+        window.open('http://' + host + ':8765/', '_blank', 'noopener');
+      });
+    }
     if (cutoutReviewOpen) {
       cutoutReviewOpen.addEventListener('click', renderCutoutReview);
       adminApi('./avian/api/cutout-review.php?action=list').then(function (r) {
