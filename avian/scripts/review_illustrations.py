@@ -2986,7 +2986,23 @@ def serve_review_site(
               references_dir,
           )
           refs = apply_manual_references(refs, manual_references_path, slug)
-          self._json(200, {"ok": True, **refs})
+
+          metadata = reference_set_metadata(refs)
+          previous = bird.get("references")
+          if not isinstance(previous, dict):
+            previous = {}
+
+          unchanged = (
+            previous.get("revision") == metadata["revision"]
+            and previous.get("count") == metadata["count"]
+          )
+          if unchanged and previous.get("updated_at") is not None:
+            metadata["updated_at"] = previous["updated_at"]
+          else:
+            bird["references"] = metadata
+            atomic_json_write(review_root / "review-data.json", live_report)
+
+          self._json(200, {"ok": True, "metadata": metadata, **refs})
         except Exception as exc:
           self._json(502, {"ok": False, "error": str(exc)})
         return
