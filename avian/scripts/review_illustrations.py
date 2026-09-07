@@ -727,6 +727,89 @@ def illustration_reference_shape_score(
   }
 
 
+def cached_reference_shape_candidates(
+    reference_path: Path,
+    cache_dir: Path,
+) -> list[dict[str, Any]]:
+  """Load or create persistent segmentation candidates for one photo."""
+  import hashlib
+  import json
+
+  try:
+    import cv2
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv"
+    ) from exc
+
+  cache_version = 1
+  content_hash = hashlib.sha256(
+      reference_path.read_bytes()
+  ).hexdigest()
+
+  shape_cache_dir = cache_dir / "shape"
+  shape_cache_dir.mkdir(parents=True, exist_ok=True)
+
+  cache_path = shape_cache_dir / (
+      f"{content_hash}.v{cache_version}.json"
+  )
+
+  if cache_path.is_file():
+    try:
+      payload = json.loads(
+          cache_path.read_text(encoding="utf-8")
+      )
+
+      if payload.get("version") == cache_version:
+        candidates = payload.get("candidates")
+        if isinstance(candidates, list):
+          return candidates
+    except (OSError, ValueError, TypeError):
+      pass
+
+  image = cv2.imread(
+      str(reference_path),
+      cv2.IMREAD_COLOR,
+  )
+  if image is None:
+    raise RuntimeError(
+        f"Unable to read reference image: {reference_path}"
+    )
+
+  shape_image = resize_reference_for_shape(image)
+  generated = reference_photo_mask_candidates(shape_image)
+
+  candidates: list[dict[str, Any]] = []
+
+  for candidate in generated:
+    candidates.append({
+      "method": candidate["method"],
+      "foreground_fraction": candidate["foreground_fraction"],
+      "border_fraction": candidate["border_fraction"],
+      "border_edges": candidate["border_edges"],
+      "descriptor": candidate["descriptor"],
+    })
+
+  payload = {
+    "version": cache_version,
+    "source_sha256": content_hash,
+    "candidates": candidates,
+  }
+
+  cache_path.write_text(
+      json.dumps(
+          payload,
+          ensure_ascii=False,
+          indent=2,
+      )
+      + "\n",
+      encoding="utf-8",
+      newline="\n",
+  )
+
+  return candidates
+
+
 def prepare_reference_shape_descriptors(
     reference_images: list[Path],
     illustration_descriptors: list[dict[str, Any]],
