@@ -3236,6 +3236,131 @@ def apply_manual_references(
 
 
 
+def score_species_shape_similarity(
+    bird: dict[str, Any],
+    refs: dict[str, Any],
+    review_root: Path,
+    references_dir: Path,
+) -> dict[str, Any]:
+  """Calculate and persist shape scores in one species report entry."""
+  pose_categories = {
+    "1": "perched",
+    "2": "flight",
+  }
+
+  scored = 0
+  skipped = 0
+  changed = False
+
+  for pose, category in pose_categories.items():
+    variants = bird.get("poses", {}).get(pose, [])
+    if not variants:
+      continue
+
+    illustration_paths: list[Path] = []
+    illustration_descriptors: list[dict[str, Any]] = []
+
+    for variant in variants:
+      image_value = str(variant.get("image", "")).strip()
+      if not image_value:
+        continue
+
+      illustration_path = review_root / image_value
+      if not illustration_path.is_file():
+        continue
+
+      try:
+        descriptor = shape_descriptor(
+            illustration_alpha_mask(illustration_path)
+        )
+      except Exception:
+        continue
+
+      illustration_paths.append(illustration_path)
+      illustration_descriptors.append(descriptor)
+
+    if not illustration_descriptors:
+      skipped += len(variants)
+      continue
+
+    reference_images: list[Path] = []
+
+    for ref in refs.get(category, []):
+      if not isinstance(ref, dict):
+        continue
+
+      cached = str(ref.get("cached_image", "")).strip()
+      if not cached:
+        continue
+
+      reference_path = references_dir / cached
+      if reference_path.is_file():
+        reference_images.append(reference_path)
+
+    if not reference_images:
+      skipped += len(variants)
+      continue
+
+    prepared = prepare_reference_shape_descriptors(
+        reference_images,
+        illustration_descriptors,
+    )
+
+    if not prepared:
+      skipped += len(variants)
+      continue
+
+    for variant in variants:
+      image_value = str(variant.get("image", "")).strip()
+      if not image_value:
+        skipped += 1
+        continue
+
+      illustration_path = review_root / image_value
+      if not illustration_path.is_file():
+        skipped += 1
+        continue
+
+      try:
+        result = aggregate_prepared_reference_shape_scores(
+            illustration_path,
+            prepared,
+        )
+      except Exception:
+        skipped += 1
+        continue
+
+      score = result.get("score")
+      if score is None:
+        skipped += 1
+        continue
+
+      similarity = variant.get("similarity")
+      if not isinstance(similarity, dict):
+        similarity = {
+          "overall": None,
+          "plumage": None,
+          "shape": None,
+          "colors": None,
+          "pose": None,
+          "reference_revision": None,
+          "scored_at": None,
+        }
+        variant["similarity"] = similarity
+
+      if similarity.get("shape") != score:
+        similarity["shape"] = score
+        changed = True
+
+      scored += 1
+
+  return {
+    "changed": changed,
+    "scored": scored,
+    "skipped": skipped,
+  }
+
+
 def similarity_score_status(
     similarity: Any,
     reference_revision: str,
