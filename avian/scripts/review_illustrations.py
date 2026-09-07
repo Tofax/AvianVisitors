@@ -237,6 +237,66 @@ def illustration_alpha_mask(
   return mask
 
 
+def shape_descriptor(mask):
+  """Return normalized geometric descriptors for a binary silhouette."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  contours, _ = cv2.findContours(
+      mask,
+      cv2.RETR_EXTERNAL,
+      cv2.CHAIN_APPROX_SIMPLE,
+  )
+
+  if not contours:
+    raise RuntimeError("Silhouette contains no contour")
+
+  contour = max(contours, key=cv2.contourArea)
+
+  area = float(cv2.contourArea(contour))
+  perimeter = float(cv2.arcLength(contour, True))
+  x, y, width, height = cv2.boundingRect(contour)
+
+  if area <= 0 or width <= 0 or height <= 0:
+    raise RuntimeError("Silhouette geometry is empty")
+
+  bbox_area = float(width * height)
+  aspect_ratio = float(width) / float(height)
+  fill_ratio = area / bbox_area
+  circularity = (
+      4.0 * np.pi * area / (perimeter * perimeter)
+      if perimeter > 0
+      else 0.0
+  )
+  normalized_perimeter = perimeter / max(float(width + height), 1.0)
+
+  moments = cv2.moments(contour)
+  hu = cv2.HuMoments(moments).flatten()
+
+  hu_log = []
+  for value in hu:
+    value = float(value)
+    if value == 0.0:
+      hu_log.append(0.0)
+    else:
+      hu_log.append(
+          float(-np.sign(value) * np.log10(abs(value)))
+      )
+
+  return {
+    "aspect_ratio": aspect_ratio,
+    "fill_ratio": fill_ratio,
+    "circularity": circularity,
+    "normalized_perimeter": normalized_perimeter,
+    "hu": hu_log,
+  }
+
+
 def cache_reference_image(
     url: str,
     cache_dir: Path,
