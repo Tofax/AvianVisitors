@@ -3241,6 +3241,7 @@ def score_species_shape_similarity(
     refs: dict[str, Any],
     review_root: Path,
     references_dir: Path,
+    reference_revision: str,
 ) -> dict[str, Any]:
   """Calculate and persist shape scores in one species report entry."""
   pose_categories = {
@@ -3350,6 +3351,10 @@ def score_species_shape_similarity(
 
       if similarity.get("shape") != score:
         similarity["shape"] = score
+        changed = True
+
+      if similarity.get("reference_revision") != reference_revision:
+        similarity["reference_revision"] = reference_revision
         changed = True
 
       scored += 1
@@ -4176,6 +4181,7 @@ def serve_review_site(
               refs,
               review_root,
               references_dir,
+              metadata["revision"],
           )
 
           metadata_changed = previous_metadata != metadata
