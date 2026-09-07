@@ -816,27 +816,28 @@ def prepare_reference_shape_descriptors(
     min_segmentation_rank: float = 55.0,
 ) -> list[dict[str, Any]]:
   """Precompute reusable shape descriptors for reference photographs."""
-  try:
-    import cv2
-  except ImportError as exc:
-    raise RuntimeError(
-        "Illustration scoring requires python3-opencv"
-    ) from exc
-
   prepared: list[dict[str, Any]] = []
 
-  for reference_path in reference_images:
-    image = cv2.imread(str(reference_path), cv2.IMREAD_COLOR)
-    if image is None:
-      continue
+  cache_dir = reference_images[0].parent.parent if reference_images else None
 
+  for reference_path in reference_images:
     try:
-      best = best_reference_photo_mask(
-          image,
+      candidates = cached_reference_shape_candidates(
+          reference_path,
+          cache_dir,
+      )
+
+      ranked = rank_reference_mask_candidates(
+          candidates,
           illustration_descriptors,
       )
     except Exception:
       continue
+
+    if not ranked:
+      continue
+
+    best = ranked[0]
 
     if float(best["rank_score"]) < min_segmentation_rank:
       continue
