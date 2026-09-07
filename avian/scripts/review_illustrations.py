@@ -4100,7 +4100,13 @@ def serve_review_site(
         self._json(403, {"ok": False, "error": "review access required"})
         return
 
-      if parsed.path not in ("/api/apply", "/api/status", "/api/rescan", "/api/reference-manual"):
+      if parsed.path not in (
+          "/api/apply",
+          "/api/status",
+          "/api/rescan",
+          "/api/reference-manual",
+          "/api/score-species",
+      ):
         self.send_error(404)
         return
 
@@ -4139,6 +4145,58 @@ def serve_review_site(
       try:
         body = self.rfile.read(length)
         payload = json.loads(body.decode("utf-8"))
+
+        if parsed.path == "/api/score-species":
+          slug = str(payload.get("slug", "")).strip()
+          bird = species_by_slug.get(slug)
+
+          if not bird:
+            raise ValueError("unknown species")
+
+          refs = bird_reference_photos(
+              str(bird.get("scientific_name", "")),
+              str(bird.get("common_name", "")),
+              str(bird.get("code", "")),
+              slug,
+              references_dir,
+          )
+
+          refs = apply_manual_references(
+              refs,
+              manual_references_path,
+              slug,
+              references_dir,
+          )
+
+          metadata = reference_set_metadata(refs)
+          previous_metadata = bird.get("references")
+
+          result = score_species_shape_similarity(
+              bird,
+              refs,
+              review_root,
+              references_dir,
+          )
+
+          metadata_changed = previous_metadata != metadata
+          bird["references"] = metadata
+
+          if result["changed"] or metadata_changed:
+            atomic_json_write(
+                review_root / "review-data.json",
+                live_report,
+            )
+
+          self._json(
+              200,
+              {
+                "ok": True,
+                "slug": slug,
+                "metadata": metadata,
+                **result,
+              },
+          )
+          return
 
         if parsed.path == "/api/reference-manual":
           slug = str(payload.get("slug", "")).strip()
