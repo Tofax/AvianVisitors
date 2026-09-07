@@ -344,6 +344,294 @@ def shape_similarity_score(
   return round(max(0.0, min(100.0, score * 100.0)), 2)
 
 
+def largest_mask_component(mask):
+  """Keep only the largest connected foreground component."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  count, labels, stats, _ = cv2.connectedComponentsWithStats(
+      mask,
+      connectivity=8,
+  )
+
+  if count <= 1:
+    return mask
+
+  largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+  return np.where(labels == largest, 255, 0).astype(np.uint8)
+
+
+def grabcut_mask_from_rect(image, margin: float):
+  """Generate a foreground candidate using a centered GrabCut rectangle."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  height, width = image.shape[:2]
+  mx = max(1, int(width * margin))
+  my = max(1, int(height * margin))
+
+  rect = (
+      mx,
+      my,
+      max(1, width - 2 * mx),
+      max(1, height - 2 * my),
+  )
+
+  mask = np.zeros((height, width), dtype=np.uint8)
+  bg_model = np.zeros((1, 65), dtype=np.float64)
+  fg_model = np.zeros((1, 65), dtype=np.float64)
+
+  try:
+    cv2.grabCut(
+        image,
+        mask,
+        rect,
+        bg_model,
+        fg_model,
+        5,
+        cv2.GC_INIT_WITH_RECT,
+    )
+  except cv2.error:
+    return None
+
+  foreground = np.where(
+      (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+      255,
+      0,
+  ).astype(np.uint8)
+
+  return largest_mask_component(foreground)
+
+
+def grabcut_mask_from_saliency(image, method: str):
+  """Generate a foreground candidate from an OpenCV saliency map."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  if method == "fine":
+    detector = cv2.saliency.StaticSaliencyFineGrained_create()
+  elif method == "spectral":
+    detector = cv2.saliency.StaticSaliencySpectralResidual_create()
+  else:
+    raise ValueError(f"Unknown saliency method: {method}")
+
+  ok, saliency = detector.computeSaliency(image)
+  if not ok:
+    return None
+
+  saliency = np.asarray(saliency, dtype=np.float32)
+  values = saliency[np.isfinite(saliency)]
+  if values.size == 0:
+    return None
+
+  probable_threshold = float(np.percentile(values, 70))
+  definite_threshold = float(np.percentile(values, 90))
+
+  mask = np.full(
+      image.shape[:2],
+      cv2.GC_PR_BGD,
+      dtype=np.uint8,
+  )
+  mask[saliency >= probable_threshold] = cv2.GC_PR_FGD
+  mask[saliency >= definite_threshold] = cv2.GC_FGD
+
+  border = max(5, int(min(image.shape[:2]) * 0.03))
+  mask[:border, :] = cv2.GC_BGD
+  mask[-border:, :] = cv2.GC_BGD
+  mask[:, :border] = cv2.GC_BGD
+  mask[:, -border:] = cv2.GC_BGD
+
+  bg_model = np.zeros((1, 65), dtype=np.float64)
+  fg_model = np.zeros((1, 65), dtype=np.float64)
+
+  try:
+    cv2.grabCut(
+        image,
+        mask,
+        None,
+        bg_model,
+        fg_model,
+        5,
+        cv2.GC_INIT_WITH_MASK,
+    )
+  except cv2.error:
+    return None
+
+  foreground = np.where(
+      (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD),
+      255,
+      0,
+  ).astype(np.uint8)
+
+  return largest_mask_component(foreground)
+
+
+def reference_photo_mask_candidates(image) -> list[dict[str, Any]]:
+  """Generate alternative foreground masks for a reference photograph."""
+  try:
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires numpy"
+    ) from exc
+
+  generators = (
+      ("grabcut-wide", lambda: grabcut_mask_from_rect(image, 0.04)),
+      ("grabcut-center", lambda: grabcut_mask_from_rect(image, 0.12)),
+      ("saliency-fine", lambda: grabcut_mask_from_saliency(image, "fine")),
+      (
+          "saliency-spectral",
+          lambda: grabcut_mask_from_saliency(image, "spectral"),
+      ),
+  )
+
+  candidates: list[dict[str, Any]] = []
+
+  for method, generate in generators:
+    mask = generate()
+    if mask is None:
+      continue
+
+    foreground = int((mask > 0).sum())
+    total = int(mask.size)
+    fraction = foreground / max(total, 1)
+
+    if fraction < 0.02 or fraction > 0.75:
+      continue
+
+    try:
+      descriptor = shape_descriptor(mask)
+    except RuntimeError:
+      continue
+
+    border_width = max(
+        2,
+        int(min(mask.shape[:2]) * 0.03),
+    )
+
+    border_mask = np.zeros(mask.shape, dtype=np.uint8)
+    border_mask[:border_width, :] = 1
+    border_mask[-border_width:, :] = 1
+    border_mask[:, :border_width] = 1
+    border_mask[:, -border_width:] = 1
+
+    border_foreground = int(
+        np.count_nonzero((mask > 0) & (border_mask > 0))
+    )
+    border_fraction = border_foreground / max(foreground, 1)
+
+    ys, xs = np.where(mask > 0)
+    touches = 0
+
+    if xs.size and ys.size:
+      if int(xs.min()) <= border_width:
+        touches += 1
+      if int(xs.max()) >= mask.shape[1] - 1 - border_width:
+        touches += 1
+      if int(ys.min()) <= border_width:
+        touches += 1
+      if int(ys.max()) >= mask.shape[0] - 1 - border_width:
+        touches += 1
+
+    candidates.append({
+      "method": method,
+      "mask": mask,
+      "foreground_fraction": fraction,
+      "border_fraction": border_fraction,
+      "border_edges": touches,
+      "descriptor": descriptor,
+    })
+
+  return candidates
+
+
+def rank_reference_mask_candidates(
+    candidates: list[dict[str, Any]],
+    illustration_descriptors: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+  """Rank photo masks using similarity to known illustration silhouettes."""
+  if not illustration_descriptors:
+    raise ValueError("At least one illustration descriptor is required")
+
+  ranked: list[dict[str, Any]] = []
+
+  for candidate in candidates:
+    descriptor = candidate["descriptor"]
+
+    similarities = [
+      shape_similarity_score(descriptor, target)
+      for target in illustration_descriptors
+    ]
+    shape_score = max(similarities)
+
+    fraction = float(candidate["foreground_fraction"])
+
+    # Very small masks are usually branches/details rather than the bird.
+    if fraction < 0.05:
+      size_score = fraction / 0.05 * 100.0
+    elif fraction <= 0.45:
+      size_score = 100.0
+    else:
+      size_score = max(
+          0.0,
+          100.0 * (0.75 - fraction) / 0.30,
+      )
+
+    fill_ratio = float(descriptor["fill_ratio"])
+    compactness_score = min(
+        100.0,
+        max(0.0, fill_ratio / 0.35 * 100.0),
+    )
+
+    border_fraction = float(candidate.get("border_fraction", 0.0))
+    border_edges = int(candidate.get("border_edges", 0))
+
+    border_score = max(
+        0.0,
+        100.0 * (1.0 - min(border_fraction / 0.12, 1.0)),
+    )
+
+    if border_edges >= 3:
+      border_score *= 0.10
+    elif border_edges == 2:
+      border_score *= 0.40
+    elif border_edges == 1:
+      border_score *= 0.80
+
+    rank_score = (
+        0.60 * shape_score
+        + 0.15 * size_score
+        + 0.10 * compactness_score
+        + 0.15 * border_score
+    )
+
+    row = dict(candidate)
+    row["shape_score"] = round(shape_score, 2)
+    row["size_score"] = round(size_score, 2)
+    row["compactness_score"] = round(compactness_score, 2)
+    row["border_score"] = round(border_score, 2)
+    row["rank_score"] = round(rank_score, 2)
+    ranked.append(row)
+
+  ranked.sort(key=lambda row: row["rank_score"], reverse=True)
+  return ranked
+
+
 def cache_reference_image(
     url: str,
     cache_dir: Path,
