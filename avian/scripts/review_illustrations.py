@@ -297,6 +297,53 @@ def shape_descriptor(mask):
   }
 
 
+def shape_similarity_score(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> float:
+  """Compare two silhouette descriptors and return a 0-100 score."""
+  try:
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires numpy"
+    ) from exc
+
+  def ratio_score(a: float, b: float) -> float:
+    a = float(a)
+    b = float(b)
+    scale = max(abs(a), abs(b), 1e-9)
+    diff = abs(a - b) / scale
+    return max(0.0, 1.0 - diff)
+
+  aspect = ratio_score(left["aspect_ratio"], right["aspect_ratio"])
+  fill = ratio_score(left["fill_ratio"], right["fill_ratio"])
+  circularity = ratio_score(left["circularity"], right["circularity"])
+  perimeter = ratio_score(
+      left["normalized_perimeter"],
+      right["normalized_perimeter"],
+  )
+
+  left_hu = np.asarray(left["hu"], dtype=float)
+  right_hu = np.asarray(right["hu"], dtype=float)
+
+  if left_hu.shape != (7,) or right_hu.shape != (7,):
+    raise ValueError("Shape descriptor must contain 7 Hu moments")
+
+  hu_distance = float(np.mean(np.abs(left_hu - right_hu)))
+  hu = 1.0 / (1.0 + hu_distance)
+
+  score = (
+      0.20 * aspect
+      + 0.15 * fill
+      + 0.15 * circularity
+      + 0.15 * perimeter
+      + 0.35 * hu
+  )
+
+  return round(max(0.0, min(100.0, score * 100.0)), 2)
+
+
 def cache_reference_image(
     url: str,
     cache_dir: Path,
