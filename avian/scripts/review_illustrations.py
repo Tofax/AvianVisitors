@@ -667,6 +667,35 @@ def best_reference_photo_mask(
   }
 
 
+def illustration_reference_shape_score(
+    illustration_path: Path,
+    reference_image,
+    illustration_descriptors: list[dict[str, Any]],
+) -> dict[str, Any]:
+  """Score one illustration against one reference photograph by shape."""
+  illustration_mask = illustration_alpha_mask(illustration_path)
+  illustration_descriptor = shape_descriptor(illustration_mask)
+
+  best = best_reference_photo_mask(
+      reference_image,
+      illustration_descriptors,
+  )
+
+  score = shape_similarity_score(
+      illustration_descriptor,
+      best["descriptor"],
+  )
+
+  return {
+    "score": score,
+    "segmentation_method": best["method"],
+    "segmentation_rank": best["rank_score"],
+    "segmentation_shape_score": best["shape_score"],
+    "foreground_fraction": best["foreground_fraction"],
+    "border_score": best["border_score"],
+  }
+
+
 def cache_reference_image(
     url: str,
     cache_dir: Path,
