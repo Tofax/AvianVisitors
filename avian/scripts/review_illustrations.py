@@ -727,6 +727,103 @@ def illustration_reference_shape_score(
   }
 
 
+def prepare_reference_shape_descriptors(
+    reference_images: list[Path],
+    illustration_descriptors: list[dict[str, Any]],
+    min_segmentation_rank: float = 55.0,
+) -> list[dict[str, Any]]:
+  """Precompute reusable shape descriptors for reference photographs."""
+  try:
+    import cv2
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv"
+    ) from exc
+
+  prepared: list[dict[str, Any]] = []
+
+  for reference_path in reference_images:
+    image = cv2.imread(str(reference_path), cv2.IMREAD_COLOR)
+    if image is None:
+      continue
+
+    try:
+      best = best_reference_photo_mask(
+          image,
+          illustration_descriptors,
+      )
+    except Exception:
+      continue
+
+    if float(best["rank_score"]) < min_segmentation_rank:
+      continue
+
+    prepared.append({
+      "reference_image": str(reference_path),
+      "descriptor": best["descriptor"],
+      "segmentation_method": best["method"],
+      "segmentation_rank": best["rank_score"],
+      "segmentation_shape_score": best["shape_score"],
+      "foreground_fraction": best["foreground_fraction"],
+      "border_score": best["border_score"],
+    })
+
+  return prepared
+
+
+def aggregate_prepared_reference_shape_scores(
+    illustration_path: Path,
+    prepared_references: list[dict[str, Any]],
+    top_n: int = 3,
+) -> dict[str, Any]:
+  """Aggregate shape similarity using precomputed reference descriptors."""
+  illustration_mask = illustration_alpha_mask(illustration_path)
+  illustration_descriptor = shape_descriptor(illustration_mask)
+
+  results: list[dict[str, Any]] = []
+
+  for reference in prepared_references:
+    score = shape_similarity_score(
+        illustration_descriptor,
+        reference["descriptor"],
+    )
+
+    row = {
+      "reference_image": reference["reference_image"],
+      "score": score,
+      "segmentation_method": reference["segmentation_method"],
+      "segmentation_rank": reference["segmentation_rank"],
+      "segmentation_shape_score": reference["segmentation_shape_score"],
+      "foreground_fraction": reference["foreground_fraction"],
+      "border_score": reference["border_score"],
+    }
+    results.append(row)
+
+  results.sort(
+      key=lambda row: float(row["score"]),
+      reverse=True,
+  )
+
+  selected = results[:max(1, int(top_n))]
+
+  if not selected:
+    return {
+      "score": None,
+      "references_used": 0,
+      "references_valid": 0,
+      "details": [],
+    }
+
+  score = sum(float(row["score"]) for row in selected) / len(selected)
+
+  return {
+    "score": round(score, 2),
+    "references_used": len(selected),
+    "references_valid": len(results),
+    "details": selected,
+  }
+
+
 def aggregate_reference_shape_scores(
     illustration_path: Path,
     reference_images: list[Path],
