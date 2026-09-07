@@ -200,6 +200,43 @@ def request_bytes(url: str, headers: dict[str, str] | None = None, timeout: int 
   with urllib.request.urlopen(req, timeout=timeout) as response:
     return response.read()
 
+def illustration_alpha_mask(
+    path: Path,
+    threshold: int = 64,
+):
+  """Return a binary foreground mask from an RGBA illustration."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+  if image is None:
+    raise RuntimeError(f"Could not read illustration image: {path}")
+
+  if image.ndim != 3 or image.shape[2] < 4:
+    raise RuntimeError(f"Illustration image has no alpha channel: {path}")
+
+  alpha = image[:, :, 3]
+  mask = np.where(alpha >= threshold, 255, 0).astype(np.uint8)
+
+  count, labels, stats, _ = cv2.connectedComponentsWithStats(
+      mask,
+      connectivity=8,
+  )
+
+  if count <= 1:
+    return mask
+
+  largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+  mask = np.where(labels == largest, 255, 0).astype(np.uint8)
+
+  return mask
+
+
 def cache_reference_image(
     url: str,
     cache_dir: Path,
