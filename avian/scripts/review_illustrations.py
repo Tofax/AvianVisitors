@@ -632,6 +632,41 @@ def rank_reference_mask_candidates(
   return ranked
 
 
+def best_reference_photo_mask(
+    image,
+    illustration_descriptors: list[dict[str, Any]],
+) -> dict[str, Any]:
+  """Return the best ranked foreground mask for a reference photograph."""
+  candidates = reference_photo_mask_candidates(image)
+
+  if not candidates:
+    raise RuntimeError("No valid reference photo segmentation candidates")
+
+  ranked = rank_reference_mask_candidates(
+      candidates,
+      illustration_descriptors,
+  )
+
+  if not ranked:
+    raise RuntimeError("No ranked reference photo segmentation candidates")
+
+  best = ranked[0]
+
+  return {
+    "method": best["method"],
+    "mask": best["mask"],
+    "foreground_fraction": best["foreground_fraction"],
+    "border_fraction": best["border_fraction"],
+    "border_edges": best["border_edges"],
+    "shape_score": best["shape_score"],
+    "size_score": best["size_score"],
+    "compactness_score": best["compactness_score"],
+    "border_score": best["border_score"],
+    "rank_score": best["rank_score"],
+    "descriptor": best["descriptor"],
+  }
+
+
 def cache_reference_image(
     url: str,
     cache_dir: Path,
