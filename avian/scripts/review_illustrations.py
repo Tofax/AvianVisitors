@@ -200,6 +200,87 @@ def request_bytes(url: str, headers: dict[str, str] | None = None, timeout: int 
   with urllib.request.urlopen(req, timeout=timeout) as response:
     return response.read()
 
+def cache_reference_image(
+    url: str,
+    cache_dir: Path,
+) -> Path:
+  """Download, validate and cache a reference image by content hash."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Reference image scoring requires python3-opencv and numpy"
+    ) from exc
+
+  url = str(url or "").strip()
+  if not url:
+    raise ValueError("Reference image URL is empty")
+
+  data = request_bytes(
+      url,
+      headers={
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      },
+  )
+
+  array = np.frombuffer(data, dtype=np.uint8)
+  image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+  if image is None or image.size == 0:
+    raise RuntimeError(f"Reference URL did not return a valid image: {url}")
+
+  digest = hashlib.sha256(data).hexdigest()
+  images_dir = cache_dir / "images"
+  images_dir.mkdir(parents=True, exist_ok=True)
+
+  suffix = ".jpg"
+  parsed_suffix = Path(urllib.parse.urlparse(url).path).suffix.lower()
+  if parsed_suffix in (".jpg", ".jpeg", ".png", ".webp", ".avif"):
+    suffix = parsed_suffix
+
+  target = images_dir / f"{digest}{suffix}"
+
+  if not target.is_file():
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_bytes(data)
+    temporary.replace(target)
+
+  return target
+
+
+def cache_reference_items(
+    items: list[dict[str, Any]],
+    cache_dir: Path,
+) -> list[dict[str, Any]]:
+  """Attach cached local image paths to reference items."""
+  result: list[dict[str, Any]] = []
+  cached_by_url: dict[str, str] = {}
+
+  for item in items:
+    row = dict(item)
+    thumb_url = str(row.get("thumb_url", "")).strip()
+    row.pop("cached_image", None)
+    row.pop("cache_error", None)
+
+    if thumb_url:
+      cached_rel = cached_by_url.get(thumb_url)
+      if cached_rel is None:
+        try:
+          cached_path = cache_reference_image(thumb_url, cache_dir)
+          cached_rel = cached_path.relative_to(cache_dir).as_posix()
+        except Exception as exc:
+          cached_rel = ""
+          row["cache_error"] = str(exc)
+        cached_by_url[thumb_url] = cached_rel
+
+      if cached_rel:
+        row["cached_image"] = cached_rel
+
+    result.append(row)
+
+  return result
+
+
 def request_text(
     url: str,
     headers: dict[str, str] | None = None,
@@ -2113,7 +2194,7 @@ def bird_reference_photos(
       cached = json.loads(cache_file.read_text(encoding="utf-8"))
       created = int(cached.get("created_at", 0) or 0)
       schema = int(cached.get("schema", 0) or 0)
-      if schema >= 7 and time.time() - created <= cache_hours * 3600:
+      if schema >= 8 and time.time() - created <= cache_hours * 3600:
         return cached
     except Exception:
       pass
@@ -2169,14 +2250,23 @@ def bird_reference_photos(
   # Never duplicate ambiguous BirdGuides photos between Pose 1 and Pose 2.
   # Unknown references are not mixed into either pose; the UI shows them in
   # a separate BirdGuides section for manual review.
+  perched = cache_reference_items(
+      merge_reference_items(commons_perched, birdguides_perched, limit=10),
+      cache_dir,
+  )
+  flight = cache_reference_items(
+      merge_reference_items(commons_flight, birdguides_flight, limit=10),
+      cache_dir,
+  )
+
   payload = {
-    "schema": 7,
+    "schema": 8,
     "created_at": int(time.time()),
     "scientific_name": scientific_name,
     "common_name": common_name,
     "slug": slug,
-    "perched": merge_reference_items(commons_perched, birdguides_perched, limit=10),
-    "flight": merge_reference_items(commons_flight, birdguides_flight, limit=10),
+    "perched": perched,
+    "flight": flight,
     "birdguides": birdguides,
     "birdguides_perched": birdguides_perched,
     "birdguides_flight": birdguides_flight,
