@@ -543,6 +543,7 @@ install_services() {
   install_scripts
   install_avian_controls
   install_avian_generation_lock
+  create_necessary_dirs
   install_Caddyfile
   install_avahi_aliases
   install_birdnet_analysis
@@ -561,7 +562,6 @@ install_services() {
   install_frame_render
   increase_caddy_timeout
 
-  create_necessary_dirs
   generate_BirdDB
   configure_caddy_php
   config_icecast
