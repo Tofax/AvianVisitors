@@ -98,8 +98,13 @@ else
 fi
 
 admin_auth_state="/var/lib/avian-visitors/admin-auth.state"
+admin_auth_size="$(stat -c '%s' -- "${admin_auth_state}" 2>/dev/null || true)"
 
-if [ -r "${admin_auth_state}" ]   && awk -F'\t' 'NF >= 3 && $3 != "-" { found=1 } END { exit found ? 0 : 1 }' "${admin_auth_state}" 2>/dev/null; then
+# A configured v1 credential state contains a 60-character bcrypt verifier.
+# Check only file metadata here so the health check never reads the protected hash.
+if [[ "${admin_auth_size}" =~ ^[0-9]+$ ]] \
+  && [ "${admin_auth_size}" -ge 68 ] \
+  && [ "${admin_auth_size}" -le 77 ]; then
   pass "Remote admin password is configured"
 elif grep -qE '^[[:space:]]*CADDY_PWD[[:space:]]*=[[:space:]]*.+$' "${system_conf}" 2>/dev/null; then
   pass "Remote admin password is configured"
