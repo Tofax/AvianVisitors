@@ -543,6 +543,7 @@ install_services() {
   install_scripts
   install_avian_controls
   install_avian_generation_lock
+  install_phpsysinfo
   create_necessary_dirs
   install_Caddyfile
   install_avahi_aliases
@@ -553,7 +554,6 @@ install_services() {
   install_spectrogram_service
   install_chart_viewer_service
   install_gotty_logs
-  install_phpsysinfo
   install_livestream_service
   install_birdnet_mount
   install_cleanup_cron
