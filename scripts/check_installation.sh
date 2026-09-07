@@ -97,7 +97,11 @@ else
   fail "/etc/birdnet/birdnet.conf is not a symlink"
 fi
 
-if grep -qE '^[[:space:]]*CADDY_PWD[[:space:]]*=[[:space:]]*.+$' "${system_conf}" 2>/dev/null; then
+admin_auth_state="/var/lib/avian-visitors/admin-auth.state"
+
+if [ -r "${admin_auth_state}" ]   && awk -F'\t' 'NF >= 3 && $3 != "-" { found=1 } END { exit found ? 0 : 1 }' "${admin_auth_state}" 2>/dev/null; then
+  pass "Remote admin password is configured"
+elif grep -qE '^[[:space:]]*CADDY_PWD[[:space:]]*=[[:space:]]*.+$' "${system_conf}" 2>/dev/null; then
   pass "Remote admin password is configured"
 else
   warn "Remote admin password is not configured"
