@@ -1543,7 +1543,15 @@ def make_report(
           "bytes": variant["bytes"],
           "image": variant["path"].relative_to(review_dir).as_posix(),
           "matches_local": bool(local_hash and local_hash == variant["sha256"]),
-          "similarity": None,
+          "similarity": {
+            "overall": None,
+            "plumage": None,
+            "shape": None,
+            "colors": None,
+            "pose": None,
+            "reference_revision": None,
+            "scored_at": None,
+          },
           "similarity_status": "unscored",
           "sources": variant["sources"],
         })
@@ -3234,6 +3242,9 @@ def similarity_score_status(
 ) -> str:
   """Return whether a similarity score matches the current references."""
   if not isinstance(similarity, dict):
+    return "unscored"
+
+  if similarity.get("overall") is None:
     return "unscored"
 
   scored_revision = str(similarity.get("reference_revision", "")).strip()
