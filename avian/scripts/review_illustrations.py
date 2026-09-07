@@ -2435,11 +2435,22 @@ def apply_manual_references(
     refs: dict[str, Any],
     manual_path: Path,
     slug: str,
+    cache_dir: Path,
 ) -> dict[str, Any]:
   result = dict(refs)
   manual_perched, manual_flight = manual_references_for(manual_path, slug)
-  result["perched"] = merge_manual_first(manual_perched, list(refs.get("perched", [])))
-  result["flight"] = merge_manual_first(manual_flight, list(refs.get("flight", [])))
+
+  manual_perched = cache_reference_items(manual_perched, cache_dir)
+  manual_flight = cache_reference_items(manual_flight, cache_dir)
+
+  result["perched"] = merge_manual_first(
+      manual_perched,
+      list(refs.get("perched", [])),
+  )
+  result["flight"] = merge_manual_first(
+      manual_flight,
+      list(refs.get("flight", [])),
+  )
   result["manual_perched"] = manual_perched
   result["manual_flight"] = manual_flight
   return result
@@ -3096,7 +3107,12 @@ def serve_review_site(
               slug,
               references_dir,
           )
-          refs = apply_manual_references(refs, manual_references_path, slug)
+          refs = apply_manual_references(
+              refs,
+              manual_references_path,
+              slug,
+              references_dir,
+          )
 
           metadata = reference_set_metadata(refs)
           previous = bird.get("references")
