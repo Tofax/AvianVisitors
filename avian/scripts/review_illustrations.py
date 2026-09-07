@@ -632,12 +632,43 @@ def rank_reference_mask_candidates(
   return ranked
 
 
+def resize_reference_for_shape(
+    image,
+    max_side: int = 480,
+):
+  """Resize a reference photograph for efficient shape segmentation."""
+  try:
+    import cv2
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv"
+    ) from exc
+
+  height, width = image.shape[:2]
+  longest = max(width, height)
+
+  if longest <= max_side:
+    return image
+
+  scale = float(max_side) / float(longest)
+
+  return cv2.resize(
+      image,
+      (
+          max(1, round(width * scale)),
+          max(1, round(height * scale)),
+      ),
+      interpolation=cv2.INTER_AREA,
+  )
+
+
 def best_reference_photo_mask(
     image,
     illustration_descriptors: list[dict[str, Any]],
 ) -> dict[str, Any]:
   """Return the best ranked foreground mask for a reference photograph."""
-  candidates = reference_photo_mask_candidates(image)
+  shape_image = resize_reference_for_shape(image)
+  candidates = reference_photo_mask_candidates(shape_image)
 
   if not candidates:
     raise RuntimeError("No valid reference photo segmentation candidates")
@@ -693,6 +724,69 @@ def illustration_reference_shape_score(
     "segmentation_shape_score": best["shape_score"],
     "foreground_fraction": best["foreground_fraction"],
     "border_score": best["border_score"],
+  }
+
+
+def aggregate_reference_shape_scores(
+    illustration_path: Path,
+    reference_images: list[Path],
+    illustration_descriptors: list[dict[str, Any]],
+    top_n: int = 3,
+    min_segmentation_rank: float = 55.0,
+) -> dict[str, Any]:
+  """Aggregate shape similarity across multiple reference photographs."""
+  try:
+    import cv2
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv"
+    ) from exc
+
+  results: list[dict[str, Any]] = []
+
+  for reference_path in reference_images:
+    image = cv2.imread(str(reference_path), cv2.IMREAD_COLOR)
+    if image is None:
+      continue
+
+    try:
+      result = illustration_reference_shape_score(
+          illustration_path,
+          image,
+          illustration_descriptors,
+      )
+    except Exception:
+      continue
+
+    if float(result["segmentation_rank"]) < min_segmentation_rank:
+      continue
+
+    row = dict(result)
+    row["reference_image"] = str(reference_path)
+    results.append(row)
+
+  results.sort(
+      key=lambda row: float(row["score"]),
+      reverse=True,
+  )
+
+  selected = results[:max(1, int(top_n))]
+
+  if not selected:
+    return {
+      "score": None,
+      "references_used": 0,
+      "references_valid": 0,
+      "details": [],
+    }
+
+  score = sum(float(row["score"]) for row in selected) / len(selected)
+
+  return {
+    "score": round(score, 2),
+    "references_used": len(selected),
+    "references_valid": len(results),
+    "details": selected,
   }
 
 
