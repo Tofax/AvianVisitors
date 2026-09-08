@@ -237,6 +237,84 @@ def illustration_alpha_mask(
   return mask
 
 
+def color_descriptor(
+    image,
+    mask,
+) -> dict[str, Any]:
+  """Describe foreground colors in Lab space."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  if image is None or mask is None:
+    raise ValueError("Image and mask are required")
+
+  if image.shape[:2] != mask.shape[:2]:
+    raise ValueError("Image and mask dimensions do not match")
+
+  foreground = mask > 0
+  if not np.any(foreground):
+    raise ValueError("Mask has no foreground pixels")
+
+  if image.ndim == 2:
+    image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+  elif image.shape[2] == 4:
+    image = image[:, :, :3]
+
+  lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+  chroma_hist = cv2.calcHist(
+      [lab],
+      [1, 2],
+      mask.astype(np.uint8),
+      [16, 16],
+      [0, 256, 0, 256],
+  )
+
+  cv2.normalize(
+      chroma_hist,
+      chroma_hist,
+      alpha=1.0,
+      norm_type=cv2.NORM_L1,
+  )
+
+  lightness_hist = cv2.calcHist(
+      [lab],
+      [0],
+      mask.astype(np.uint8),
+      [32],
+      [0, 256],
+  )
+
+  cv2.normalize(
+      lightness_hist,
+      lightness_hist,
+      alpha=1.0,
+      norm_type=cv2.NORM_L1,
+  )
+
+  pixels = lab[foreground]
+
+  return {
+    "chroma_hist": [
+      float(value)
+      for value in chroma_hist.flatten()
+    ],
+    "lightness_hist": [
+      float(value)
+      for value in lightness_hist.flatten()
+    ],
+    "median_lab": [
+      round(float(value), 3)
+      for value in np.median(pixels, axis=0)
+    ],
+  }
+
+
 def shape_descriptor(mask):
   """Return normalized geometric descriptors for a binary silhouette."""
   try:
