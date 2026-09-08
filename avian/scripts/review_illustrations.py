@@ -4091,9 +4091,44 @@ def score_species_similarity(
         similarity["plumage"] = plumage_score
         changed = True
 
-      if similarity.get("reference_revision") != reference_revision:
-        similarity["reference_revision"] = reference_revision
-        changed = True
+      components = {
+        "plumage": similarity.get("plumage"),
+        "shape": similarity.get("shape"),
+        "colors": similarity.get("colors"),
+        "pose": similarity.get("pose"),
+      }
+
+      if all(value is not None for value in components.values()):
+        overall = round(
+            0.35 * float(components["plumage"])
+            + 0.30 * float(components["shape"])
+            + 0.20 * float(components["colors"])
+            + 0.15 * float(components["pose"]),
+            2,
+        )
+
+        if similarity.get("overall") != overall:
+          similarity["overall"] = overall
+          changed = True
+
+        if similarity.get("reference_revision") != reference_revision:
+          similarity["reference_revision"] = reference_revision
+          changed = True
+
+        import time
+        scored_at = int(time.time())
+
+        if similarity.get("scored_at") != scored_at:
+          similarity["scored_at"] = scored_at
+          changed = True
+
+        expected_status = similarity_score_status(
+            similarity,
+            reference_revision,
+        )
+        if variant.get("similarity_status") != expected_status:
+          variant["similarity_status"] = expected_status
+          changed = True
 
       scored += 1
 
