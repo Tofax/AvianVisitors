@@ -2545,7 +2545,70 @@ function changeSpecies(slug){
   if(right)right.scrollTop=0;
 }
 function renderList(){const v=visible(),el=document.getElementById('list');el.innerHTML=v.map(b=>{const rs=autoReviewStatus(b);return `<div class="row ${b.slug===active?'active':''}" data-s="${esc(b.slug)}"><b>${esc(b.common_name)}</b><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge">P1 ${b.summary.pose1_variants}</span><span class="badge">P2 ${b.summary.pose2_variants}</span></div></div>`}).join('')||'<div class="small">Cap resultat.</div>';el.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>changeSpecies(x.dataset.s))}
-function variantCard(b,pose,v,i){const checked=selected?.[b.slug]?.[String(pose)]?.blob_sha===v.blob_sha;const firstSource=(v.sources&&v.sources[0])||{};return `<article class="variant"><button type="button" class="preview previewBtn" data-modal-src="${esc(v.image)}" data-modal-title="${esc(b.common_name)} — Pose ${pose} — Variant ${i+1}" data-modal-subtitle="${esc(v.width+'x'+v.height+' · '+v.sources.length+' fork(s)')}" data-modal-link="${esc(firstSource.raw_url||'')}" data-modal-group="${esc('pose-'+b.slug+'-'+pose)}" data-modal-kind="variant" data-modal-slug="${esc(b.slug)}" data-modal-pose="${pose}" data-modal-blob="${esc(v.blob_sha)}"><img loading="lazy" src="${esc(v.image)}"></button><div class="body"><div><b>Variant ${i+1}</b> <span class="small">${esc(v.blob_sha.slice(0,12))}...</span></div><div class="badges"><span class="badge">${v.width}x${v.height}</span><span class="badge">${v.sources.length} fork(s)</span>${v.matches_local?'<span class="badge ok">igual que local</span>':''}</div><label class="badge"><input type="radio" name="${esc(b.slug)}-${pose}" data-pick data-slug="${esc(b.slug)}" data-pose="${pose}" data-blob="${esc(v.blob_sha)}" ${checked?'checked':''}> tria</label><ul class="sources">${v.sources.map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}</ul></div></article>`}
+function variantCard(b,pose,v,i){
+  const checked=selected?.[b.slug]?.[String(pose)]?.blob_sha===v.blob_sha;
+  const firstSource=(v.sources&&v.sources[0])||{};
+  const similarity=v.similarity||{};
+  const score=value=>{
+    if(value===null||value===undefined||value==='')return '—';
+    const number=Number(value);
+    return Number.isFinite(number)?number.toFixed(1):'—';
+  };
+  const status=v.similarity_status||'unscored';
+
+  return `<article class="variant">
+    <button type="button" class="preview previewBtn"
+      data-modal-src="${esc(v.image)}"
+      data-modal-title="${esc(b.common_name)} — Pose ${pose} — Variant ${i+1}"
+      data-modal-subtitle="${esc(v.width+'x'+v.height+' · '+v.sources.length+' fork(s)')}"
+      data-modal-link="${esc(firstSource.raw_url||'')}"
+      data-modal-group="${esc('pose-'+b.slug+'-'+pose)}"
+      data-modal-kind="variant"
+      data-modal-slug="${esc(b.slug)}"
+      data-modal-pose="${pose}"
+      data-modal-blob="${esc(v.blob_sha)}">
+      <img loading="lazy" src="${esc(v.image)}">
+    </button>
+    <div class="body">
+      <div>
+        <b>Variant ${i+1}</b>
+        <span class="small">${esc(v.blob_sha.slice(0,12))}...</span>
+      </div>
+
+      <div class="badges">
+        <span class="badge">${v.width}x${v.height}</span>
+        <span class="badge">${v.sources.length} fork(s)</span>
+        ${v.matches_local?'<span class="badge ok">igual que local</span>':''}
+        <span class="badge ${status==='fresh'?'ok':status==='stale'?'bad':''}">
+          ${esc(status)}
+        </span>
+      </div>
+
+      <div class="badges">
+        <span class="badge"><b>Total ${score(similarity.overall)}</b></span>
+        <span class="badge">Plomatge ${score(similarity.plumage)}</span>
+        <span class="badge">Forma ${score(similarity.shape)}</span>
+        <span class="badge">Colors ${score(similarity.colors)}</span>
+        <span class="badge">Pose ${score(similarity.pose)}</span>
+      </div>
+
+      <label class="badge">
+        <input type="radio"
+          name="${esc(b.slug)}-${pose}"
+          data-pick
+          data-slug="${esc(b.slug)}"
+          data-pose="${pose}"
+          data-blob="${esc(v.blob_sha)}"
+          ${checked?'checked':''}>
+        tria
+      </label>
+
+      <ul class="sources">
+        ${v.sources.map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}
+      </ul>
+    </div>
+  </article>`;
+}
 function poseBlock(b,pose){const v=b.poses[String(pose)]||[],fn=pose===1?`${b.slug}.png`:`${b.slug}-2.png`;return `<section class="card pose"><div class="poseHead"><h3>Pose ${pose}</h3><span class="badge">${esc(fn)}</span></div>${v.length?`<div class="variants">${v.map((x,i)=>variantCard(b,pose,x,i)).join('')}</div>`:'<p class="small">No trobada a cap fork escanejat.</p>'}</section>`}
 function exportAll(){const blob=new Blob([JSON.stringify({schema:1,region:report.region,selections:selected},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`illustration-selection-${report.region}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 async function applySelection(){
@@ -4647,6 +4710,79 @@ def serve_review_site(
       updated = json.loads((review_root / "review-data.json").read_text(encoding="utf-8"))
       if not isinstance(updated, dict) or not isinstance(updated.get("species"), list):
         raise ValueError("generated review-data.json is invalid")
+
+      previous_species = {
+        str(bird.get("slug", "")): bird
+        for bird in live_report.get("species", [])
+        if isinstance(bird, dict) and bird.get("slug")
+      }
+
+      for bird in updated.get("species", []):
+        if not isinstance(bird, dict):
+          continue
+
+        previous_bird = previous_species.get(
+            str(bird.get("slug", ""))
+        )
+        if not isinstance(previous_bird, dict):
+          continue
+
+        previous_references = previous_bird.get("references")
+        if isinstance(previous_references, dict):
+          bird["references"] = previous_references
+
+        for pose in ("1", "2"):
+          previous_variants = (
+              previous_bird.get("poses", {}).get(pose, [])
+          )
+
+          by_sha256 = {
+            str(variant.get("sha256", "")): variant
+            for variant in previous_variants
+            if isinstance(variant, dict) and variant.get("sha256")
+          }
+          by_blob = {
+            str(variant.get("blob_sha", "")): variant
+            for variant in previous_variants
+            if isinstance(variant, dict) and variant.get("blob_sha")
+          }
+
+          for variant in bird.get("poses", {}).get(pose, []):
+            if not isinstance(variant, dict):
+              continue
+
+            previous_variant = by_sha256.get(
+                str(variant.get("sha256", ""))
+            )
+
+            if previous_variant is None:
+              previous_variant = by_blob.get(
+                  str(variant.get("blob_sha", ""))
+              )
+
+            if not isinstance(previous_variant, dict):
+              continue
+
+            previous_similarity = previous_variant.get("similarity")
+            if isinstance(previous_similarity, dict):
+              variant["similarity"] = previous_similarity
+
+            previous_status = previous_variant.get(
+                "similarity_status"
+            )
+            if previous_status in ("unscored", "stale", "fresh"):
+              variant["similarity_status"] = previous_status
+
+      atomic_json_write(
+          review_root / "review-data.json",
+          updated,
+      )
+
+      (review_root / "index.html").write_text(
+          build_html(updated),
+          encoding="utf-8",
+          newline="\n",
+      )
 
       live_report.clear()
       live_report.update(updated)
