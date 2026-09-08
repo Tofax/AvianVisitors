@@ -707,6 +707,78 @@ def pose_similarity_score(
   )
 
 
+def plumage_similarity_score(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> float:
+  """Return plumage texture similarity from 0 to 100."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Plumage scoring requires python3-opencv and numpy"
+    ) from exc
+
+  left_lbp = np.asarray(
+      left["lbp_hist"],
+      dtype=np.float32,
+  )
+  right_lbp = np.asarray(
+      right["lbp_hist"],
+      dtype=np.float32,
+  )
+
+  if left_lbp.shape != right_lbp.shape:
+    raise ValueError("LBP histogram dimensions do not match")
+
+  lbp_distance = cv2.compareHist(
+      left_lbp,
+      right_lbp,
+      cv2.HISTCMP_BHATTACHARYYA,
+  )
+
+  lbp_score = max(
+      0.0,
+      min(100.0, (1.0 - lbp_distance) * 100.0),
+  )
+
+  def ratio_score(a: float, b: float) -> float:
+    a = max(abs(a), 1e-9)
+    b = max(abs(b), 1e-9)
+    return max(
+        0.0,
+        min(100.0, min(a / b, b / a) * 100.0),
+    )
+
+  edge_score = ratio_score(
+      float(left["edge_density"]),
+      float(right["edge_density"]),
+  )
+
+  contrast_score = ratio_score(
+      float(left["contrast"]),
+      float(right["contrast"]),
+  )
+
+  entropy_score = ratio_score(
+      float(left["entropy"]),
+      float(right["entropy"]),
+  )
+
+  score = (
+      0.55 * lbp_score
+      + 0.20 * edge_score
+      + 0.10 * contrast_score
+      + 0.15 * entropy_score
+  )
+
+  return round(
+      max(0.0, min(100.0, score)),
+      2,
+  )
+
+
 def shape_similarity_score(
     left: dict[str, Any],
     right: dict[str, Any],
