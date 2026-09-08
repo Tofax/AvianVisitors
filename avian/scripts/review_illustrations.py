@@ -402,6 +402,91 @@ def pose_descriptor(mask) -> dict[str, Any]:
   }
 
 
+def plumage_descriptor(
+    image,
+    mask,
+) -> dict[str, Any]:
+  """Describe foreground plumage texture and local structure."""
+  try:
+    import cv2
+    import numpy as np
+    from skimage.feature import local_binary_pattern
+    from skimage.measure import shannon_entropy
+  except ImportError as exc:
+    raise RuntimeError(
+        "Plumage scoring requires python3-opencv, numpy and skimage"
+    ) from exc
+
+  if image is None or mask is None:
+    raise ValueError("Image and mask are required")
+
+  if image.shape[:2] != mask.shape[:2]:
+    raise ValueError("Image and mask dimensions do not match")
+
+  foreground = mask > 0
+  if not np.any(foreground):
+    raise ValueError("Mask has no foreground pixels")
+
+  if image.ndim == 3 and image.shape[2] == 4:
+    bgr = image[:, :, :3]
+  elif image.ndim == 3:
+    bgr = image
+  else:
+    bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+  gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+
+  lbp = local_binary_pattern(
+      gray,
+      P=8,
+      R=1,
+      method="uniform",
+  )
+
+  lbp_values = lbp[foreground]
+
+  hist, _ = np.histogram(
+      lbp_values,
+      bins=10,
+      range=(0, 10),
+  )
+  hist = hist.astype(np.float64)
+
+  if hist.sum() > 0:
+    hist /= hist.sum()
+
+  edges = cv2.Canny(
+      gray,
+      80,
+      160,
+  )
+
+  edge_density = float(
+      np.count_nonzero((edges > 0) & foreground)
+  ) / float(np.count_nonzero(foreground))
+
+  pixels = gray[foreground].astype(np.float32)
+
+  contrast = float(np.std(pixels)) / 255.0
+
+  masked_gray = np.zeros_like(gray)
+  masked_gray[foreground] = gray[foreground]
+
+  entropy = float(
+      shannon_entropy(masked_gray[foreground])
+  )
+
+  return {
+    "lbp_hist": [
+      round(float(value), 8)
+      for value in hist
+    ],
+    "edge_density": round(edge_density, 8),
+    "contrast": round(contrast, 8),
+    "entropy": round(entropy, 8),
+  }
+
+
 def shape_descriptor(mask):
   """Return normalized geometric descriptors for a binary silhouette."""
   try:
