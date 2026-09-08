@@ -2349,7 +2349,12 @@ html,body{height:100%;overflow:hidden}
 .list{padding:10px;display:flex;flex-direction:column;gap:7px}.row{padding:11px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer}
 .row.active{background:var(--soft);border-color:var(--accent)}.latin{font-style:italic;color:var(--muted);font-size:.86rem;margin:3px 0 7px}
 .badge{display:inline-flex;padding:4px 8px;border-radius:999px;background:#eef1f5;color:#596274;font-size:.74rem}.ok{background:var(--okbg);color:var(--ok)}.warn{background:var(--warnbg);color:var(--warn)}.bad{background:var(--badbg);color:var(--bad)}.bestScore{font-weight:700;border:1px solid var(--accent);color:var(--accent);background:var(--soft)}
-.content{padding:14px;min-width:0;height:100vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.card{background:#fff;border:1px solid var(--line);border-radius:16px}.hero{padding:14px}.heroTop{display:flex;justify-content:space-between;gap:10px}.hero h2{margin:0 0 4px}
+.content{padding:14px;min-width:0;height:100vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.card{background:#fff;border:1px solid var(--line);border-radius:16px}.hero{padding:14px}.heroTop{display:flex;justify-content:space-between;gap:10px}
+.speciesActions{align-items:flex-start}
+.actionsMenu{position:relative}
+.actionsMenuPanel{display:none;position:absolute;right:0;top:calc(100% + 5px);z-index:50;min-width:190px;padding:7px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(16,21,36,.16)}
+.actionsMenuPanel.open{display:flex;flex-direction:column;gap:5px}
+.actionsMenuPanel .btn{width:100%;text-align:left;white-space:nowrap}.hero h2{margin:0 0 4px}
 .pose{padding:12px;margin-top:10px}.poseHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.variants{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:9px}
 .variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
 .previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7;position:relative}
@@ -3207,7 +3212,19 @@ async function batchScoreSpecies(status){
   location.reload();
 }
 
-function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions"><button id="scoreSpecies" class="btn">Recalcula puntuació</button><button id="correct" class="btn">Marcar correcta</button><button id="pending" class="btn">Marcar pendent</button><button id="clear" class="btn">Esborra seleccio</button><button id="export" class="btn">Exporta seleccions</button><button id="apply" class="btn primary">Aplica al projecte</button></div></div></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});el.querySelectorAll('[data-source-more]').forEach(button=>{
+function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions speciesActions">
+  <button id="scoreSpecies" class="btn">Recalcula puntuació</button>
+  <div class="actionsMenu">
+    <button id="toggleSpeciesActions" type="button" class="btn">Accions ▾</button>
+    <div id="speciesActionsMenu" class="actionsMenuPanel">
+      <button id="correct" class="btn">Marcar correcta</button>
+      <button id="pending" class="btn">Marcar pendent</button>
+      <button id="clear" class="btn">Esborra selecció</button>
+      <button id="export" class="btn">Exporta seleccions</button>
+      <button id="apply" class="btn primary">Aplica al projecte</button>
+    </div>
+  </div>
+</div></div></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});el.querySelectorAll('[data-source-more]').forEach(button=>{
   button.onclick=()=>{
     const sources=button.closest('.sources');
     const extra=sources?.querySelector('.sourceExtra');
@@ -3222,7 +3239,16 @@ function renderDetail(){const v=visible(),el=document.getElementById('content');
       ? `+${count} més`
       : 'Mostra menys';
   };
-});document.getElementById('scoreSpecies').onclick=()=>scoreSpecies(b);document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
+});const actionsToggle=document.getElementById('toggleSpeciesActions');
+const actionsMenu=document.getElementById('speciesActionsMenu');
+
+if(actionsToggle&&actionsMenu){
+  actionsToggle.onclick=()=>{
+    actionsMenu.classList.toggle('open');
+  };
+}
+
+document.getElementById('scoreSpecies').onclick=()=>scoreSpecies(b);document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
 
 const imgModal=document.getElementById('imgModal');
 const imgModalImage=document.getElementById('imgModalImage');
