@@ -1178,6 +1178,7 @@ def prepare_reference_shape_descriptors(
       "reference_image": str(reference_path),
       "descriptor": best["descriptor"],
       "color_descriptor": best["color_descriptor"],
+      "pose_descriptor": best["pose_descriptor"],
       "segmentation_method": best["method"],
       "segmentation_rank": best["rank_score"],
       "segmentation_shape_score": best["shape_score"],
@@ -1226,6 +1227,62 @@ def aggregate_prepared_reference_color_scores(
     score = color_similarity_score(
         illustration_colors,
         reference_colors,
+    )
+
+    results.append({
+      "reference_image": reference["reference_image"],
+      "score": score,
+      "segmentation_method": reference["segmentation_method"],
+      "segmentation_rank": reference["segmentation_rank"],
+    })
+
+  results.sort(
+      key=lambda row: float(row["score"]),
+      reverse=True,
+  )
+
+  selected = results[:max(1, int(top_n))]
+
+  if not selected:
+    return {
+      "score": None,
+      "references_used": 0,
+      "references_valid": 0,
+      "details": [],
+    }
+
+  score = sum(
+      float(row["score"])
+      for row in selected
+  ) / len(selected)
+
+  return {
+    "score": round(score, 2),
+    "references_used": len(selected),
+    "references_valid": len(results),
+    "details": selected,
+  }
+
+
+def aggregate_prepared_reference_pose_scores(
+    illustration_path: Path,
+    prepared_references: list[dict[str, Any]],
+    top_n: int = 3,
+) -> dict[str, Any]:
+  """Aggregate pose similarity using precomputed reference descriptors."""
+  illustration_mask = illustration_alpha_mask(illustration_path)
+  illustration_pose = pose_descriptor(illustration_mask)
+
+  results: list[dict[str, Any]] = []
+
+  for reference in prepared_references:
+    reference_pose = reference.get("pose_descriptor")
+    if not isinstance(reference_pose, dict):
+      continue
+
+    score = pose_similarity_score(
+        illustration_pose,
+        reference_pose,
     )
 
     results.append({
