@@ -2334,6 +2334,10 @@ html,body{height:100%;overflow:hidden}
 .search{width:100%;padding:10px 12px;margin:13px 0;border:1px solid var(--line);border-radius:10px}
 .rescanBox{display:flex;align-items:flex-start;gap:8px;margin-top:10px}.rescanBox .btn{white-space:nowrap}.rescanBox .small{line-height:1.2}
 .rescanProgressWrap{flex:1;min-width:0}.rescanProgressTrack{height:7px;border-radius:999px;background:#e8ecf3;overflow:hidden;margin:3px 0 5px}.rescanProgressBar{height:100%;width:0;background:var(--accent);transition:width .25s ease}.rescanDetail{margin-top:2px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.batchScoreProgressWrap{width:100%;margin-top:6px}
+.batchScoreProgressTrack{height:7px;border-radius:999px;background:#e8ecf3;overflow:hidden;margin:3px 0 5px}
+.batchScoreProgressBar{height:100%;width:0;background:var(--accent);transition:width .25s ease}
+.batchScoreDetail{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .filters,.badges,.actions{display:flex;gap:6px;flex-wrap:wrap}.filter,.btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 9px;cursor:pointer}
 .filter.active{background:var(--soft);border-color:var(--accent);color:var(--accent)}.btn{border-radius:10px;padding:9px 12px}.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.stat{border:1px solid var(--line);border-radius:10px;padding:8px;font-size:.8rem}
@@ -2397,6 +2401,17 @@ html,body{height:100%;overflow:hidden}
 <div id="filters" class="filters"></div>
 <div id="reviewFilters" class="reviewFilters"></div>
 <div id="similarityFilters" class="reviewFilters"></div>
+<div id="batchScoreControls" class="reviewFilters">
+  <button id="scoreUnscored" class="btn">Puntua sense puntuar</button>
+  <button id="scoreStale" class="btn">Recalcula desactualitzats</button>
+  <button id="cancelBatchScore" class="btn" style="display:none">Cancel·la</button>
+  <div id="batchScoreProgressWrap" class="batchScoreProgressWrap" style="display:none">
+    <div class="batchScoreProgressTrack">
+      <div id="batchScoreProgressBar" class="batchScoreProgressBar"></div>
+    </div>
+    <div id="batchScoreProgress" class="small batchScoreDetail"></div>
+  </div>
+</div>
 <div class="stats">
 <div class="stat"><b>{{SPECIES_COUNT}}</b><br>especies</div>
 <div class="stat"><b>{{REPO_COUNT}}</b><br>repositoris</div>
@@ -2470,6 +2485,8 @@ let selected=(()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{
 let referenceOverrides=(()=>{try{return JSON.parse(localStorage.getItem(referenceOverrideKey)||'{}')}catch{return {}}})();
 let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds[0]?.slug||'', query='', filter='all', reviewFilter='all', similarityFilter='all';
 let referenceRequestController=null;
+let batchScoreRunning=false;
+let batchScoreCancelled=false;
 const filters=[['all','Totes'],['remote_complete','Als forks'],['remote_partial','Remota parcial'],['local_complete','Local completa'],['local_partial_with_options','Local + opcions'],['local_partial','Local parcial'],['missing','No trobada']];
 const reviewFilters=[['all','Qualsevol estat'],['pending','Pendents'],['applied','Aplicats'],['correct','Correctes'],['local_modified','Modificats localment'],['matching','Coincideixen']];
 const reviewLabels={pending:'Pendent',applied:'Aplicat',correct:'Correcte',local_modified:'Modificat localment',matching:'Coincideix amb variant'};
@@ -2874,6 +2891,27 @@ async function setReviewStatus(b,status){
   if(status==='pending')delete reviewStatus.species[b.slug];else reviewStatus.species[b.slug]=d.entry;
   renderFilters();renderList();renderDetail();
 }
+async function requestSpeciesScore(b){
+  const r=await fetch('/api/score-species',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'X-Avian-Review-Token':window.AVIAN_REVIEW_TOKEN||''
+    },
+    body:JSON.stringify({
+      slug:b.slug
+    })
+  });
+
+  const d=await r.json().catch(()=>({}));
+
+  if(!r.ok||!d.ok){
+    throw new Error(d.error||`HTTP ${r.status}`);
+  }
+
+  return d;
+}
+
 async function scoreSpecies(b){
   const button=document.getElementById('scoreSpecies');
 
@@ -2883,27 +2921,13 @@ async function scoreSpecies(b){
   }
 
   try{
-    const r=await fetch('/api/score-species',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'X-Avian-Review-Token':window.AVIAN_REVIEW_TOKEN||''
-      },
-      body:JSON.stringify({
-        slug:b.slug
-      })
-    });
-
-    const d=await r.json().catch(()=>({}));
-
-    if(!r.ok||!d.ok){
-      throw new Error(d.error||`HTTP ${r.status}`);
-    }
+    await requestSpeciesScore(b);
 
     sessionStorage.setItem(
       'avian-review-active-species',
       b.slug
     );
+
     location.reload();
   }catch(e){
     if(button){
@@ -2913,6 +2937,128 @@ async function scoreSpecies(b){
 
     alert(`No s'ha pogut recalcular la puntuació: ${e.message}`);
   }
+}
+
+function setBatchScoreUi(running,message='',percent=0){
+  const unscored=document.getElementById('scoreUnscored');
+  const stale=document.getElementById('scoreStale');
+  const cancel=document.getElementById('cancelBatchScore');
+  const wrap=document.getElementById('batchScoreProgressWrap');
+  const progress=document.getElementById('batchScoreProgress');
+  const bar=document.getElementById('batchScoreProgressBar');
+
+  if(unscored)unscored.disabled=running;
+  if(stale)stale.disabled=running;
+
+  if(cancel){
+    cancel.style.display=running?'':'none';
+    cancel.disabled=!running;
+    if(!running)cancel.textContent='Cancel·la';
+  }
+
+  if(wrap){
+    wrap.style.display=(running||message)?'block':'none';
+  }
+
+  if(progress){
+    progress.textContent=message;
+  }
+
+  if(bar){
+    const value=Math.max(0,Math.min(100,Number(percent)||0));
+    bar.style.width=`${value}%`;
+  }
+}
+
+async function batchScoreSpecies(status){
+  if(batchScoreRunning)return;
+
+  const targets=birds.filter(
+    b=>speciesSimilarityStatus(b)===status
+  );
+
+  if(!targets.length){
+    alert(
+      status==='stale'
+        ? 'No hi ha ocells desactualitzats.'
+        : 'No hi ha ocells sense puntuar.'
+    );
+    return;
+  }
+
+  const label=status==='stale'
+    ? 'desactualitzats'
+    : 'sense puntuar';
+
+  if(!confirm(
+    `Es puntuaran ${targets.length} ocell(s) ${label}, un per un. Continuar?`
+  )){
+    return;
+  }
+
+  batchScoreRunning=true;
+  batchScoreCancelled=false;
+
+  const originalActive=active;
+  let completed=0;
+  let failed=0;
+
+  setBatchScoreUi(
+    true,
+    `0 / ${targets.length} · 0%`,
+    0
+  );
+
+  for(let i=0;i<targets.length;i++){
+    if(batchScoreCancelled)break;
+
+    const bird=targets[i];
+
+    const percent=Math.round(
+      (i / targets.length)*100
+    );
+
+    setBatchScoreUi(
+      true,
+      `${i+1} / ${targets.length} · ${bird.common_name} · ${percent}%`,
+      percent
+    );
+
+    try{
+      await requestSpeciesScore(bird);
+      completed++;
+    }catch(e){
+      failed++;
+      console.error(
+        `Error puntuant ${bird.slug}:`,
+        e
+      );
+    }
+  }
+
+  batchScoreRunning=false;
+
+  const cancelled=batchScoreCancelled;
+  batchScoreCancelled=false;
+
+  sessionStorage.setItem(
+    'avian-review-active-species',
+    originalActive
+  );
+
+  setBatchScoreUi(
+    false,
+    cancelled
+      ? `Cancel·lat · ${completed} completats · ${failed} errors`
+      : `Completat · ${completed} puntuats · ${failed} errors`,
+    cancelled
+      ? Math.round(
+          ((completed+failed)/targets.length)*100
+        )
+      : 100
+  );
+
+  location.reload();
 }
 
 function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions"><button id="scoreSpecies" class="btn">Recalcula puntuació</button><button id="correct" class="btn">Marcar correcta</button><button id="pending" class="btn">Marcar pendent</button><button id="clear" class="btn">Esborra seleccio</button><button id="export" class="btn">Exporta seleccions</button><button id="apply" class="btn primary">Aplica al projecte</button></div></div><pre>${esc(JSON.stringify(selected[b.slug]||{},null,2))}</pre></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});document.getElementById('scoreSpecies').onclick=()=>scoreSpecies(b);document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
@@ -3306,6 +3452,23 @@ const savedActive=sessionStorage.getItem('avian-review-active-species');
 if(savedActive&&bySlug.has(savedActive)){
   active=savedActive;
 }
+document.getElementById('scoreUnscored').onclick=()=>{
+  batchScoreSpecies('unscored');
+};
+
+document.getElementById('scoreStale').onclick=()=>{
+  batchScoreSpecies('stale');
+};
+
+document.getElementById('cancelBatchScore').onclick=()=>{
+  batchScoreCancelled=true;
+  const button=document.getElementById('cancelBatchScore');
+  if(button){
+    button.disabled=true;
+    button.textContent='Cancel·lant...';
+  }
+};
+
 (async()=>{try{const r=await fetch('/api/status');if(r.ok)reviewStatus=await r.json()}catch{}renderFilters();renderList();renderDetail();pollRescan()})();
 </script>
 </body>
