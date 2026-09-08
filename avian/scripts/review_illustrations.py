@@ -3796,14 +3796,23 @@ def score_species_similarity(
             illustration_path,
             prepared,
         )
+        pose_result = aggregate_prepared_reference_pose_scores(
+            illustration_path,
+            prepared,
+        )
       except Exception:
         skipped += 1
         continue
 
       shape_score = shape_result.get("score")
       color_score = color_result.get("score")
+      pose_score = pose_result.get("score")
 
-      if shape_score is None and color_score is None:
+      if (
+          shape_score is None
+          and color_score is None
+          and pose_score is None
+      ):
         skipped += 1
         continue
 
@@ -3826,6 +3835,10 @@ def score_species_similarity(
 
       if color_score is not None and similarity.get("colors") != color_score:
         similarity["colors"] = color_score
+        changed = True
+
+      if pose_score is not None and similarity.get("pose") != pose_score:
+        similarity["pose"] = pose_score
         changed = True
 
       if similarity.get("reference_revision") != reference_revision:
