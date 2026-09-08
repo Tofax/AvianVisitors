@@ -3028,7 +3028,7 @@ async function applySelection(){
     alert(lines.join('\\n'));
     sessionStorage.setItem(
       'avian-review-active-species',
-      b.slug
+      active
     );
     location.reload();
   }catch(error){
@@ -5279,8 +5279,20 @@ def apply_selection_to_project(
   else:
     masks_status = "unchanged; regeneration unnecessary"
 
+  changed_slugs = sorted({
+    item["slug"]
+    for item in applied
+    if item.get("action") in {"added", "replaced"}
+  })
+
+  art_revision = update_art_revisions(
+      repo_root,
+      changed_slugs,
+  ) if changed_slugs else ""
+
   return {
     "ok": True,
+    "art_revision": art_revision,
     "added": added,
     "replaced": replaced,
     "unchanged": unchanged,
@@ -5289,6 +5301,67 @@ def apply_selection_to_project(
     "masks_output": masks_output[-4000:],
     "applied": applied,
   }
+
+
+def update_art_revisions(
+    repo_root: Path,
+    slugs: list[str],
+) -> str:
+  if not slugs:
+    return ""
+
+  apt_path = repo_root / "avian" / "frontend" / "apt.js"
+  text = apt_path.read_text(encoding="utf-8")
+
+  match = re.search(
+      r"(  var ART_REVISIONS = \{\n)(.*?)(\n  \};)",
+      text,
+      flags=re.DOTALL,
+  )
+  if not match:
+    raise RuntimeError("ART_REVISIONS block not found in apt.js")
+
+  body = match.group(2)
+  revision = f"review-{int(time.time())}"
+
+  for slug in sorted(set(slugs)):
+    entry = re.compile(
+        rf"(^\s*'{re.escape(slug)}'\s*:\s*)'[^']*'(\s*,?\s*$)",
+        flags=re.MULTILINE,
+    )
+
+    if entry.search(body):
+      body = entry.sub(
+          rf"\1'{revision}'\2",
+          body,
+          count=1,
+      )
+      continue
+
+    stripped = body.rstrip()
+
+    if stripped and not stripped.endswith(","):
+      stripped += ","
+
+    body = (
+        stripped
+        + ("\n" if stripped else "")
+        + f"    '{slug}': '{revision}'"
+    )
+
+  updated = (
+      text[:match.start(2)]
+      + body
+      + text[match.end(2):]
+  )
+
+  apt_path.write_text(
+      updated,
+      encoding="utf-8",
+      newline="\n",
+  )
+
+  return revision
 
 
 def serve_review_site(

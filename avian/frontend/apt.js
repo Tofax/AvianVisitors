@@ -21,7 +21,8 @@
   // versions above. A corrected species should not evict every bird image.
   var TABLE_VERSION = 'r13';
   var ART_REVISIONS = {
-    'aphelocoma-woodhouseii': 'anatomy-1'
+    'aphelocoma-woodhouseii': 'anatomy-1',
+    'streptopelia-decaocto': 'review-1788884875'
   };
   function artRevision(sci, fallback) {
     return ART_REVISIONS[slugify(String(sci || ''))] || fallback;
