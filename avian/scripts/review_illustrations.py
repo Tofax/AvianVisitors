@@ -2787,7 +2787,54 @@ function variantCard(b,pose,v,i){
     </div>
   </article>`;
 }
-function poseBlock(b,pose){const v=b.poses[String(pose)]||[],fn=pose===1?`${b.slug}.png`:`${b.slug}-2.png`;return `<section class="card pose"><div class="poseHead"><h3>Pose ${pose}</h3><span class="badge">${esc(fn)}</span></div>${v.length?`<div class="variants">${v.map((x,i)=>variantCard(b,pose,x,i)).join('')}</div>`:'<p class="small">No trobada a cap fork escanejat.</p>'}</section>`}
+function similaritySortRank(v){
+  const status=v.similarity_status||'unscored';
+  if(status==='fresh')return 0;
+  if(status==='stale')return 1;
+  return 2;
+}
+
+function sortedVariants(variants){
+  return [...(variants||[])].sort((a,b)=>{
+    const rankDiff=
+      similaritySortRank(a)-similaritySortRank(b);
+
+    if(rankDiff!==0)return rankDiff;
+
+    const aScore=Number(a?.similarity?.overall);
+    const bScore=Number(b?.similarity?.overall);
+
+    const aValid=Number.isFinite(aScore);
+    const bValid=Number.isFinite(bScore);
+
+    if(aValid&&bValid&&aScore!==bScore){
+      return bScore-aScore;
+    }
+
+    if(aValid&&!bValid)return -1;
+    if(!aValid&&bValid)return 1;
+
+    return 0;
+  });
+}
+
+function poseBlock(b,pose){
+  const variants=b.poses[String(pose)]||[];
+  const sorted=sortedVariants(variants);
+  const fn=pose===1?`${b.slug}.png`:`${b.slug}-2.png`;
+
+  return `<section class="card pose">
+    <div class="poseHead">
+      <h3>Pose ${pose}</h3>
+      <span class="badge">${esc(fn)}</span>
+    </div>
+    ${
+      sorted.length
+        ? `<div class="variants">${sorted.map((x,i)=>variantCard(b,pose,x,i)).join('')}</div>`
+        : '<p class="small">No trobada a cap fork escanejat.</p>'
+    }
+  </section>`;
+}
 function exportAll(){const blob=new Blob([JSON.stringify({schema:1,region:report.region,selections:selected},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`illustration-selection-${report.region}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 async function applySelection(){
   if(location.protocol==='file:'){
