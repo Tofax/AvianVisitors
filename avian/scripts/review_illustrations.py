@@ -2465,6 +2465,7 @@ const referenceOverrideKey=`avian-review-reference-overrides:${report.region}`;
 let selected=(()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{return {}}})();
 let referenceOverrides=(()=>{try{return JSON.parse(localStorage.getItem(referenceOverrideKey)||'{}')}catch{return {}}})();
 let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds[0]?.slug||'', query='', filter='all', reviewFilter='all';
+let referenceRequestController=null;
 const filters=[['all','Totes'],['remote_complete','Als forks'],['remote_partial','Remota parcial'],['local_complete','Local completa'],['local_partial_with_options','Local + opcions'],['local_partial','Local parcial'],['missing','No trobada']];
 const reviewFilters=[['all','Qualsevol estat'],['pending','Pendents'],['applied','Aplicats'],['correct','Correctes'],['local_modified','Modificats localment'],['matching','Coincideixen']];
 const reviewLabels={pending:'Pendent',applied:'Aplicat',correct:'Correcte',local_modified:'Modificat localment',matching:'Coincideix amb variant'};
@@ -2539,6 +2540,10 @@ function reviewCls(s){return s==='correct'||s==='applied'||s==='matching'?'ok':(
 function changeSpecies(slug){
   if(!slug||slug===active)return;
   active=slug;
+  sessionStorage.setItem(
+      'avian-review-active-species',
+      active
+  );
   renderList();
   renderDetail();
   const right=document.getElementById('content');
@@ -2645,6 +2650,10 @@ async function applySelection(){
       `Masks: ${data.masks_status}`
     ];
     alert(lines.join('\\n'));
+    sessionStorage.setItem(
+      'avian-review-active-species',
+      b.slug
+    );
     location.reload();
   }catch(error){
     alert(`No s'ha pogut aplicar la seleccio: ${error.message}`);
@@ -2673,17 +2682,50 @@ function unknownReferenceSection(items,visual,links,slug){
   return `<section class="card refs"><div class="refHead"><div><h3>Referències reals — sense classificar</h3>${note}</div><div class="sourceLinks"><a class="btn" target="_blank" rel="noreferrer" href="${esc(links.birdguides||'#')}">BirdGuides</a><a class="btn" target="_blank" rel="noreferrer" href="${esc(links.birdguides_gallery||'#')}">Galeria BirdGuides</a><a class="btn" target="_blank" rel="noreferrer" href="${esc(links.commons||'#')}">Commons</a></div></div><div class="refGrid">${(items||[]).map(r=>refCard(r,'real-unknown',slug)).join('')}</div></section>`;
 }
 async function loadReferences(b){
+  if(referenceRequestController){
+    referenceRequestController.abort();
+  }
+
+  const controller=new AbortController();
+  referenceRequestController=controller;
+  const requestedSlug=b.slug;
+
   const perched=document.getElementById('references-perched');
   const flight=document.getElementById('references-flight');
   const unknown=document.getElementById('references-unknown');
   if(!perched||!flight)return;
+
   try{
-    const r=await fetch(`/api/references?slug=${encodeURIComponent(b.slug)}`);
+    const r=await fetch(
+      `/api/references?slug=${encodeURIComponent(requestedSlug)}`,
+      {signal:controller.signal}
+    );
     const d=await r.json();
-    if(!r.ok||!d.ok)throw new Error(d.error||`HTTP ${r.status}`);
-    referenceCache[b.slug]=d;
-    renderReferencePanels(b.slug);
+
+    if(!r.ok||!d.ok){
+      throw new Error(d.error||`HTTP ${r.status}`);
+    }
+
+    referenceCache[requestedSlug]=d;
+
+    if(
+      controller.signal.aborted||
+      referenceRequestController!==controller||
+      active!==requestedSlug
+    ){
+      return;
+    }
+
+    renderReferencePanels(requestedSlug);
   }catch(e){
+    if(
+      e.name==='AbortError'||
+      referenceRequestController!==controller||
+      active!==requestedSlug
+    ){
+      return;
+    }
+
     const error=`<section class="card refs stickyRef"><div class="small">No s'han pogut carregar les referències: ${esc(e.message)}</div></section>`;
     perched.innerHTML=error;
     flight.innerHTML=error;
@@ -2697,7 +2739,44 @@ async function setReviewStatus(b,status){
   if(status==='pending')delete reviewStatus.species[b.slug];else reviewStatus.species[b.slug]=d.entry;
   renderFilters();renderList();renderDetail();
 }
-function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions"><button id="correct" class="btn">Marcar correcta</button><button id="pending" class="btn">Marcar pendent</button><button id="clear" class="btn">Esborra seleccio</button><button id="export" class="btn">Exporta seleccions</button><button id="apply" class="btn primary">Aplica al projecte</button></div></div><pre>${esc(JSON.stringify(selected[b.slug]||{},null,2))}</pre></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
+async function scoreSpecies(b){
+  const button=document.getElementById('scoreSpecies');
+
+  if(button){
+    button.disabled=true;
+    button.textContent='Recalculant...';
+  }
+
+  try{
+    const r=await fetch('/api/score-species',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-Avian-Review-Token':window.AVIAN_REVIEW_TOKEN||''
+      },
+      body:JSON.stringify({
+        slug:b.slug
+      })
+    });
+
+    const d=await r.json().catch(()=>({}));
+
+    if(!r.ok||!d.ok){
+      throw new Error(d.error||`HTTP ${r.status}`);
+    }
+
+    location.reload();
+  }catch(e){
+    if(button){
+      button.disabled=false;
+      button.textContent='Recalcula puntuació';
+    }
+
+    alert(`No s'ha pogut recalcular la puntuació: ${e.message}`);
+  }
+}
+
+function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions"><button id="scoreSpecies" class="btn">Recalcula puntuació</button><button id="correct" class="btn">Marcar correcta</button><button id="pending" class="btn">Marcar pendent</button><button id="clear" class="btn">Esborra seleccio</button><button id="export" class="btn">Exporta seleccions</button><button id="apply" class="btn primary">Aplica al projecte</button></div></div><pre>${esc(JSON.stringify(selected[b.slug]||{},null,2))}</pre></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});document.getElementById('scoreSpecies').onclick=()=>scoreSpecies(b);document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
 
 const imgModal=document.getElementById('imgModal');
 const imgModalImage=document.getElementById('imgModalImage');
@@ -3040,6 +3119,10 @@ async function pollRescan(){
         const key=`avian-rescan-reloaded:${d.finished_at}`;
         if(sessionStorage.getItem(key)!=='1'){
           sessionStorage.setItem(key,'1');
+          sessionStorage.setItem(
+            'avian-review-active-species',
+            active
+          );
           location.reload();
           return;
         }
@@ -3071,6 +3154,10 @@ async function startRescan(){
 }
 document.getElementById('rescanForks').onclick=startRescan;
 document.getElementById('search').oninput=e=>{query=e.target.value;const v=visible();const previous=active;if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;renderList();renderDetail();if(active!==previous){const right=document.getElementById('content');if(right)right.scrollTop=0}};
+const savedActive=sessionStorage.getItem('avian-review-active-species');
+if(savedActive&&bySlug.has(savedActive)){
+  active=savedActive;
+}
 (async()=>{try{const r=await fetch('/api/status');if(r.ok)reviewStatus=await r.json()}catch{}renderFilters();renderList();renderDetail();pollRescan()})();
 </script>
 </body>
