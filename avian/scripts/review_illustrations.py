@@ -2749,14 +2749,74 @@ function visible(){
   return result;
 }
 
+async function refreshDetectedSpecies(){
+  try{
+    const response=await fetch('/api/detections',{
+      cache:'no-store'
+    });
+
+    const data=await response.json().catch(()=>({}));
+
+    if(!response.ok||!data.ok){
+      throw new Error(data.error||`HTTP ${response.status}`);
+    }
+
+    const detected=new Map(
+      (data.species||[]).map(item=>[
+        item.slug,
+        item
+      ])
+    );
+
+    for(const bird of birds){
+      const item=detected.get(bird.slug);
+
+      bird.detected=Boolean(item);
+      bird.detection_count=item
+        ? Number(item.detection_count||0)
+        : 0;
+      bird.last_detection=item
+        ? String(item.last_detection||'')
+        : '';
+    }
+
+    const v=visible();
+    const previous=active;
+
+    if(v.length&&!v.some(b=>b.slug===active)){
+      active=v[0].slug;
+    }
+
+    renderFilters();
+    renderList();
+    renderDetail();
+
+    if(active!==previous){
+      const right=document.getElementById('content');
+      if(right)right.scrollTop=0;
+    }
+  }catch(error){
+    console.error(
+      'No s\\'han pogut refrescar les espècies detectades:',
+      error
+    );
+  }
+}
+
 function renderFilters(){
   document.getElementById('filters').innerHTML=
     filters.map(([v,l])=>
       `<button class="filter ${filter===v?'active':''}" data-f="${v}">${l}</button>`
     ).join('');
 
-  document.querySelectorAll('[data-f]').forEach(x=>x.onclick=()=>{
+  document.querySelectorAll('[data-f]').forEach(x=>x.onclick=async()=>{
     filter=x.dataset.f;
+
+    if(filter==='detected'){
+      await refreshDetectedSpecies();
+      return;
+    }
+
     const v=visible();
     const previous=active;
     if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;
@@ -3790,7 +3850,24 @@ document.getElementById('toggleInfo').onclick=()=>{
   toggleSidebarPanel('infoPanel','toggleInfo');
 };
 
-(async()=>{try{const r=await fetch('/api/status');if(r.ok)reviewStatus=await r.json()}catch{}renderFilters();renderList();renderDetail();pollRescan()})();
+(async()=>{
+  try{
+    const r=await fetch('/api/status');
+    if(r.ok)reviewStatus=await r.json();
+  }catch{}
+
+  await refreshDetectedSpecies();
+
+  renderFilters();
+  renderList();
+  renderDetail();
+  pollRescan();
+
+  setInterval(
+    refreshDetectedSpecies,
+    30000
+  );
+})();
 </script>
 </body>
 </html>
@@ -5815,6 +5892,38 @@ def serve_review_site(
 
       if request_path == "/api/status":
         self._json(200, load_review_status(status_path))
+        return
+
+      if request_path == "/api/detections":
+        refresh_report_detection_state(
+            live_report,
+            repo_root / "scripts" / "birds.db",
+        )
+        atomic_json_write(
+            review_root / "review-data.json",
+            live_report,
+        )
+        self._json(
+            200,
+            {
+              "ok": True,
+              "species": [
+                {
+                  "slug": bird.get("slug", ""),
+                  "detected": bool(bird.get("detected")),
+                  "detection_count": int(
+                      bird.get("detection_count", 0) or 0
+                  ),
+                  "last_detection": bird.get(
+                      "last_detection",
+                      "",
+                  ),
+                }
+                for bird in live_report.get("species", [])
+                if bird.get("detected")
+              ],
+            },
+        )
         return
 
       if request_path == "/api/rescan":
