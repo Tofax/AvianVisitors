@@ -1340,6 +1340,7 @@ def prepare_reference_shape_descriptors(
       "descriptor": best["descriptor"],
       "color_descriptor": best["color_descriptor"],
       "pose_descriptor": best["pose_descriptor"],
+      "plumage_descriptor": best["plumage_descriptor"],
       "segmentation_method": best["method"],
       "segmentation_rank": best["rank_score"],
       "segmentation_shape_score": best["shape_score"],
@@ -1388,6 +1389,81 @@ def aggregate_prepared_reference_color_scores(
     score = color_similarity_score(
         illustration_colors,
         reference_colors,
+    )
+
+    results.append({
+      "reference_image": reference["reference_image"],
+      "score": score,
+      "segmentation_method": reference["segmentation_method"],
+      "segmentation_rank": reference["segmentation_rank"],
+    })
+
+  results.sort(
+      key=lambda row: float(row["score"]),
+      reverse=True,
+  )
+
+  selected = results[:max(1, int(top_n))]
+
+  if not selected:
+    return {
+      "score": None,
+      "references_used": 0,
+      "references_valid": 0,
+      "details": [],
+    }
+
+  score = sum(
+      float(row["score"])
+      for row in selected
+  ) / len(selected)
+
+  return {
+    "score": round(score, 2),
+    "references_used": len(selected),
+    "references_valid": len(results),
+    "details": selected,
+  }
+
+
+def aggregate_prepared_reference_plumage_scores(
+    illustration_path: Path,
+    prepared_references: list[dict[str, Any]],
+    top_n: int = 3,
+) -> dict[str, Any]:
+  """Aggregate plumage similarity using precomputed reference descriptors."""
+  try:
+    import cv2
+  except ImportError as exc:
+    raise RuntimeError(
+        "Plumage scoring requires python3-opencv"
+    ) from exc
+
+  image = cv2.imread(
+      str(illustration_path),
+      cv2.IMREAD_UNCHANGED,
+  )
+  if image is None:
+    raise RuntimeError(
+        f"Unable to read illustration: {illustration_path}"
+    )
+
+  mask = illustration_alpha_mask(illustration_path)
+  illustration_plumage = plumage_descriptor(
+      image,
+      mask,
+  )
+
+  results: list[dict[str, Any]] = []
+
+  for reference in prepared_references:
+    reference_plumage = reference.get("plumage_descriptor")
+    if not isinstance(reference_plumage, dict):
+      continue
+
+    score = plumage_similarity_score(
+        illustration_plumage,
+        reference_plumage,
     )
 
     results.append({
