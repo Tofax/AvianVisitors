@@ -2354,7 +2354,9 @@ html,body{height:100%;overflow:hidden}
 .variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
 .previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7}
 .imgModal{position:fixed;inset:0;background:rgba(16,21,36,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}.imgModal.open{display:flex}.imgModalBox{width:min(1100px,96vw);max-height:92vh;background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}.imgModalTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--line)}.imgModalTitle{font-weight:700}.imgModalSub{margin-top:4px;color:var(--muted);font-size:.9rem}.imgModalActions{display:flex;gap:8px;flex-wrap:wrap}.imgModalBody{position:relative;padding:14px 72px;overflow:auto;background:#eef1f5;display:flex;align-items:center;justify-content:center}.imgModalBody img{display:block;max-width:100%;max-height:calc(92vh - 110px);margin:0 auto;object-fit:contain}.closeBtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
-.body{padding:12px}.sources{font-size:.86rem;padding-left:18px}.small{font-size:.78rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#101524;color:#eef2ff;padding:12px;border-radius:10px}
+.body{padding:12px}.sources{font-size:.86rem;padding-left:18px}
+.sourceMoreBtn{border:0;background:none;color:var(--accent);padding:2px 0;cursor:pointer;font:inherit}
+.sourceExtra{margin:0;padding:0}.small{font-size:.78rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#101524;color:#eef2ff;padding:12px;border-radius:10px}
 .reviewFilters{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.reviewStatus{font-weight:650}
 .referenceAnchor{position:sticky;top:8px;z-index:20;margin-top:16px}
 .refs{padding:12px 14px;margin:0;background:rgba(255,255,255,.97);backdrop-filter:blur(8px)}
@@ -2782,7 +2784,19 @@ function variantCard(b,pose,v,i){
       </label>
 
       <ul class="sources">
-        ${v.sources.map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}
+        ${v.sources.slice(0,3).map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}
+        ${v.sources.length>3?`
+          <li class="sourceMore">
+            <button type="button"
+              class="sourceMoreBtn"
+              data-source-more>
+              +${v.sources.length-3} més
+            </button>
+          </li>
+          <div class="sourceExtra" style="display:none">
+            ${v.sources.slice(3).map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}
+          </div>
+        `:''}
       </ul>
     </div>
   </article>`;
@@ -3129,7 +3143,22 @@ async function batchScoreSpecies(status){
   location.reload();
 }
 
-function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions"><button id="scoreSpecies" class="btn">Recalcula puntuació</button><button id="correct" class="btn">Marcar correcta</button><button id="pending" class="btn">Marcar pendent</button><button id="clear" class="btn">Esborra seleccio</button><button id="export" class="btn">Exporta seleccions</button><button id="apply" class="btn primary">Aplica al projecte</button></div></div><pre>${esc(JSON.stringify(selected[b.slug]||{},null,2))}</pre></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});document.getElementById('scoreSpecies').onclick=()=>scoreSpecies(b);document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
+function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions"><button id="scoreSpecies" class="btn">Recalcula puntuació</button><button id="correct" class="btn">Marcar correcta</button><button id="pending" class="btn">Marcar pendent</button><button id="clear" class="btn">Esborra seleccio</button><button id="export" class="btn">Exporta seleccions</button><button id="apply" class="btn primary">Aplica al projecte</button></div></div><pre>${esc(JSON.stringify(selected[b.slug]||{},null,2))}</pre></section><div id="references-perched" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — parat...</div></section></div>${poseBlock(b,1)}<div id="references-flight" class="referenceAnchor"><section class="card refs stickyRef"><div class="refLoading">Carregant referència real — volant...</div></section></div>${poseBlock(b,2)}<div id="references-unknown" style="margin-top:16px"></div>`;el.querySelectorAll('[data-pick]').forEach(x=>x.onchange=()=>{const bird=bySlug.get(x.dataset.slug),pose=x.dataset.pose,variant=bird.poses[pose].find(v=>v.blob_sha===x.dataset.blob);selected[bird.slug]??={};selected[bird.slug][pose]={blob_sha:variant.blob_sha,sha256:variant.sha256,filename:variant.filename,image:variant.image,sources:variant.sources};localStorage.setItem(key,JSON.stringify(selected));renderDetail()});el.querySelectorAll('[data-source-more]').forEach(button=>{
+  button.onclick=()=>{
+    const sources=button.closest('.sources');
+    const extra=sources?.querySelector('.sourceExtra');
+
+    if(!extra)return;
+
+    const open=extra.style.display!=='none';
+    const count=extra.querySelectorAll('li').length;
+
+    extra.style.display=open?'none':'block';
+    button.textContent=open
+      ? `+${count} més`
+      : 'Mostra menys';
+  };
+});document.getElementById('scoreSpecies').onclick=()=>scoreSpecies(b);document.getElementById('correct').onclick=()=>setReviewStatus(b,'correct');document.getElementById('pending').onclick=()=>setReviewStatus(b,'pending');document.getElementById('clear').onclick=()=>{delete selected[b.slug];localStorage.setItem(key,JSON.stringify(selected));renderDetail()};document.getElementById('export').onclick=exportAll;document.getElementById('apply').onclick=applySelection;loadReferences(b)}
 
 const imgModal=document.getElementById('imgModal');
 const imgModalImage=document.getElementById('imgModalImage');
