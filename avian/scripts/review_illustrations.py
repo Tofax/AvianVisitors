@@ -2348,11 +2348,13 @@ html,body{height:100%;overflow:hidden}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.stat{border:1px solid var(--line);border-radius:10px;padding:8px;font-size:.8rem}
 .list{padding:10px;display:flex;flex-direction:column;gap:7px}.row{padding:11px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer}
 .row.active{background:var(--soft);border-color:var(--accent)}.latin{font-style:italic;color:var(--muted);font-size:.86rem;margin:3px 0 7px}
-.badge{display:inline-flex;padding:4px 8px;border-radius:999px;background:#eef1f5;color:#596274;font-size:.74rem}.ok{background:var(--okbg);color:var(--ok)}.warn{background:var(--warnbg);color:var(--warn)}.bad{background:var(--badbg);color:var(--bad)}
+.badge{display:inline-flex;padding:4px 8px;border-radius:999px;background:#eef1f5;color:#596274;font-size:.74rem}.ok{background:var(--okbg);color:var(--ok)}.warn{background:var(--warnbg);color:var(--warn)}.bad{background:var(--badbg);color:var(--bad)}.bestScore{font-weight:700;border:1px solid var(--accent);color:var(--accent);background:var(--soft)}
 .content{padding:22px;min-width:0;height:100vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.card{background:#fff;border:1px solid var(--line);border-radius:16px}.hero{padding:20px}.heroTop{display:flex;justify-content:space-between;gap:15px}.hero h2{margin:0 0 4px}
 .pose{padding:16px;margin-top:16px}.poseHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.variants{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-top:12px}
 .variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
-.previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7}
+.previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7;position:relative}
+.previewBtn.variantLocal{box-shadow:inset 0 0 0 4px var(--ok)}
+
 .imgModal{position:fixed;inset:0;background:rgba(16,21,36,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}.imgModal.open{display:flex}.imgModalBox{width:min(1100px,96vw);max-height:92vh;background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}.imgModalTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--line)}.imgModalTitle{font-weight:700}.imgModalSub{margin-top:4px;color:var(--muted);font-size:.9rem}.imgModalActions{display:flex;gap:8px;flex-wrap:wrap}.imgModalBody{position:relative;padding:14px 72px;overflow:auto;background:#eef1f5;display:flex;align-items:center;justify-content:center}.imgModalBody img{display:block;max-width:100%;max-height:calc(92vh - 110px);margin:0 auto;object-fit:contain}.closeBtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
 .body{padding:12px}.sources{font-size:.86rem;padding-left:18px}
 .sourceMoreBtn{border:0;background:none;color:var(--accent);padding:2px 0;cursor:pointer;font:inherit}
@@ -2737,7 +2739,7 @@ function variantCard(b,pose,v,i){
   const status=v.similarity_status||'unscored';
 
   return `<article class="variant">
-    <button type="button" class="preview previewBtn"
+    <button type="button" class="preview previewBtn ${v.matches_local?'variantLocal':''}"
       data-modal-src="${esc(v.image)}"
       data-modal-title="${esc(b.common_name)} — Pose ${pose} — Variant ${i+1}"
       data-modal-subtitle="${esc(v.width+'x'+v.height+' · '+v.sources.length+' fork(s)')}"
@@ -2836,6 +2838,11 @@ function poseBlock(b,pose){
   const variants=b.poses[String(pose)]||[];
   const sorted=sortedVariants(variants);
   const fn=pose===1?`${b.slug}.png`:`${b.slug}-2.png`;
+
+  const bestFreshIndex=sorted.findIndex(
+    v=>(v.similarity_status||'unscored')==='fresh'
+      && Number.isFinite(Number(v?.similarity?.overall))
+  );
 
   return `<section class="card pose">
     <div class="poseHead">
