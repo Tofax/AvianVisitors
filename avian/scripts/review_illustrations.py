@@ -315,6 +315,93 @@ def color_descriptor(
   }
 
 
+def pose_descriptor(mask) -> dict[str, Any]:
+  """Describe silhouette pose using normalized geometric features."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  ys, xs = np.where(mask > 0)
+
+  if xs.size == 0 or ys.size == 0:
+    raise RuntimeError("Silhouette contains no foreground")
+
+  x_min = int(xs.min())
+  x_max = int(xs.max())
+  y_min = int(ys.min())
+  y_max = int(ys.max())
+
+  width = max(1, x_max - x_min + 1)
+  height = max(1, y_max - y_min + 1)
+
+  cx = float(xs.mean())
+  cy = float(ys.mean())
+
+  center_x = (cx - x_min) / float(width)
+  center_y = (cy - y_min) / float(height)
+
+  coords = np.column_stack((
+      xs.astype(np.float32),
+      ys.astype(np.float32),
+  ))
+
+  centered = coords - np.array(
+      [cx, cy],
+      dtype=np.float32,
+  )
+
+  covariance = np.cov(
+      centered,
+      rowvar=False,
+  )
+
+  eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+  major = eigenvectors[:, int(np.argmax(eigenvalues))]
+
+  angle = float(
+      np.degrees(
+          np.arctan2(
+              float(major[1]),
+              float(major[0]),
+          )
+      )
+  )
+
+  # Principal-axis orientation is equivalent modulo 180 degrees.
+  angle = angle % 180.0
+
+  top_half = np.count_nonzero(
+      ys < (y_min + height / 2.0)
+  )
+  bottom_half = np.count_nonzero(
+      ys >= (y_min + height / 2.0)
+  )
+
+  left_half = np.count_nonzero(
+      xs < (x_min + width / 2.0)
+  )
+  right_half = np.count_nonzero(
+      xs >= (x_min + width / 2.0)
+  )
+
+  total = float(xs.size)
+
+  return {
+    "aspect_ratio": float(width) / float(height),
+    "center_x": round(center_x, 6),
+    "center_y": round(center_y, 6),
+    "axis_angle": round(angle, 6),
+    "top_fraction": round(top_half / total, 6),
+    "bottom_fraction": round(bottom_half / total, 6),
+    "left_fraction": round(left_half / total, 6),
+    "right_fraction": round(right_half / total, 6),
+  }
+
+
 def shape_descriptor(mask):
   """Return normalized geometric descriptors for a binary silhouette."""
   try:
