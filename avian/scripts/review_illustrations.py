@@ -2356,7 +2356,17 @@ html,body{height:100%;overflow:hidden}
 .previewBtn.variantLocal{box-shadow:inset 0 0 0 4px var(--ok)}
 
 .imgModal{position:fixed;inset:0;background:rgba(16,21,36,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}.imgModal.open{display:flex}.imgModalBox{width:min(1100px,96vw);max-height:92vh;background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}.imgModalTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--line)}.imgModalTitle{font-weight:700}.imgModalSub{margin-top:4px;color:var(--muted);font-size:.9rem}.imgModalActions{display:flex;gap:8px;flex-wrap:wrap}.imgModalBody{position:relative;padding:14px 72px;overflow:auto;background:#eef1f5;display:flex;align-items:center;justify-content:center}.imgModalBody img{display:block;max-width:100%;max-height:calc(92vh - 110px);margin:0 auto;object-fit:contain}.closeBtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
-.body{padding:12px}.sources{font-size:.86rem;padding-left:18px}
+.body{padding:12px}
+.variantBody{display:flex;flex-direction:column;gap:9px}
+.variantMain{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.variantScore{display:flex;align-items:center;gap:6px}
+.variantScore strong{font-size:1.25rem;line-height:1}
+.variantComponents{display:flex;gap:5px 10px;flex-wrap:wrap}
+.variantMeta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.variantPick{margin-left:auto;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;cursor:pointer;font-size:.8rem}
+.variantPick.selected{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.variantPick input{margin:0}
+.sources{font-size:.86rem;padding-left:18px}
 .sourceMoreBtn{border:0;background:none;color:var(--accent);padding:2px 0;cursor:pointer;font:inherit}
 .sourceExtra{margin:0;padding:0}.small{font-size:.78rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#101524;color:#eef2ff;padding:12px;border-radius:10px}
 .reviewFilters{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.reviewStatus{font-weight:650}
@@ -2728,18 +2738,30 @@ function changeSpecies(slug){
 }
 function renderList(){const v=visible(),el=document.getElementById('list');el.innerHTML=v.map(b=>{const rs=autoReviewStatus(b);return `<div class="row ${b.slug===active?'active':''}" data-s="${esc(b.slug)}"><b>${esc(b.common_name)}</b><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge">P1 ${b.summary.pose1_variants}</span><span class="badge">P2 ${b.summary.pose2_variants}</span></div></div>`}).join('')||'<div class="small">Cap resultat.</div>';el.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>changeSpecies(x.dataset.s))}
 function variantCard(b,pose,v,i){
-  const checked=selected?.[b.slug]?.[String(pose)]?.blob_sha===v.blob_sha;
+  const checked=
+    selected?.[b.slug]?.[String(pose)]?.blob_sha===v.blob_sha;
+
   const firstSource=(v.sources&&v.sources[0])||{};
   const similarity=v.similarity||{};
+
   const score=value=>{
     if(value===null||value===undefined||value==='')return '—';
     const number=Number(value);
     return Number.isFinite(number)?number.toFixed(1):'—';
   };
+
   const status=v.similarity_status||'unscored';
+  const statusClass=
+    status==='fresh'
+      ? 'ok'
+      : status==='stale'
+        ? 'bad'
+        : '';
 
   return `<article class="variant">
-    <button type="button" class="preview previewBtn ${v.matches_local?'variantLocal':''}"
+    <button
+      type="button"
+      class="preview previewBtn ${v.matches_local?'variantLocal':''}"
       data-modal-src="${esc(v.image)}"
       data-modal-title="${esc(b.common_name)} — Pose ${pose} — Variant ${i+1}"
       data-modal-subtitle="${esc(v.width+'x'+v.height+' · '+v.sources.length+' fork(s)')}"
@@ -2751,58 +2773,87 @@ function variantCard(b,pose,v,i){
       data-modal-blob="${esc(v.blob_sha)}">
       <img loading="lazy" src="${esc(v.image)}">
     </button>
-    <div class="body">
-      <div>
-        <b>Variant ${i+1}</b>
-        <span class="small">${esc(v.blob_sha.slice(0,12))}...</span>
+
+    <div class="body variantBody">
+
+      <div class="variantMain">
+        <div>
+          <b>Variant ${i+1}</b>
+          <div class="small">${esc(v.blob_sha.slice(0,12))}...</div>
+        </div>
+
+        <div class="variantScore">
+          <strong>${score(similarity.overall)}</strong>
+          <span class="badge ${statusClass}">
+            ${esc(similarityLabels[status]||status)}
+          </span>
+        </div>
       </div>
 
-      <div class="badges">
-        <span class="badge">${v.width}x${v.height}</span>
-        <span class="badge">${v.sources.length} fork(s)</span>
-        ${v.matches_local?'<span class="badge ok">igual que local</span>':''}
-        <span class="badge ${status==='fresh'?'ok':status==='stale'?'bad':''}">
-          ${esc(similarityLabels[status]||status)}
-        </span>
+      <div class="variantComponents small">
+        <span>Plomatge ${score(similarity.plumage)}</span>
+        <span>Forma ${score(similarity.shape)}</span>
+        <span>Colors ${score(similarity.colors)}</span>
+        <span>Pose ${score(similarity.pose)}</span>
       </div>
 
-      <div class="badges">
-        <span class="badge"><b>Total ${score(similarity.overall)}</b></span>
-        <span class="badge">Plomatge ${score(similarity.plumage)}</span>
-        <span class="badge">Forma ${score(similarity.shape)}</span>
-        <span class="badge">Colors ${score(similarity.colors)}</span>
-        <span class="badge">Pose ${score(similarity.pose)}</span>
-      </div>
+      <div class="variantMeta">
+        <span class="small">${v.width}×${v.height}</span>
+        <span class="small">·</span>
+        <span class="small">${v.sources.length} fork(s)</span>
 
-      <label class="badge">
-        <input type="radio"
-          name="${esc(b.slug)}-${pose}"
-          data-pick
-          data-slug="${esc(b.slug)}"
-          data-pose="${pose}"
-          data-blob="${esc(v.blob_sha)}"
-          ${checked?'checked':''}>
-        tria
-      </label>
+        <label class="variantPick ${checked?'selected':''}">
+          <input
+            type="radio"
+            name="${esc(b.slug)}-${pose}"
+            data-pick
+            data-slug="${esc(b.slug)}"
+            data-pose="${pose}"
+            data-blob="${esc(v.blob_sha)}"
+            ${checked?'checked':''}>
+          Tria
+        </label>
+      </div>
 
       <ul class="sources">
-        ${v.sources.slice(0,3).map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}
+        ${v.sources.slice(0,3).map(s=>`
+          <li>
+            <a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">
+              ${esc(s.repo)}
+            </a>
+            <span class="small">@${esc(s.branch)}</span>
+            ${s.is_upstream?' <span class="badge">upstream</span>':''}
+          </li>
+        `).join('')}
+
         ${v.sources.length>3?`
           <li class="sourceMore">
-            <button type="button"
+            <button
+              type="button"
               class="sourceMoreBtn"
               data-source-more>
               +${v.sources.length-3} més
             </button>
           </li>
+
           <div class="sourceExtra" style="display:none">
-            ${v.sources.slice(3).map(s=>`<li><a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">${esc(s.repo)}</a> <span class="small">@${esc(s.branch)}</span>${s.is_upstream?' <span class="badge">upstream</span>':''}</li>`).join('')}
+            ${v.sources.slice(3).map(s=>`
+              <li>
+                <a target="_blank" rel="noreferrer" href="${esc(s.raw_url)}">
+                  ${esc(s.repo)}
+                </a>
+                <span class="small">@${esc(s.branch)}</span>
+                ${s.is_upstream?' <span class="badge">upstream</span>':''}
+              </li>
+            `).join('')}
           </div>
         `:''}
       </ul>
+
     </div>
   </article>`;
 }
+
 function similaritySortRank(v){
   const status=v.similarity_status||'unscored';
   if(status==='fresh')return 0;
