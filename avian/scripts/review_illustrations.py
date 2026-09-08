@@ -4037,6 +4037,10 @@ def score_species_similarity(
             illustration_path,
             prepared,
         )
+        plumage_result = aggregate_prepared_reference_plumage_scores(
+            illustration_path,
+            prepared,
+        )
       except Exception:
         skipped += 1
         continue
@@ -4044,11 +4048,13 @@ def score_species_similarity(
       shape_score = shape_result.get("score")
       color_score = color_result.get("score")
       pose_score = pose_result.get("score")
+      plumage_score = plumage_result.get("score")
 
       if (
           shape_score is None
           and color_score is None
           and pose_score is None
+          and plumage_score is None
       ):
         skipped += 1
         continue
@@ -4076,6 +4082,13 @@ def score_species_similarity(
 
       if pose_score is not None and similarity.get("pose") != pose_score:
         similarity["pose"] = pose_score
+        changed = True
+
+      if (
+          plumage_score is not None
+          and similarity.get("plumage") != plumage_score
+      ):
+        similarity["plumage"] = plumage_score
         changed = True
 
       if similarity.get("reference_revision") != reference_revision:
