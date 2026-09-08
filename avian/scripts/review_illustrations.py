@@ -2396,6 +2396,7 @@ html,body{height:100%;overflow:hidden}
 <input id="search" class="search" placeholder="Cerca especie...">
 <div id="filters" class="filters"></div>
 <div id="reviewFilters" class="reviewFilters"></div>
+<div id="similarityFilters" class="reviewFilters"></div>
 <div class="stats">
 <div class="stat"><b>{{SPECIES_COUNT}}</b><br>especies</div>
 <div class="stat"><b>{{REPO_COUNT}}</b><br>repositoris</div>
@@ -2467,11 +2468,13 @@ const key=`avian-review-v2:${report.region}`;
 const referenceOverrideKey=`avian-review-reference-overrides:${report.region}`;
 let selected=(()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{return {}}})();
 let referenceOverrides=(()=>{try{return JSON.parse(localStorage.getItem(referenceOverrideKey)||'{}')}catch{return {}}})();
-let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds[0]?.slug||'', query='', filter='all', reviewFilter='all';
+let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds[0]?.slug||'', query='', filter='all', reviewFilter='all', similarityFilter='all';
 let referenceRequestController=null;
 const filters=[['all','Totes'],['remote_complete','Als forks'],['remote_partial','Remota parcial'],['local_complete','Local completa'],['local_partial_with_options','Local + opcions'],['local_partial','Local parcial'],['missing','No trobada']];
 const reviewFilters=[['all','Qualsevol estat'],['pending','Pendents'],['applied','Aplicats'],['correct','Correctes'],['local_modified','Modificats localment'],['matching','Coincideixen']];
 const reviewLabels={pending:'Pendent',applied:'Aplicat',correct:'Correcte',local_modified:'Modificat localment',matching:'Coincideix amb variant'};
+const similarityFilters=[['all','Qualsevol puntuació'],['fresh','Actuals'],['stale','Desactualitzats'],['unscored','Sense puntuar']];
+const similarityLabels={fresh:'Actual',stale:'Desactualitzat',unscored:'Sense puntuar'};
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 function cls(s){return s==='missing'?'bad':(s.includes('partial')?'warn':'ok')}
 function referenceIdentity(r){return `${r.source||''}||${r.thumb_url||''}||${r.source_url||''}`}
@@ -2572,8 +2575,102 @@ function autoReviewStatus(b){
   if(localCount&&matched<localCount)return 'local_modified';
   return 'pending';
 }
-function visible(){const q=query.trim().toLowerCase();return birds.filter(b=>(filter==='all'||b.status===filter)&&(reviewFilter==='all'||autoReviewStatus(b)===reviewFilter)&&(!q||`${b.common_name} ${b.scientific_name} ${b.slug}`.toLowerCase().includes(q)))}
-function renderFilters(){document.getElementById('filters').innerHTML=filters.map(([v,l])=>`<button class="filter ${filter===v?'active':''}" data-f="${v}">${l}</button>`).join('');document.querySelectorAll('[data-f]').forEach(x=>x.onclick=()=>{filter=x.dataset.f;const v=visible();const previous=active;if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;renderFilters();renderList();renderDetail();if(active!==previous){const right=document.getElementById('content');if(right)right.scrollTop=0}});document.getElementById('reviewFilters').innerHTML=reviewFilters.map(([v,l])=>`<button class="filter ${reviewFilter===v?'active':''}" data-rf="${v}">${l}</button>`).join('');document.querySelectorAll('[data-rf]').forEach(x=>x.onclick=()=>{reviewFilter=x.dataset.rf;const v=visible();const previous=active;if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;renderFilters();renderList();renderDetail();if(active!==previous){const right=document.getElementById('content');if(right)right.scrollTop=0}})}
+function speciesSimilarityStatus(b){
+  const statuses=[];
+
+  for(const pose of ['1','2']){
+    for(const variant of (b.poses?.[pose]||[])){
+      statuses.push(
+        variant.similarity_status||'unscored'
+      );
+    }
+  }
+
+  if(statuses.includes('stale'))return 'stale';
+  if(statuses.some(s=>s==='fresh'))return 'fresh';
+  return 'unscored';
+}
+
+function visible(){
+  const q=query.trim().toLowerCase();
+
+  return birds.filter(b=>
+    (filter==='all'||b.status===filter)
+    &&
+    (reviewFilter==='all'||autoReviewStatus(b)===reviewFilter)
+    &&
+    (
+      similarityFilter==='all'
+      ||speciesSimilarityStatus(b)===similarityFilter
+    )
+    &&
+    (
+      !q
+      ||`${b.common_name} ${b.scientific_name} ${b.slug}`
+        .toLowerCase()
+        .includes(q)
+    )
+  );
+}
+
+function renderFilters(){
+  document.getElementById('filters').innerHTML=
+    filters.map(([v,l])=>
+      `<button class="filter ${filter===v?'active':''}" data-f="${v}">${l}</button>`
+    ).join('');
+
+  document.querySelectorAll('[data-f]').forEach(x=>x.onclick=()=>{
+    filter=x.dataset.f;
+    const v=visible();
+    const previous=active;
+    if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;
+    renderFilters();
+    renderList();
+    renderDetail();
+    if(active!==previous){
+      const right=document.getElementById('content');
+      if(right)right.scrollTop=0;
+    }
+  });
+
+  document.getElementById('reviewFilters').innerHTML=
+    reviewFilters.map(([v,l])=>
+      `<button class="filter ${reviewFilter===v?'active':''}" data-rf="${v}">${l}</button>`
+    ).join('');
+
+  document.querySelectorAll('[data-rf]').forEach(x=>x.onclick=()=>{
+    reviewFilter=x.dataset.rf;
+    const v=visible();
+    const previous=active;
+    if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;
+    renderFilters();
+    renderList();
+    renderDetail();
+    if(active!==previous){
+      const right=document.getElementById('content');
+      if(right)right.scrollTop=0;
+    }
+  });
+
+  document.getElementById('similarityFilters').innerHTML=
+    similarityFilters.map(([v,l])=>
+      `<button class="filter ${similarityFilter===v?'active':''}" data-sf="${v}">${l}</button>`
+    ).join('');
+
+  document.querySelectorAll('[data-sf]').forEach(x=>x.onclick=()=>{
+    similarityFilter=x.dataset.sf;
+    const v=visible();
+    const previous=active;
+    if(v.length&&!v.some(b=>b.slug===active))active=v[0].slug;
+    renderFilters();
+    renderList();
+    renderDetail();
+    if(active!==previous){
+      const right=document.getElementById('content');
+      if(right)right.scrollTop=0;
+    }
+  });
+}
 function reviewCls(s){return s==='correct'||s==='applied'||s==='matching'?'ok':(s==='local_modified'?'warn':'')}
 function changeSpecies(slug){
   if(!slug||slug===active)return;
@@ -2623,7 +2720,7 @@ function variantCard(b,pose,v,i){
         <span class="badge">${v.sources.length} fork(s)</span>
         ${v.matches_local?'<span class="badge ok">igual que local</span>':''}
         <span class="badge ${status==='fresh'?'ok':status==='stale'?'bad':''}">
-          ${esc(status)}
+          ${esc(similarityLabels[status]||status)}
         </span>
       </div>
 
