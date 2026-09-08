@@ -18,6 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import secrets
+import sqlite3
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2212,6 +2213,58 @@ STATUS_LABEL = {
   "missing": "No trobada",
 }
 
+def refresh_report_detection_state(
+    report: dict[str, Any],
+    database: Path,
+) -> None:
+  detections: dict[str, dict[str, Any]] = {}
+
+  if database.is_file():
+    try:
+      with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+              Sci_Name,
+              COUNT(*),
+              MAX(Date || ' ' || Time)
+            FROM detections
+            WHERE Sci_Name IS NOT NULL
+              AND TRIM(Sci_Name) <> ''
+            GROUP BY Sci_Name
+            """
+        ).fetchall()
+
+      for scientific_name, count, last_detection in rows:
+        key = str(scientific_name).strip().casefold()
+        if not key:
+          continue
+        detections[key] = {
+          "count": int(count or 0),
+          "last_detection": str(last_detection or ""),
+        }
+    except sqlite3.Error as exc:
+      print(
+          f"[review] warning: could not read detections database: {exc}",
+          file=sys.stderr,
+      )
+
+  detected_species = 0
+
+  for bird in report.get("species", []):
+    key = str(bird.get("scientific_name", "")).strip().casefold()
+    info = detections.get(key)
+
+    bird["detected"] = bool(info)
+    bird["detection_count"] = info["count"] if info else 0
+    bird["last_detection"] = info["last_detection"] if info else ""
+
+    if info:
+      detected_species += 1
+
+  report.setdefault("counts", {})["detected_species"] = detected_species
+
+
 def make_report(
     species: list[Species],
     variants: list[dict[str, Any]],
@@ -2446,6 +2499,7 @@ html,body{height:100%;overflow:hidden}
 
 <div id="scoringPanel" class="sidebarPanel">
   <div id="batchScoreControls" class="reviewFilters">
+    <button id="scoreDetectedPending" class="btn">Puntua detectades pendents</button>
     <button id="scoreUnscored" class="btn">Puntua sense puntuar</button>
     <button id="scoreStale" class="btn">Recalcula desactualitzats</button>
     <button id="cancelBatchScore" class="btn" style="display:none">Cancel·la</button>
@@ -2537,7 +2591,7 @@ let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds[0]?.slug
 let referenceRequestController=null;
 let batchScoreRunning=false;
 let batchScoreCancelled=false;
-const filters=[['all','Totes'],['remote_complete','Als forks'],['remote_partial','Remota parcial'],['local_complete','Local completa'],['local_partial_with_options','Local + opcions'],['local_partial','Local parcial'],['missing','No trobada']];
+const filters=[['detected','Detectades'],['all','Totes'],['remote_complete','Als forks'],['remote_partial','Remota parcial'],['local_complete','Local completa'],['local_partial_with_options','Local + opcions'],['local_partial','Local parcial'],['missing','No trobada']];
 const reviewFilters=[['all','Qualsevol estat'],['pending','Pendents'],['applied','Aplicats'],['correct','Correctes'],['local_modified','Modificats localment'],['matching','Coincideixen']];
 const reviewLabels={pending:'Pendent',applied:'Aplicat',correct:'Correcte',local_modified:'Modificat localment',matching:'Coincideix amb variant'};
 const similarityFilters=[['all','Qualsevol puntuació'],['fresh','Actuals'],['stale','Desactualitzats'],['unscored','Sense puntuar']];
@@ -2661,8 +2715,12 @@ function speciesSimilarityStatus(b){
 function visible(){
   const q=query.trim().toLowerCase();
 
-  return birds.filter(b=>
-    (filter==='all'||b.status===filter)
+  const result=birds.filter(b=>
+    (
+      filter==='all'
+      ||(filter==='detected'&&b.detected)
+      ||b.status===filter
+    )
     &&
     (reviewFilter==='all'||autoReviewStatus(b)===reviewFilter)
     &&
@@ -2678,6 +2736,17 @@ function visible(){
         .includes(q)
     )
   );
+
+  if(filter==='detected'){
+    result.sort((a,b)=>
+      String(b.last_detection||'').localeCompare(
+        String(a.last_detection||'')
+      )
+      ||a.common_name.localeCompare(b.common_name)
+    );
+  }
+
+  return result;
 }
 
 function renderFilters(){
@@ -3095,6 +3164,7 @@ async function scoreSpecies(b){
 }
 
 function setBatchScoreUi(running,message='',percent=0){
+  const detected=document.getElementById('scoreDetectedPending');
   const unscored=document.getElementById('scoreUnscored');
   const stale=document.getElementById('scoreStale');
   const cancel=document.getElementById('cancelBatchScore');
@@ -3102,6 +3172,7 @@ function setBatchScoreUi(running,message='',percent=0){
   const progress=document.getElementById('batchScoreProgress');
   const bar=document.getElementById('batchScoreProgressBar');
 
+  if(detected)detected.disabled=running;
   if(unscored)unscored.disabled=running;
   if(stale)stale.disabled=running;
 
@@ -3128,22 +3199,34 @@ function setBatchScoreUi(running,message='',percent=0){
 async function batchScoreSpecies(status){
   if(batchScoreRunning)return;
 
-  const targets=birds.filter(
-    b=>speciesSimilarityStatus(b)===status
-  );
+  const targets=status==='detected_pending'
+    ? birds.filter(b=>
+        b.detected
+        &&(
+          speciesSimilarityStatus(b)==='stale'
+          ||speciesSimilarityStatus(b)==='unscored'
+        )
+      )
+    : birds.filter(
+        b=>speciesSimilarityStatus(b)===status
+      );
 
   if(!targets.length){
     alert(
-      status==='stale'
-        ? 'No hi ha ocells desactualitzats.'
-        : 'No hi ha ocells sense puntuar.'
+      status==='detected_pending'
+        ? 'No hi ha ocells detectats pendents de puntuar.'
+        : status==='stale'
+          ? 'No hi ha ocells desactualitzats.'
+          : 'No hi ha ocells sense puntuar.'
     );
     return;
   }
 
-  const label=status==='stale'
-    ? 'desactualitzats'
-    : 'sense puntuar';
+  const label=status==='detected_pending'
+    ? 'detectats pendents'
+    : status==='stale'
+      ? 'desactualitzats'
+      : 'sense puntuar';
 
   if(!confirm(
     `Es puntuaran ${targets.length} ocell(s) ${label}, un per un. Continuar?`
@@ -3653,6 +3736,10 @@ const savedActive=sessionStorage.getItem('avian-review-active-species');
 if(savedActive&&bySlug.has(savedActive)){
   active=savedActive;
 }
+document.getElementById('scoreDetectedPending').onclick=()=>{
+  batchScoreSpecies('detected_pending');
+};
+
 document.getElementById('scoreUnscored').onclick=()=>{
   batchScoreSpecies('unscored');
 };
@@ -6042,6 +6129,10 @@ def main() -> int:
         raise ValueError("review-data.json has an invalid structure")
 
       refresh_report_local_state(existing_report, illustrations)
+      refresh_report_detection_state(
+          existing_report,
+          root / "scripts" / "birds.db",
+      )
       atomic_json_write(data_path, existing_report)
       index_path.write_text(build_html(existing_report), encoding="utf-8")
       print(
@@ -6168,6 +6259,10 @@ def main() -> int:
   report = make_report(
       species, downloaded, illustrations, review_dir, repo_index,
       args.region, args.locale, unresolved, errors, len(occurrences),
+  )
+  refresh_report_detection_state(
+      report,
+      root / "scripts" / "birds.db",
   )
 
   (review_dir / "review-data.json").write_text(
