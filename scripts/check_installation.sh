@@ -78,6 +78,27 @@ else
 fi
 
 # ------------------------------------------------------------
+# BirdNET audio services
+# ------------------------------------------------------------
+
+check_runtime_service() {
+  local service="$1"
+
+  if ! systemctl cat "${service}" >/dev/null 2>&1; then
+    fail "${service} is not installed"
+  elif systemctl is-active --quiet "${service}"; then
+    pass "${service} is active"
+  else
+    warn "${service} is not active"
+  fi
+}
+
+check_runtime_service birdnet_recording.service
+check_runtime_service birdnet_analysis.service
+check_runtime_service icecast2.service
+check_runtime_service livestream.service
+
+# ------------------------------------------------------------
 # Shared BirdNET configuration
 # ------------------------------------------------------------
 
