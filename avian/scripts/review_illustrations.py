@@ -2355,6 +2355,10 @@ html,body{height:100%;overflow:hidden}
 .actionsMenuPanel{display:none;position:absolute;right:0;top:calc(100% + 5px);z-index:50;min-width:190px;padding:7px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(16,21,36,.16)}
 .actionsMenuPanel.open{display:flex;flex-direction:column;gap:5px}
 .actionsMenuPanel .btn{width:100%;text-align:left;white-space:nowrap}.hero h2{margin:0 0 4px}
+.speciesMeta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:.78rem;color:var(--muted)}
+.speciesMeta .ok,.speciesMeta .warn,.speciesMeta .bad{background:none;padding:0}
+.okText{color:var(--ok)}
+.badText{color:var(--bad)}
 .pose{padding:12px;margin-top:10px}.poseHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.variants{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:9px}
 .variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
 .previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7;position:relative}
@@ -3212,7 +3216,17 @@ async function batchScoreSpecies(status){
   location.reload();
 }
 
-function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="badges"><span class="badge ${cls(b.status)}">${esc(b.status_label)}</span><span class="badge ${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span><span class="badge ${b.local.pose1.exists?'ok':'bad'}">Local P1 ${b.local.pose1.exists?'si':'no'}</span><span class="badge ${b.local.pose2.exists?'ok':'bad'}">Local P2 ${b.local.pose2.exists?'si':'no'}</span><span class="badge">${b.summary.repos_any} repos</span></div></div><div class="actions speciesActions">
+function renderDetail(){const v=visible(),el=document.getElementById('content');if(!v.length){el.innerHTML='<div class="card hero">Cap especie.</div>';return}const b=bySlug.get(active)||v[0];active=b.slug;const rs=autoReviewStatus(b);el.innerHTML=`<section class="card hero"><div class="heroTop"><div><h2>${esc(b.common_name)}</h2><div class="latin">${esc(b.scientific_name)}</div><div class="speciesMeta">
+  <span class="${cls(b.status)}">${esc(b.status_label)}</span>
+  <span>·</span>
+  <span class="${reviewCls(rs)} reviewStatus">${esc(reviewLabels[rs]||rs)}</span>
+  <span>·</span>
+  <span class="${b.local.pose1.exists?'okText':'badText'}">P1 ${b.local.pose1.exists?'sí':'no'}</span>
+  <span>·</span>
+  <span class="${b.local.pose2.exists?'okText':'badText'}">P2 ${b.local.pose2.exists?'sí':'no'}</span>
+  <span>·</span>
+  <span>${b.summary.repos_any} repos</span>
+</div></div><div class="actions speciesActions">
   <button id="scoreSpecies" class="btn">Recalcula puntuació</button>
   <div class="actionsMenu">
     <button id="toggleSpeciesActions" type="button" class="btn">Accions ▾</button>
