@@ -2329,9 +2329,14 @@ HTML_TEMPLATE = '''<!doctype html>
 button,input{font:inherit}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 html,body{height:100%;overflow:hidden}
 .app{display:grid;grid-template-columns:350px minmax(0,1fr);height:100vh;overflow:hidden}
-.side{background:#fff;border-right:1px solid var(--line);height:100vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
-.head{padding:18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:30}.head h1{font-size:1.15rem;margin:0}
-.search{width:100%;padding:10px 12px;margin:13px 0;border:1px solid var(--line);border-radius:10px}
+.side{background:#fff;border-right:1px solid var(--line);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+.head{padding:14px;border-bottom:1px solid var(--line);background:#fff;z-index:30;flex:0 0 auto}.head h1{font-size:1.05rem;margin:0}
+.list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.search{width:100%;padding:9px 11px;margin:10px 0;border:1px solid var(--line);border-radius:10px}
+.sidebarTools{display:flex;gap:6px;flex-wrap:wrap}
+.sidebarPanel{display:none;margin-top:8px}
+.sidebarPanel.open{display:block}
+.sidebarSummary{margin-top:8px}
 .rescanBox{display:flex;align-items:flex-start;gap:8px;margin-top:10px}.rescanBox .btn{white-space:nowrap}.rescanBox .small{line-height:1.2}
 .rescanProgressWrap{flex:1;min-width:0}.rescanProgressTrack{height:7px;border-radius:999px;background:#e8ecf3;overflow:hidden;margin:3px 0 5px}.rescanProgressBar{height:100%;width:0;background:var(--accent);transition:width .25s ease}.rescanDetail{margin-top:2px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .batchScoreProgressWrap{width:100%;margin-top:6px}
@@ -2398,32 +2403,48 @@ html,body{height:100%;overflow:hidden}
 <h1>AvianVisitors - {{REGION}}</h1>
 <div class="small">Revisio de variants dels forks - v{{VERSION}}</div>
 <input id="search" class="search" placeholder="Cerca especie...">
-<div id="filters" class="filters"></div>
-<div id="reviewFilters" class="reviewFilters"></div>
-<div id="similarityFilters" class="reviewFilters"></div>
-<div id="batchScoreControls" class="reviewFilters">
-  <button id="scoreUnscored" class="btn">Puntua sense puntuar</button>
-  <button id="scoreStale" class="btn">Recalcula desactualitzats</button>
-  <button id="cancelBatchScore" class="btn" style="display:none">Cancel·la</button>
-  <div id="batchScoreProgressWrap" class="batchScoreProgressWrap" style="display:none">
-    <div class="batchScoreProgressTrack">
-      <div id="batchScoreProgressBar" class="batchScoreProgressBar"></div>
+<div class="sidebarTools">
+  <button id="toggleFilters" type="button" class="btn">Filtres</button>
+  <button id="toggleScoring" type="button" class="btn">Puntuacions</button>
+  <button id="toggleInfo" type="button" class="btn">Més</button>
+</div>
+
+<div id="filtersPanel" class="sidebarPanel">
+  <div id="filters" class="filters"></div>
+  <div id="reviewFilters" class="reviewFilters"></div>
+  <div id="similarityFilters" class="reviewFilters"></div>
+</div>
+
+<div id="scoringPanel" class="sidebarPanel">
+  <div id="batchScoreControls" class="reviewFilters">
+    <button id="scoreUnscored" class="btn">Puntua sense puntuar</button>
+    <button id="scoreStale" class="btn">Recalcula desactualitzats</button>
+    <button id="cancelBatchScore" class="btn" style="display:none">Cancel·la</button>
+    <div id="batchScoreProgressWrap" class="batchScoreProgressWrap" style="display:none">
+      <div class="batchScoreProgressTrack">
+        <div id="batchScoreProgressBar" class="batchScoreProgressBar"></div>
+      </div>
+      <div id="batchScoreProgress" class="small batchScoreDetail"></div>
     </div>
-    <div id="batchScoreProgress" class="small batchScoreDetail"></div>
   </div>
 </div>
-<div class="stats">
-<div class="stat"><b>{{SPECIES_COUNT}}</b><br>especies</div>
-<div class="stat"><b>{{REPO_COUNT}}</b><br>repositoris</div>
-<div class="stat"><b>{{OCCURRENCE_COUNT}}</b><br>aparicions</div>
-<div class="stat"><b>{{VARIANT_COUNT}}</b><br>variants diferents</div>
-</div>
-<div class="rescanBox">
-  <button id="rescanForks" type="button" class="btn primary">Reescaneja forks</button>
-  <div class="rescanProgressWrap">
-    <div class="rescanProgressTrack"><div id="rescanProgressBar" class="rescanProgressBar"></div></div>
-    <div id="rescanStatus" class="small"></div>
-    <div id="rescanDetail" class="small rescanDetail"></div>
+
+<div id="infoPanel" class="sidebarPanel">
+  <div class="stats">
+    <div class="stat"><b>{{SPECIES_COUNT}}</b><br>especies</div>
+    <div class="stat"><b>{{REPO_COUNT}}</b><br>repositoris</div>
+    <div class="stat"><b>{{OCCURRENCE_COUNT}}</b><br>aparicions</div>
+    <div class="stat"><b>{{VARIANT_COUNT}}</b><br>variants diferents</div>
+  </div>
+  <div class="rescanBox">
+    <button id="rescanForks" type="button" class="btn primary">Reescaneja forks</button>
+    <div class="rescanProgressWrap">
+      <div class="rescanProgressTrack">
+        <div id="rescanProgressBar" class="rescanProgressBar"></div>
+      </div>
+      <div id="rescanStatus" class="small"></div>
+      <div id="rescanDetail" class="small rescanDetail"></div>
+    </div>
   </div>
 </div>
 </div>
@@ -3467,6 +3488,39 @@ document.getElementById('cancelBatchScore').onclick=()=>{
     button.disabled=true;
     button.textContent='Cancel·lant...';
   }
+};
+
+function toggleSidebarPanel(id,buttonId){
+  const panel=document.getElementById(id);
+  const button=document.getElementById(buttonId);
+  if(!panel||!button)return;
+
+  const open=!panel.classList.contains('open');
+
+  for(const panelId of ['filtersPanel','scoringPanel','infoPanel']){
+    document.getElementById(panelId)?.classList.remove('open');
+  }
+
+  for(const id of ['toggleFilters','toggleScoring','toggleInfo']){
+    document.getElementById(id)?.classList.remove('primary');
+  }
+
+  if(open){
+    panel.classList.add('open');
+    button.classList.add('primary');
+  }
+}
+
+document.getElementById('toggleFilters').onclick=()=>{
+  toggleSidebarPanel('filtersPanel','toggleFilters');
+};
+
+document.getElementById('toggleScoring').onclick=()=>{
+  toggleSidebarPanel('scoringPanel','toggleScoring');
+};
+
+document.getElementById('toggleInfo').onclick=()=>{
+  toggleSidebarPanel('infoPanel','toggleInfo');
 };
 
 (async()=>{try{const r=await fetch('/api/status');if(r.ok)reviewStatus=await r.json()}catch{}renderFilters();renderList();renderDetail();pollRescan()})();
