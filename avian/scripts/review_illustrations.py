@@ -59,6 +59,9 @@ class Species:
   common_name: str
   slug: str
 
+
+SCORING_ALGORITHM_VERSION = 1
+
 def slugify(value: str) -> str:
   return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
@@ -2800,6 +2803,10 @@ async function scoreSpecies(b){
       throw new Error(d.error||`HTTP ${r.status}`);
     }
 
+    sessionStorage.setItem(
+      'avian-review-active-species',
+      b.slug
+    );
     location.reload();
   }catch(e){
     if(button){
@@ -4365,6 +4372,7 @@ def score_species_similarity(
           "colors": None,
           "pose": None,
           "reference_revision": None,
+          "algorithm_version": None,
           "scored_at": None,
         }
         variant["similarity"] = similarity
@@ -4412,6 +4420,13 @@ def score_species_similarity(
           similarity["reference_revision"] = reference_revision
           changed = True
 
+        if (
+            similarity.get("algorithm_version")
+            != SCORING_ALGORITHM_VERSION
+        ):
+          similarity["algorithm_version"] = SCORING_ALGORITHM_VERSION
+          changed = True
+
         import time
         scored_at = int(time.time())
 
@@ -4454,6 +4469,12 @@ def similarity_score_status(
     return "unscored"
 
   if not current_revision or scored_revision != current_revision:
+    return "stale"
+
+  if (
+      similarity.get("algorithm_version")
+      != SCORING_ALGORITHM_VERSION
+  ):
     return "stale"
 
   return "fresh"
