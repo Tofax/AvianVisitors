@@ -532,6 +532,27 @@ ensure_birdnet_config_link() {
 }
 
 
+start_birdnet_runtime_services() {
+  echo "Starting enabled BirdNET runtime services"
+
+  local services=(
+    icecast2.service
+    birdnet_recording.service
+    birdnet_analysis.service
+    livestream.service
+  )
+
+  systemctl daemon-reload
+
+  for service in "${services[@]}"; do
+    if systemctl is-enabled --quiet "${service}" 2>/dev/null; then
+      if ! systemctl start "${service}"; then
+        echo "WARNING: ${service} could not be started; installation will continue" >&2
+      fi
+    fi
+  done
+}
+
 install_services() {
   ensure_birdnet_config_link
   set_hostname
@@ -565,6 +586,7 @@ install_services() {
   generate_BirdDB
   configure_caddy_php
   config_icecast
+  start_birdnet_runtime_services
   if [ -f "${my_dir}/scripts/birds.db" ]; then
     echo "Existing detections database found; preserving birds.db"
   else
