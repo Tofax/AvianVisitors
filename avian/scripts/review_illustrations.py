@@ -1067,7 +1067,7 @@ def cached_reference_shape_candidates(
         "Illustration scoring requires python3-opencv"
     ) from exc
 
-  cache_version = 2
+  cache_version = 3
   content_hash = hashlib.sha256(
       reference_path.read_bytes()
   ).hexdigest()
@@ -1115,6 +1115,9 @@ def cached_reference_shape_candidates(
       "descriptor": candidate["descriptor"],
       "color_descriptor": color_descriptor(
           shape_image,
+          candidate["mask"],
+      ),
+      "pose_descriptor": pose_descriptor(
           candidate["mask"],
       ),
     })
