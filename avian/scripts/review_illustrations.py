@@ -2475,12 +2475,47 @@ function referenceIdentity(r){return `${r.source||''}||${r.thumb_url||''}||${r.s
 function referenceOverridesFor(slug){referenceOverrides[slug]??={};return referenceOverrides[slug]}
 function getReferenceOverride(slug,r){return referenceOverrides?.[slug]?.[referenceIdentity(r)]||''}
 function saveReferenceOverrides(){localStorage.setItem(referenceOverrideKey,JSON.stringify(referenceOverrides))}
-function setReferenceOverride(slug,r,action){
-  const perSpecies=referenceOverridesFor(slug);
+async function setReferenceOverride(slug,r,action){
   const id=referenceIdentity(r);
-  if(!action||action==='auto')delete perSpecies[id];else perSpecies[id]=action;
-  if(!Object.keys(perSpecies).length)delete referenceOverrides[slug];
-  saveReferenceOverrides();
+
+  try{
+    const response=await fetch('/api/reference-override',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-Avian-Review-Token':window.AVIAN_REVIEW_TOKEN||''
+      },
+      body:JSON.stringify({
+        slug,
+        reference_id:id,
+        action:action||'auto'
+      })
+    });
+
+    const data=await response.json().catch(()=>({}));
+
+    if(!response.ok||!data.ok){
+      throw new Error(data.error||`HTTP ${response.status}`);
+    }
+
+    const perSpecies=referenceOverridesFor(slug);
+
+    if(!action||action==='auto'){
+      delete perSpecies[id];
+    }else{
+      perSpecies[id]=action;
+    }
+
+    if(!Object.keys(perSpecies).length){
+      delete referenceOverrides[slug];
+    }
+
+    saveReferenceOverrides();
+    return true;
+  }catch(e){
+    alert(`No s'ha pogut desar la referència: ${e.message}`);
+    return false;
+  }
 }
 function collectReferenceItems(data){
   const out=new Map();
@@ -2853,7 +2888,16 @@ async function moveModalReference(action){
     ? originKeys[originIndex+1]
     : '';
 
-  setReferenceOverride(slug,item,action);
+  const saved=await setReferenceOverride(
+    slug,
+    item,
+    action
+  );
+
+  if(!saved){
+    return;
+  }
+
   renderReferencePanels(slug);
 
   const movedTrigger=modalReferenceTrigger(slug,refKey);
@@ -4062,6 +4106,109 @@ def merge_manual_first(
   return merged
 
 
+def load_reference_overrides(path: Path) -> dict[str, Any]:
+  if not path.is_file():
+    return {"schema": 1, "species": {}}
+
+  try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+  except Exception:
+    return {"schema": 1, "species": {}}
+
+  if not isinstance(payload, dict):
+    return {"schema": 1, "species": {}}
+
+  payload.setdefault("schema", 1)
+  payload.setdefault("species", {})
+  return payload
+
+
+def save_reference_overrides(
+    path: Path,
+    payload: dict[str, Any],
+) -> None:
+  atomic_json_write(path, payload)
+
+
+def reference_override_identity(item: dict[str, Any]) -> str:
+  return (
+      f"{item.get('source', '')}"
+      f"||{item.get('thumb_url', '')}"
+      f"||{item.get('source_url', '')}"
+  )
+
+
+def set_reference_override(
+    path: Path,
+    slug: str,
+    reference_id: str,
+    action: str,
+) -> None:
+  if action not in ("auto", "perched", "flight", "hide"):
+    raise ValueError("invalid reference override")
+
+  payload = load_reference_overrides(path)
+  species = payload.setdefault("species", {})
+  per_species = species.setdefault(slug, {})
+
+  if action == "auto":
+    per_species.pop(reference_id, None)
+  else:
+    per_species[reference_id] = action
+
+  if not per_species:
+    species.pop(slug, None)
+
+  save_reference_overrides(path, payload)
+
+
+def apply_reference_overrides(
+    refs: dict[str, Any],
+    overrides_path: Path,
+    slug: str,
+) -> dict[str, Any]:
+  payload = load_reference_overrides(overrides_path)
+  overrides = payload.get("species", {}).get(slug, {})
+
+  if not isinstance(overrides, dict) or not overrides:
+    return refs
+
+  result = dict(refs)
+  perched: list[dict[str, Any]] = []
+  flight: list[dict[str, Any]] = []
+  seen: set[str] = set()
+
+  for base_category in ("perched", "flight"):
+    for raw in refs.get(base_category, []):
+      if not isinstance(raw, dict):
+        continue
+
+      item = dict(raw)
+      identity = reference_override_identity(item)
+
+      if identity in seen:
+        continue
+      seen.add(identity)
+
+      action = str(overrides.get(identity, "auto"))
+
+      if action == "hide":
+        continue
+
+      if action == "perched":
+        perched.append(item)
+      elif action == "flight":
+        flight.append(item)
+      elif base_category == "perched":
+        perched.append(item)
+      else:
+        flight.append(item)
+
+  result["perched"] = perched
+  result["flight"] = flight
+  return result
+
+
 def apply_manual_references(
     refs: dict[str, Any],
     manual_path: Path,
@@ -4558,6 +4705,7 @@ def serve_review_site(
   access_cookie = "avian_review_access"
   status_path = review_root / "review-status.json"
   manual_references_path = review_root / "manual-references.json"
+  reference_overrides_path = review_root / "reference-overrides.json"
   references_dir = review_root / "reference-cache"
   references_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5021,6 +5169,11 @@ def serve_review_site(
               slug,
               references_dir,
           )
+          refs = apply_reference_overrides(
+              refs,
+              reference_overrides_path,
+              slug,
+          )
 
           metadata = reference_set_metadata(refs)
           previous = bird.get("references")
@@ -5106,6 +5259,7 @@ def serve_review_site(
           "/api/status",
           "/api/rescan",
           "/api/reference-manual",
+          "/api/reference-override",
           "/api/score-species",
       ):
         self.send_error(404)
@@ -5168,6 +5322,11 @@ def serve_review_site(
               slug,
               references_dir,
           )
+          refs = apply_reference_overrides(
+              refs,
+              reference_overrides_path,
+              slug,
+          )
 
           metadata = reference_set_metadata(refs)
           previous_metadata = bird.get("references")
@@ -5188,6 +5347,11 @@ def serve_review_site(
                 review_root / "review-data.json",
                 live_report,
             )
+            (review_root / "index.html").write_text(
+                build_html(live_report),
+                encoding="utf-8",
+                newline="\n",
+            )
 
           self._json(
               200,
@@ -5196,6 +5360,39 @@ def serve_review_site(
                 "slug": slug,
                 "metadata": metadata,
                 **result,
+              },
+          )
+          return
+
+        if parsed.path == "/api/reference-override":
+          slug = str(payload.get("slug", "")).strip()
+          if slug not in species_by_slug:
+            raise ValueError("unknown species")
+
+          reference_id = str(
+              payload.get("reference_id", "")
+          ).strip()
+          action = str(
+              payload.get("action", "")
+          ).strip()
+
+          if not reference_id:
+            raise ValueError("missing reference_id")
+
+          set_reference_override(
+              reference_overrides_path,
+              slug,
+              reference_id,
+              action,
+          )
+
+          self._json(
+              200,
+              {
+                "ok": True,
+                "slug": slug,
+                "reference_id": reference_id,
+                "action": action,
               },
           )
           return
