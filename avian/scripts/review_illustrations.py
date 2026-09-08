@@ -550,6 +550,78 @@ def color_similarity_score(
   )
 
 
+def pose_similarity_score(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> float:
+  """Return silhouette pose similarity from 0 to 100."""
+  import math
+
+  left_angle = float(left["axis_angle"]) % 180.0
+  right_angle = float(right["axis_angle"]) % 180.0
+
+  angle_diff = abs(left_angle - right_angle)
+  angle_diff = min(angle_diff, 180.0 - angle_diff)
+
+  angle_score = max(
+      0.0,
+      100.0 * (1.0 - min(angle_diff / 90.0, 1.0)),
+  )
+
+  left_aspect = max(float(left["aspect_ratio"]), 1e-9)
+  right_aspect = max(float(right["aspect_ratio"]), 1e-9)
+
+  aspect_ratio = min(
+      left_aspect / right_aspect,
+      right_aspect / left_aspect,
+  )
+  aspect_score = max(
+      0.0,
+      min(100.0, aspect_ratio * 100.0),
+  )
+
+  center_distance = math.hypot(
+      float(left["center_x"]) - float(right["center_x"]),
+      float(left["center_y"]) - float(right["center_y"]),
+  )
+
+  center_score = max(
+      0.0,
+      100.0 * (
+          1.0 - min(center_distance / math.sqrt(2.0), 1.0)
+      ),
+  )
+
+  mass_keys = (
+      "top_fraction",
+      "bottom_fraction",
+      "left_fraction",
+      "right_fraction",
+  )
+
+  mass_difference = sum(
+      abs(float(left[key]) - float(right[key]))
+      for key in mass_keys
+  ) / len(mass_keys)
+
+  mass_score = max(
+      0.0,
+      100.0 * (1.0 - min(mass_difference, 1.0)),
+  )
+
+  score = (
+      0.35 * angle_score
+      + 0.20 * aspect_score
+      + 0.25 * center_score
+      + 0.20 * mass_score
+  )
+
+  return round(
+      max(0.0, min(100.0, score)),
+      2,
+  )
+
+
 def shape_similarity_score(
     left: dict[str, Any],
     right: dict[str, Any],
