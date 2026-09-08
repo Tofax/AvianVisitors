@@ -375,6 +375,94 @@ def shape_descriptor(mask):
   }
 
 
+def color_similarity_score(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> float:
+  """Return foreground color similarity from 0 to 100."""
+  try:
+    import cv2
+    import numpy as np
+  except ImportError as exc:
+    raise RuntimeError(
+        "Illustration scoring requires python3-opencv and numpy"
+    ) from exc
+
+  left_chroma = np.asarray(
+      left["chroma_hist"],
+      dtype=np.float32,
+  )
+  right_chroma = np.asarray(
+      right["chroma_hist"],
+      dtype=np.float32,
+  )
+
+  left_lightness = np.asarray(
+      left["lightness_hist"],
+      dtype=np.float32,
+  )
+  right_lightness = np.asarray(
+      right["lightness_hist"],
+      dtype=np.float32,
+  )
+
+  if left_chroma.shape != right_chroma.shape:
+    raise ValueError("Chroma histogram dimensions do not match")
+
+  if left_lightness.shape != right_lightness.shape:
+    raise ValueError("Lightness histogram dimensions do not match")
+
+  chroma_similarity = cv2.compareHist(
+      left_chroma,
+      right_chroma,
+      cv2.HISTCMP_BHATTACHARYYA,
+  )
+  chroma_score = max(
+      0.0,
+      min(100.0, (1.0 - chroma_similarity) * 100.0),
+  )
+
+  lightness_similarity = cv2.compareHist(
+      left_lightness,
+      right_lightness,
+      cv2.HISTCMP_BHATTACHARYYA,
+  )
+  lightness_score = max(
+      0.0,
+      min(100.0, (1.0 - lightness_similarity) * 100.0),
+  )
+
+  left_median = np.asarray(
+      left["median_lab"],
+      dtype=np.float32,
+  )
+  right_median = np.asarray(
+      right["median_lab"],
+      dtype=np.float32,
+  )
+
+  median_distance = float(
+      np.linalg.norm(left_median - right_median)
+  )
+
+  # Lab values are stored in OpenCV's 8-bit representation.
+  median_score = max(
+      0.0,
+      100.0 * (1.0 - min(median_distance / 180.0, 1.0)),
+  )
+
+  score = (
+      0.70 * chroma_score
+      + 0.15 * lightness_score
+      + 0.15 * median_score
+  )
+
+  return round(
+      max(0.0, min(100.0, score)),
+      2,
+  )
+
+
 def shape_similarity_score(
     left: dict[str, Any],
     right: dict[str, Any],
