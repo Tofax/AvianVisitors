@@ -2413,7 +2413,7 @@ html,body{height:100%;overflow:hidden}
 .okText{color:var(--ok)}
 .badText{color:var(--bad)}
 .pose{padding:12px;margin-top:10px}.poseHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.variants{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:9px}
-.variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
+.variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.variant.selected{border-color:var(--ok);box-shadow:0 0 0 2px var(--okbg)}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
 .previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7;position:relative}
 .previewBtn.variantLocal{box-shadow:inset 0 0 0 4px var(--ok)}
 
@@ -2902,7 +2902,7 @@ function variantCard(b,pose,v,i){
         ? 'bad'
         : '';
 
-  return `<article class="variant">
+  return `<article class="variant ${checked?'selected':''}">
     <button
       type="button"
       class="preview previewBtn ${v.matches_local?'variantLocal':''}"
