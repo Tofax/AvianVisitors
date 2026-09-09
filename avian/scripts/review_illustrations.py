@@ -2587,12 +2587,12 @@ const key=`avian-review-v2:${report.region}`;
 const referenceOverrideKey=`avian-review-reference-overrides:${report.region}`;
 let selected=(()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{return {}}})();
 let referenceOverrides=(()=>{try{return JSON.parse(localStorage.getItem(referenceOverrideKey)||'{}')}catch{return {}}})();
-let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds.find(b=>b.detected)?.slug||birds[0]?.slug||'', query='', filter='detected', reviewFilter='all', similarityFilter='all';
+let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds.find(b=>b.detected)?.slug||birds[0]?.slug||'', query='', filter='detected', reviewFilter='unreviewed', similarityFilter='all';
 let referenceRequestController=null;
 let batchScoreRunning=false;
 let batchScoreCancelled=false;
 const filters=[['detected','Detectades'],['all','Totes'],['remote_complete','Als forks'],['remote_partial','Remota parcial'],['local_complete','Local completa'],['local_partial_with_options','Local + opcions'],['local_partial','Local parcial'],['missing','No trobada']];
-const reviewFilters=[['all','Qualsevol estat'],['pending','Pendents'],['applied','Aplicats'],['correct','Correctes'],['local_modified','Modificats localment'],['matching','Coincideixen']];
+const reviewFilters=[['unreviewed','Pendents de revisar'],['reviewed','Revisats'],['all','Qualsevol estat'],['pending','Pendents'],['applied','Aplicats'],['correct','Correctes'],['local_modified','Modificats localment'],['matching','Coincideixen']];
 const reviewLabels={pending:'Pendent',applied:'Aplicat',correct:'Correcte',local_modified:'Modificat localment',matching:'Coincideix amb variant'};
 const similarityFilters=[['all','Qualsevol puntuació'],['fresh','Actuals'],['stale','Desactualitzats'],['unscored','Sense puntuar']];
 const similarityLabels={fresh:'Actual',stale:'Desactualitzat',unscored:'Sense puntuar'};
@@ -2722,7 +2722,12 @@ function visible(){
       ||b.status===filter
     )
     &&
-    (reviewFilter==='all'||autoReviewStatus(b)===reviewFilter)
+    (
+      reviewFilter==='all'
+      ||(reviewFilter==='unreviewed'&&['pending','local_modified'].includes(autoReviewStatus(b)))
+      ||(reviewFilter==='reviewed'&&['applied','correct','matching'].includes(autoReviewStatus(b)))
+      ||autoReviewStatus(b)===reviewFilter
+    )
     &&
     (
       similarityFilter==='all'
