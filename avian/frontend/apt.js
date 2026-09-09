@@ -22,7 +22,12 @@
   var TABLE_VERSION = 'r13';
   var ART_REVISIONS = {
     'aphelocoma-woodhouseii': 'anatomy-1',
-    'streptopelia-decaocto': 'review-1788884875'
+    'streptopelia-decaocto': 'review-1788884875',
+    'merops-apiaster': 'review-1788885367',
+    'ficedula-hypoleuca': 'review-1788952534',
+    'buteo-buteo': 'review-1788935321',
+    'ardea-cinerea': 'review-1788945532',
+    'phoenicurus-ochruros': 'review-1788951215'
   };
   function artRevision(sci, fallback) {
     return ART_REVISIONS[slugify(String(sci || ''))] || fallback;

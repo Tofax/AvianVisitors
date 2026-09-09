@@ -2415,7 +2415,7 @@ html,body{height:100%;overflow:hidden}
 .pose{padding:12px;margin-top:10px}.poseHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.variants{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:9px}
 .variant{border:1px solid var(--line);border-radius:14px;overflow:hidden}.variant.selected{border-color:var(--ok);box-shadow:0 0 0 2px var(--okbg)}.preview{aspect-ratio:1/1;background:#f0f2f7;display:flex;align-items:center;justify-content:center}.preview img{max-width:100%;max-height:100%}
 .previewBtn,.refCard{cursor:pointer}.previewBtn{width:100%;border:0;padding:0;background:#f0f2f7;position:relative}
-.previewBtn.variantLocal{box-shadow:inset 0 0 0 4px var(--ok)}
+.previewBtn.variantLocal{box-shadow:none}
 
 .imgModal{position:fixed;inset:0;background:rgba(16,21,36,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}.imgModal.open{display:flex}.imgModalBox{width:min(1100px,96vw);max-height:92vh;background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}.imgModalTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--line)}.imgModalTitle{font-weight:700}.imgModalSub{margin-top:4px;color:var(--muted);font-size:.9rem}.imgModalActions{display:flex;gap:8px;flex-wrap:wrap}.imgModalBody{position:relative;padding:14px 72px;overflow:auto;background:#eef1f5;display:flex;align-items:center;justify-content:center}.imgModalBody img{display:block;max-width:100%;max-height:calc(92vh - 110px);margin:0 auto;object-fit:contain}.closeBtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
 .body{padding:12px}
@@ -2587,7 +2587,7 @@ const key=`avian-review-v2:${report.region}`;
 const referenceOverrideKey=`avian-review-reference-overrides:${report.region}`;
 let selected=(()=>{try{return JSON.parse(localStorage.getItem(key)||'{}')}catch{return {}}})();
 let referenceOverrides=(()=>{try{return JSON.parse(localStorage.getItem(referenceOverrideKey)||'{}')}catch{return {}}})();
-let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds[0]?.slug||'', query='', filter='all', reviewFilter='all', similarityFilter='all';
+let reviewStatus={schema:1,species:{}}, referenceCache={}, active=birds.find(b=>b.detected)?.slug||birds[0]?.slug||'', query='', filter='detected', reviewFilter='all', similarityFilter='all';
 let referenceRequestController=null;
 let batchScoreRunning=false;
 let batchScoreCancelled=false;
@@ -2768,17 +2768,33 @@ async function refreshDetectedSpecies(){
       ])
     );
 
+    let changed=false;
+
     for(const bird of birds){
       const item=detected.get(bird.slug);
 
-      bird.detected=Boolean(item);
-      bird.detection_count=item
+      const nextDetected=Boolean(item);
+      const nextCount=item
         ? Number(item.detection_count||0)
         : 0;
-      bird.last_detection=item
+      const nextLast=item
         ? String(item.last_detection||'')
         : '';
+
+      if(
+        bird.detected!==nextDetected
+        ||Number(bird.detection_count||0)!==nextCount
+        ||String(bird.last_detection||'')!==nextLast
+      ){
+        changed=true;
+      }
+
+      bird.detected=nextDetected;
+      bird.detection_count=nextCount;
+      bird.last_detection=nextLast;
     }
+
+    if(!changed)return;
 
     const v=visible();
     const previous=active;
@@ -3913,12 +3929,17 @@ def write_summary(path: Path, report: dict[str, Any]) -> None:
 
 def atomic_json_write(path: Path, payload: Any) -> None:
   path.parent.mkdir(parents=True, exist_ok=True)
-  temporary = path.with_suffix(path.suffix + ".tmp")
-  temporary.write_text(
-      json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-      encoding="utf-8",
-      )
-  temporary.replace(path)
+  temporary = path.with_name(
+      f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+  )
+  try:
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        )
+    temporary.replace(path)
+  finally:
+    temporary.unlink(missing_ok=True)
 
 
 def load_review_status(path: Path) -> dict[str, Any]:
@@ -6231,6 +6252,20 @@ def serve_review_site(
             illustrations=illustrations,
             repo_root=repo_root,
             status_path=status_path,
+        )
+
+        refresh_report_local_state(
+            live_report,
+            illustrations,
+        )
+        atomic_json_write(
+            review_root / "review-data.json",
+            live_report,
+        )
+        (review_root / "index.html").write_text(
+            build_html(live_report),
+            encoding="utf-8",
+            newline="\n",
         )
       except Exception as exc:
         self._json(400, {"ok": False, "error": str(exc)})
